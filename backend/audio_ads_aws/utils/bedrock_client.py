@@ -1,6 +1,7 @@
 import boto3
 import json
 import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,6 +10,7 @@ load_dotenv()
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 REGION = os.getenv("AWS_REGION")
+DEFAULT_MODEL = os.getenv("BEDROCK_MODEL_ID", "apac.amazon.nova-pro-v1:0")
 
 def get_bedrock_client():
     """Create and return a Bedrock runtime client."""
@@ -23,10 +25,12 @@ def get_bedrock_client():
     except Exception:
         return boto3.client("bedrock-runtime", region_name=REGION)
 
-def invoke_bedrock_model(prompt: str, model_id: str = "us.amazon.nova-lite-v1:0", temperature: float = 0.7, max_tokens: int = 1024) -> str:
+def invoke_bedrock_model(prompt: str, model_id: str = None, temperature: float = 0.7, max_tokens: int = 1024) -> str:
     """
     Invoke an Amazon Bedrock model using the Converse API.
     """
+    if model_id is None:
+        model_id = DEFAULT_MODEL
     client = get_bedrock_client()
 
     response = client.converse(
@@ -48,6 +52,7 @@ def invoke_bedrock_model(prompt: str, model_id: str = "us.amazon.nova-lite-v1:0"
 def parse_json_response(text: str) -> list | dict:
     """
     Clean markdown fences and parse JSON from a Bedrock response.
+    Handles common LLM issues like trailing commas and text around JSON.
 
     Raises:
         RuntimeError on parse failure.
@@ -61,8 +66,27 @@ def parse_json_response(text: str) -> list | dict:
         content = content[:-3]
     content = content.strip()
 
+    # First try direct parse
     try:
         return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to extract JSON array or object from the text
+    json_match = re.search(r'(\[[\s\S]*\]|\{[\s\S]*\})', content)
+    if json_match:
+        extracted = json_match.group(1)
+        # Remove trailing commas before ] or }
+        extracted = re.sub(r',\s*([}\]])', r'\1', extracted)
+        try:
+            return json.loads(extracted)
+        except json.JSONDecodeError:
+            pass
+
+    # Last resort: remove trailing commas from original content
+    cleaned = re.sub(r',\s*([}\]])', r'\1', content)
+    try:
+        return json.loads(cleaned)
     except json.JSONDecodeError as e:
         raise RuntimeError(f"Failed to parse Bedrock response as JSON: {e}\n{content}")
 
