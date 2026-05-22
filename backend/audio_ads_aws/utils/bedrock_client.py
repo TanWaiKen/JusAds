@@ -23,7 +23,7 @@ def get_bedrock_client():
     except Exception:
         return boto3.client("bedrock-runtime", region_name=REGION)
 
-def invoke_bedrock_model(prompt: str, model_id: str = "apac.amazon.nova-lite-v1:0", temperature: float = 0.7, max_tokens: int = 1024) -> str:
+def invoke_bedrock_model(prompt: str, model_id: str = "us.amazon.nova-lite-v1:0", temperature: float = 0.7, max_tokens: int = 1024) -> str:
     """
     Invoke an Amazon Bedrock model using the Converse API.
     """

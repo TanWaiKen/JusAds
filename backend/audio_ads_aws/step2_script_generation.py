@@ -11,7 +11,7 @@ def generate_ad_script(
     mood: str,
     audience: str,
     language: str = "English",
-    model: str = "apac.amazon.nova-lite-v1:0",
+    model: str = "us.amazon.nova-lite-v1:0",
 ) -> list[dict]:
     """
     Generate a 4-scene commercial script.
