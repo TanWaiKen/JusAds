@@ -11,7 +11,7 @@ def enhance_product_idea(
     mood: str,
     audience: str,
     language: str = "English",
-    model: str = "us.amazon.nova-lite-v1:0",
+    model: str = "apac.amazon.nova-pro-v1:0",
 ) -> str:
     """
     Enhance a rough product idea into a concrete, compelling concept.
