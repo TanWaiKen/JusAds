@@ -1,0 +1,50 @@
+"""
+config.py
+─────────
+Centralised configuration for the Culture Compliance pipeline.
+All secrets are read from environment variables.
+"""
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from the culture_compliance directory first, then fallback to backend/
+load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# ── AWS Bedrock ──────────────────────────────────────────────────────────────
+AWS_REGION_LLM = os.environ.get("AWS_REGION_LLM", "ap-southeast-1")
+AWS_REGION_EMBED = os.environ.get("AWS_REGION_EMBED", "ap-southeast-1")
+EMBED_MODEL_ID = os.environ.get("EMBED_MODEL_ID", "global.cohere.embed-v4:0")
+EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "1024"))
+
+# ── Qdrant ────────────────────────────────────────────────────────────────────
+QDRANT_URL = os.environ.get("QDRANT_URL", "")
+QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "")
+QDRANT_COLLECTION_NAME = os.environ.get("QDRANT_COLLECTION_NAME", "mcmc-guidelines")
+# Updated default - expanded from 5 to 50 for comprehensive coverage
+QDRANT_TOP_K = int(os.environ.get("QDRANT_TOP_K", "50"))
+
+# New cultural collection config
+CULTURAL_COLLECTION_NAME = os.environ.get(
+    "CULTURAL_COLLECTION_NAME", "cultural-guidelines"
+)
+
+CULTURAL_COLLECTION_CONFIG = {
+    "collection_name": "cultural-guidelines",
+    "vector_size": 1024,
+    "distance": "Cosine",
+}
+
+# ── LLM (Amazon Nova Pro via Inference Profile) ─────────────────────────────
+LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "apac.amazon.nova-pro-v1:0")
+VISION_MODEL_ID = os.environ.get("VISION_MODEL_ID", "apac.amazon.nova-pro-v1:0")
+
+# ── S3 (for transcription temp files) ────────────────────────────────────────
+TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "langhub-transcribe-temp")
+
+# ── Video Understanding (TwelveLabs Pegasus) ─────────────────────────────────
+VIDEO_MODEL_ID = os.environ.get("VIDEO_MODEL_ID", "global.twelvelabs.pegasus-1-2-v1:0")
+
