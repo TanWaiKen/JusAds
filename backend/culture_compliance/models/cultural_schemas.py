@@ -83,3 +83,20 @@ class GuidelineEntry(BaseModel):
                 f"Invalid category '{v}'. Must be one of: {sorted(valid)}"
             )
         return v
+
+
+# --- Persona Narrative Entry Model ---
+
+
+class PersonaEntry(BaseModel):
+    """A cultural persona narrative for a specific market+ethnicity combination.
+
+    Represents a rich, descriptive narrative of the target viewer's cultural
+    sensitivities and expectations. Used by the single-model video compliance
+    pipeline where the persona is injected directly into the video model prompt.
+    """
+
+    market: str = Field(..., pattern="^(malaysia|singapore)$")
+    ethnicity: str = Field(..., pattern="^(malay|chinese|indian|all)$")
+    age_group: str = Field(..., pattern="^(all_ages|adults_only|children)$")
+    persona_text: str = Field(..., max_length=3000)

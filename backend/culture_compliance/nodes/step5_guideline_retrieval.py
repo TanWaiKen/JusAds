@@ -28,18 +28,77 @@ from qdrant_client.models import (
 
 from ..config import (
     CULTURAL_COLLECTION_NAME,
+    PERSONA_COLLECTION_NAME,
     QDRANT_API_KEY,
     QDRANT_TOP_K,
     QDRANT_URL,
 )
 from ..embeddings import embed_text
-from ..models.schemas import PipelineState
+from ..models.schemas import ContentType, PipelineState
 
 logger = logging.getLogger(__name__)
 
 # Top K guidelines to retrieve per collection before merging
 _TOP_K = QDRANT_TOP_K  # Default is 50 from config
 
+
+def _fetch_persona_by_metadata(
+    client: QdrantClient,
+    market: str,
+    ethnicity: str,
+    age_group: str,
+) -> Optional[str]:
+    """Fetch a persona narrative by exact metadata filter (no embedding needed).
+
+    Queries the cultural-personas collection with exact payload filters
+    for market, ethnicity, and age_group. Returns the first matching
+    persona_text or None if no match is found.
+
+    Args:
+        client: An active QdrantClient instance.
+        market: Target market (e.g., "malaysia").
+        ethnicity: Target ethnicity (e.g., "malay").
+        age_group: Target age group (e.g., "all_ages").
+
+    Returns:
+        The persona_text string if found, None otherwise.
+    """
+    try:
+        scroll_filter = Filter(
+            must=[
+                FieldCondition(key="market", match=MatchValue(value=market)),
+                FieldCondition(key="ethnicity", match=MatchValue(value=ethnicity)),
+                FieldCondition(key="age_group", match=MatchValue(value=age_group)),
+            ]
+        )
+
+        results, _ = client.scroll(
+            collection_name=PERSONA_COLLECTION_NAME,
+            scroll_filter=scroll_filter,
+            limit=1,
+            with_payload=True,
+        )
+
+        if results:
+            persona_text = results[0].payload.get("persona_text", "")
+            logger.info(
+                "Persona narrative retrieved for %s/%s/%s (%d chars)",
+                market, ethnicity, age_group, len(persona_text),
+            )
+            return persona_text
+
+        logger.warning(
+            "No persona narrative found for %s/%s/%s",
+            market, ethnicity, age_group,
+        )
+        return None
+
+    except Exception as e:
+        logger.warning(
+            "Persona retrieval failed for %s/%s/%s: %s",
+            market, ethnicity, age_group, str(e),
+        )
+        return None
 
 def _get_qdrant_client() -> QdrantClient:
     """Create a Qdrant client instance.
@@ -273,7 +332,17 @@ def guideline_retrieval(state: PipelineState) -> PipelineState:
         })
         return state
 
-    if not state.unified_content:
+    # For video v3 path, unified_content won't be set yet (video_processing
+    # runs after guideline_retrieval). Use a generic query for regulatory
+    # guideline retrieval in that case.
+    is_video_v3 = state.content_type == ContentType.VIDEO and not state.unified_content
+    if is_video_v3:
+        # Use a broad generic query that will match advertising/modesty rules
+        query_text = f"advertising content compliance {state.market.value} cultural norms modesty"
+        logger.info(
+            "Video v3 path: using generic query for regulatory retrieval"
+        )
+    elif not state.unified_content:
         state.errors.append({
             "node": "guideline_retrieval",
             "error_type": "validation",
@@ -283,6 +352,8 @@ def guideline_retrieval(state: PipelineState) -> PipelineState:
             ),
         })
         return state
+    else:
+        query_text = state.unified_content
 
     logger.info(
         "Retrieving guidelines from regulatory collection '%s' and cultural collection '%s'",
@@ -290,14 +361,11 @@ def guideline_retrieval(state: PipelineState) -> PipelineState:
         CULTURAL_COLLECTION_NAME,
     )
 
-    # Step 1: Embed the unified content using Cohere embed-v4 with search_query input type
-    # Content type determines what unified_content contains:
-    # - video: Pegasus_Description
-    # - image: vision + OCR combined description
-    # - text: raw text content
+    # Step 1: Embed the query text using Cohere embed-v4 with search_query input type
+    # For video v3: generic query; for text/image: state.unified_content
     try:
         query_vector = embed_text(
-            state.unified_content, input_type="search_query"
+            query_text, input_type="search_query"
         )
     except Exception as e:
         logger.error("Embedding failed: %s", str(e))
@@ -418,12 +486,34 @@ def guideline_retrieval(state: PipelineState) -> PipelineState:
     state.retrieved_guidelines = combined_str
     state.guideline_sources = guideline_sources
 
+    # Step 6: For video content, also fetch the persona narrative (v3 pipeline)
+    if state.content_type == ContentType.VIDEO:
+        market_value = state.market.value if hasattr(state.market, "value") else str(state.market)
+        persona = _fetch_persona_by_metadata(
+            client=client,
+            market=market_value,
+            ethnicity=state.target_ethnicity,
+            age_group=state.target_age_group,
+        )
+        if persona:
+            state.persona_narrative = persona
+        else:
+            state.warnings.append({
+                "step_name": "guideline_retrieval",
+                "description": (
+                    f"No persona narrative found for {market_value}/{state.target_ethnicity}/{state.target_age_group}. "
+                    "Video evaluation will proceed without persona context."
+                ),
+                "result_may_be_incomplete": True,
+            })
+
     logger.info(
         "Guideline retrieval complete: %d total guidelines stored "
-        "(regulatory: %d, cultural: %d)",
+        "(regulatory: %d, cultural: %d, persona: %s)",
         len(guideline_sources),
         sum(1 for s in guideline_sources if s["source"] == "regulatory"),
         sum(1 for s in guideline_sources if s["source"] == "cultural"),
+        "yes" if state.persona_narrative else "no",
     )
 
     return state

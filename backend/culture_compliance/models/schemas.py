@@ -253,6 +253,9 @@ class PipelineState(BaseModel):
     guideline_collection: Optional[str] = None
     guideline_sources: list[dict] = Field(default_factory=list)
 
+    # Persona narrative (v3 single-model video pipeline)
+    persona_narrative: Optional[str] = None
+
     # Evaluation
     raw_llm_output: Optional[dict] = None
 

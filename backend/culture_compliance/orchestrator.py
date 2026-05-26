@@ -153,12 +153,12 @@ def _with_retry(node_fn):
 
 # --- Routing Functions ---
 
-
 def _route_after_content_routing(state: PipelineState) -> str:
     """Determine the next node after content routing.
 
-    Routes to the appropriate content processing node based on content_type,
-    or to error_handler if errors occurred during routing.
+    Routes based on content_type:
+    - Video (v3): goes to market_resolution first (guidelines needed before video analysis)
+    - Text/Image: goes to their respective processing nodes
 
     Args:
         state: The current pipeline state.
@@ -175,13 +175,15 @@ def _route_after_content_routing(state: PipelineState) -> str:
     elif content_type == ContentType.IMAGE:
         return "image_processing"
     elif content_type == ContentType.VIDEO:
-        return "video_processing"
+        # v3: video goes to market_resolution first so guidelines/persona
+        # are available when video_processing runs
+        return "market_resolution"
     else:
         return "error_handler"
 
 
 def _route_after_processing(state: PipelineState) -> str:
-    """Determine the next node after content processing (text/image/video).
+    """Determine the next node after content processing (text/image only).
 
     Routes to market_resolution if processing succeeded, or to
     error_handler if errors occurred.
@@ -217,8 +219,9 @@ def _route_after_market_resolution(state: PipelineState) -> str:
 def _route_after_guideline_retrieval(state: PipelineState) -> str:
     """Determine the next node after guideline retrieval.
 
-    Routes to compliance_evaluation if retrieval succeeded, or to
-    error_handler if errors occurred.
+    Routes based on content type:
+    - Video: goes to video_processing (v3 single-model path)
+    - Text/Image: goes to compliance_evaluation (v2 path)
 
     Args:
         state: The current pipeline state.
@@ -228,11 +231,31 @@ def _route_after_guideline_retrieval(state: PipelineState) -> str:
     """
     if state.errors:
         return "error_handler"
+
+    if state.content_type == ContentType.VIDEO:
+        return "video_processing"
     return "compliance_evaluation"
 
 
+def _route_after_video_processing(state: PipelineState) -> str:
+    """Determine the next node after video processing.
+
+    In v3, video_processing produces the final compliance JSON directly,
+    so it routes straight to result_formatting (skipping step6).
+
+    Args:
+        state: The current pipeline state.
+
+    Returns:
+        The name of the next node to execute.
+    """
+    if state.errors:
+        return "error_handler"
+    return "result_formatting"
+
+
 def _route_after_compliance_evaluation(state: PipelineState) -> str:
-    """Determine the next node after compliance evaluation.
+    """Determine the next node after compliance evaluation (text/image only).
 
     Routes to result_formatting if evaluation succeeded, or to
     error_handler if errors occurred.
@@ -254,19 +277,13 @@ def _route_after_compliance_evaluation(state: PipelineState) -> str:
 def create_pipeline() -> Any:
     """Build and compile the LangGraph pipeline.
 
-    Constructs a StateGraph with the following nodes:
-    - content_routing: Validates content type and sets routing decision
-    - text_processing: Validates and prepares text content
-    - image_processing: Decodes, validates, and analyzes image content
-    - video_processing: Extracts frames, transcribes audio, analyzes video
-    - market_resolution: Resolves market and sets guideline collection
-    - guideline_retrieval: Retrieves relevant guidelines from Qdrant
-    - compliance_evaluation: Invokes LLM for compliance scoring
-    - result_formatting: Parses LLM output into ComplianceResult
-    - error_handler: Captures errors and produces partial results
-
-    Conditional edges route content based on content_type after routing,
-    and check for errors after each processing step.
+    Pipeline flow:
+    - Video (v3): content_routing → market_resolution → guideline_retrieval
+      → video_processing → result_formatting
+    - Text: content_routing → text_processing → market_resolution
+      → guideline_retrieval → compliance_evaluation → result_formatting
+    - Image: content_routing → image_processing → market_resolution
+      → guideline_retrieval → compliance_evaluation → result_formatting
 
     Retry logic with exponential backoff is applied to guideline_retrieval
     and compliance_evaluation nodes for transient errors.
@@ -293,19 +310,19 @@ def create_pipeline() -> Any:
 
     # --- Add Conditional Edges ---
 
-    # After content_routing: route to text/image/video processing or error
+    # After content_routing: video → market_resolution; text/image → processing
     graph.add_conditional_edges(
         "content_routing",
         _route_after_content_routing,
         {
             "text_processing": "text_processing",
             "image_processing": "image_processing",
-            "video_processing": "video_processing",
+            "market_resolution": "market_resolution",
             "error_handler": "error_handler",
         },
     )
 
-    # After text/image/video processing: route to market_resolution or error
+    # After text/image processing: route to market_resolution or error
     graph.add_conditional_edges(
         "text_processing",
         _route_after_processing,
@@ -316,14 +333,6 @@ def create_pipeline() -> Any:
     )
     graph.add_conditional_edges(
         "image_processing",
-        _route_after_processing,
-        {
-            "market_resolution": "market_resolution",
-            "error_handler": "error_handler",
-        },
-    )
-    graph.add_conditional_edges(
-        "video_processing",
         _route_after_processing,
         {
             "market_resolution": "market_resolution",
@@ -341,17 +350,28 @@ def create_pipeline() -> Any:
         },
     )
 
-    # After guideline_retrieval: route to compliance_evaluation or error
+    # After guideline_retrieval: video → video_processing; text/image → compliance_evaluation
     graph.add_conditional_edges(
         "guideline_retrieval",
         _route_after_guideline_retrieval,
         {
+            "video_processing": "video_processing",
             "compliance_evaluation": "compliance_evaluation",
             "error_handler": "error_handler",
         },
     )
 
-    # After compliance_evaluation: route to result_formatting or error
+    # After video_processing: route directly to result_formatting (skip step6)
+    graph.add_conditional_edges(
+        "video_processing",
+        _route_after_video_processing,
+        {
+            "result_formatting": "result_formatting",
+            "error_handler": "error_handler",
+        },
+    )
+
+    # After compliance_evaluation (text/image only): route to result_formatting
     graph.add_conditional_edges(
         "compliance_evaluation",
         _route_after_compliance_evaluation,

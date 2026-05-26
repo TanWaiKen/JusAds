@@ -238,14 +238,14 @@ class TestGuidelineEntryTextLengthConstraint:
     @given(
         text=st.text(
             alphabet=st.characters(categories=("L", "N", "P", "Z", "S")),
-            min_size=501,
-            max_size=2000,
+            min_size=1001,
+            max_size=3000,
         )
     )
     @settings(max_examples=100, deadline=5000)
-    def test_text_longer_than_500_raises_validation_error(self, text: str):
-        """Any string with length > 500 raises ValidationError for guideline_text."""
-        assume(len(text) > 500)
+    def test_text_longer_than_1000_raises_validation_error(self, text: str):
+        """Any string with length > 1000 raises ValidationError for guideline_text."""
+        assume(len(text) > 1000)
 
         with pytest.raises(ValidationError) as exc_info:
             GuidelineEntry(**_valid_entry_kwargs(text))
@@ -260,17 +260,17 @@ class TestGuidelineEntryTextLengthConstraint:
         text=st.text(
             alphabet=st.characters(categories=("L", "N", "P", "Z", "S")),
             min_size=1,
-            max_size=500,
+            max_size=1000,
         )
     )
     @settings(max_examples=100, deadline=5000)
-    def test_text_between_1_and_500_chars_is_accepted(self, text: str):
-        """Any string with length 1-500 (inclusive) is accepted as valid guideline_text."""
-        assume(1 <= len(text) <= 500)
+    def test_text_between_1_and_1000_chars_is_accepted(self, text: str):
+        """Any string with length 1-1000 (inclusive) is accepted as valid guideline_text."""
+        assume(1 <= len(text) <= 1000)
 
         entry = GuidelineEntry(**_valid_entry_kwargs(text))
         assert entry.guideline_text == text
-        assert len(entry.guideline_text) <= 500
+        assert len(entry.guideline_text) <= 1000
 
 
 # Feature: cultural-guidelines-v2, Property 11: CSV Ingestion Valid Row Round-Trip
@@ -923,6 +923,8 @@ class TestGuidelineSourceLabelingInPrompt:
         """
         # Ensure no overlap between reg and cult texts to avoid ambiguity
         assume(not set(reg_texts) & set(cult_texts))
+        assume(not any(r in c for r in reg_texts for c in cult_texts))
+        assume(not any(c in r for r in reg_texts for c in cult_texts))
 
         regulatory_guidelines = "\n".join(reg_texts)
         cultural_guidelines = "\n".join(cult_texts)

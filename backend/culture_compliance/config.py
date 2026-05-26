@@ -38,6 +38,17 @@ CULTURAL_COLLECTION_CONFIG = {
     "distance": "Cosine",
 }
 
+# ── Persona Collection ────────────────────────────────────────────────────────
+PERSONA_COLLECTION_NAME = os.environ.get(
+    "PERSONA_COLLECTION_NAME", "cultural-personas"
+)
+
+PERSONA_COLLECTION_CONFIG = {
+    "collection_name": "cultural-personas",
+    "vector_size": 1024,
+    "distance": "Cosine",
+}
+
 # ── LLM (Amazon Nova Pro via Inference Profile) ─────────────────────────────
 LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "apac.amazon.nova-pro-v1:0")
 VISION_MODEL_ID = os.environ.get("VISION_MODEL_ID", "apac.amazon.nova-pro-v1:0")
@@ -47,4 +58,12 @@ TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "langhub-transcrib
 
 # ── Video Understanding (TwelveLabs Pegasus) ─────────────────────────────────
 VIDEO_MODEL_ID = os.environ.get("VIDEO_MODEL_ID", "global.twelvelabs.pegasus-1-2-v1:0")
+
+# ── Video Compliance Model (single-model pipeline v3) ────────────────────────
+# Which model to use for direct video compliance evaluation.
+# Options: "pegasus" (TwelveLabs Pegasus via Bedrock) or "claude" (Claude via Bedrock Converse)
+VIDEO_COMPLIANCE_MODEL = os.environ.get("VIDEO_COMPLIANCE_MODEL", "claude")
+CLAUDE_VIDEO_MODEL_ID = os.environ.get(
+    "CLAUDE_VIDEO_MODEL_ID", "apac.anthropic.claude-sonnet-4-20250514-v1:0"
+)
 

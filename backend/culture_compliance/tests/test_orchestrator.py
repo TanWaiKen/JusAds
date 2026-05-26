@@ -172,7 +172,7 @@ class TestConditionalRouting:
         assert result == "image_processing"
 
     def test_route_video_content_to_video_processing(self):
-        """Video content should route to video_processing node."""
+        """Video content should route to market_resolution node in v3 pipeline."""
         state = _make_state(
             content_type=ContentType.VIDEO,
             submission=ContentSubmission(
@@ -182,7 +182,7 @@ class TestConditionalRouting:
             ),
         )
         result = _route_after_content_routing(state)
-        assert result == "video_processing"
+        assert result == "market_resolution"
 
     def test_route_to_error_handler_when_errors_present(self):
         """Should route to error_handler when state has errors."""
