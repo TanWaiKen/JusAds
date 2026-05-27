@@ -1,22 +1,9 @@
-"""OCR text extraction service using Amazon Nova Pro.
-
-Uses Amazon Nova Pro's vision capabilities via the Bedrock Converse API
-to extract all visible text from images, including overlays, signage,
-captions, watermarks, and labels.
-"""
+"""OCR text extraction service using Gemini."""
 
 import logging
-
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
-
-from ..config import AWS_REGION_LLM, VISION_MODEL_ID
+from ..gemini_client import analyze_image as gemini_analyze_image
 
 logger = logging.getLogger(__name__)
-
-# Model configuration
-_MODEL_ID = VISION_MODEL_ID
 
 # OCR-specific prompt designed to extract ALL visible text
 _OCR_PROMPT = (
@@ -36,33 +23,9 @@ _OCR_PROMPT = (
     "If no text is visible in the image, return an empty response."
 )
 
-# Boto3 client configuration with retry logic
-_client_config = Config(
-    retries={
-        "max_attempts": 3,
-        "mode": "adaptive",
-    }
-)
-
-
-def _get_bedrock_client():
-    """Create a bedrock-runtime client.
-
-    Separated for testability.
-    """
-    return boto3.client(
-        "bedrock-runtime",
-        region_name=AWS_REGION_LLM,
-        config=_client_config,
-    )
-
 
 def extract_text_from_image(image_bytes: bytes) -> str:
-    """Extract all visible text from an image using Amazon Nova Pro.
-
-    Uses the Bedrock Converse API to send the image to Amazon Nova Pro
-    with an OCR-specific prompt that requests extraction of all visible
-    text including overlays, signage, captions, watermarks, and labels.
+    """Extract all visible text from an image using Gemini.
 
     Args:
         image_bytes: Raw image file bytes (JPEG, PNG, or WebP).
@@ -70,68 +33,28 @@ def extract_text_from_image(image_bytes: bytes) -> str:
     Returns:
         Extracted text as a string. Returns empty string if no text is
         found or if OCR processing fails.
-
-    Raises:
-        No exceptions are raised to the caller. All errors are handled
-        gracefully with logging and an empty string return.
     """
     if not image_bytes:
         logger.warning("OCR called with empty image bytes")
         return ""
 
     try:
-        client = _get_bedrock_client()
-
         # Determine image format from bytes (magic bytes)
         media_type = _detect_media_type(image_bytes)
+        mime_type = f"image/{media_type}"
 
-        response = client.converse(
-            modelId=_MODEL_ID,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "image": {
-                                "format": media_type,
-                                "source": {
-                                    "bytes": image_bytes,
-                                },
-                            },
-                        },
-                        {
-                            "text": _OCR_PROMPT,
-                        },
-                    ],
-                }
-            ],
-            inferenceConfig={
-                "maxTokens": 2048,
-                "temperature": 0.0,
-                "topP": 1.0,
-            },
+        extracted_text = gemini_analyze_image(
+            image_bytes=image_bytes,
+            prompt=_OCR_PROMPT,
+            mime_type=mime_type,
         )
 
-        # Extract text from response
-        extracted_text = response["output"]["message"]["content"][0]["text"]
-
         logger.info(
-            "OCR extraction completed: %d characters extracted",
+            "OCR extraction completed using Gemini: %d characters extracted",
             len(extracted_text),
         )
         return extracted_text.strip()
 
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        logger.error(
-            "Bedrock API error during OCR extraction: %s - %s",
-            error_code,
-            str(e),
-        )
-        return ""
-    except (KeyError, IndexError) as e:
-        logger.error("Unexpected response structure from Bedrock: %s", str(e))
-        return ""
     except Exception as e:
         logger.error("Unexpected error during OCR extraction: %s", str(e))
         return ""
@@ -144,7 +67,7 @@ def _detect_media_type(image_bytes: bytes) -> str:
         image_bytes: Raw image file bytes.
 
     Returns:
-        Media type string suitable for the Bedrock Converse API
+        Media type string suitable for the Gemini API
         ('jpeg', 'png', or 'webp'). Defaults to 'jpeg' if format
         cannot be determined.
     """
@@ -158,3 +81,4 @@ def _detect_media_type(image_bytes: bytes) -> str:
         # Default to JPEG if format cannot be determined
         logger.warning("Could not detect image format, defaulting to JPEG")
         return "jpeg"
+

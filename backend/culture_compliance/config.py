@@ -14,11 +14,11 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-# ── AWS Bedrock ──────────────────────────────────────────────────────────────
+# ── AWS Bedrock (Kept legacy env variables for fallback/history, default to Gemini) ──
 AWS_REGION_LLM = os.environ.get("AWS_REGION_LLM", "ap-southeast-1")
 AWS_REGION_EMBED = os.environ.get("AWS_REGION_EMBED", "ap-southeast-1")
-EMBED_MODEL_ID = os.environ.get("EMBED_MODEL_ID", "global.cohere.embed-v4:0")
-EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "1024"))
+EMBED_MODEL_ID = os.environ.get("EMBED_MODEL_ID", "text-embedding-004")
+EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "768"))
 
 # ── Qdrant ────────────────────────────────────────────────────────────────────
 QDRANT_URL = os.environ.get("QDRANT_URL", "")
@@ -34,7 +34,7 @@ CULTURAL_COLLECTION_NAME = os.environ.get(
 
 CULTURAL_COLLECTION_CONFIG = {
     "collection_name": "cultural-guidelines",
-    "vector_size": 1024,
+    "vector_size": 768,
     "distance": "Cosine",
 }
 
@@ -45,25 +45,25 @@ PERSONA_COLLECTION_NAME = os.environ.get(
 
 PERSONA_COLLECTION_CONFIG = {
     "collection_name": "cultural-personas",
-    "vector_size": 1024,
+    "vector_size": 768,
     "distance": "Cosine",
 }
 
-# ── LLM (Amazon Nova Pro via Inference Profile) ─────────────────────────────
-LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "apac.amazon.nova-pro-v1:0")
-VISION_MODEL_ID = os.environ.get("VISION_MODEL_ID", "apac.amazon.nova-pro-v1:0")
+# ── Gemini Models ─────────────────────────────────────────────────────────────
+LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "gemini-2.5-flash")
+VISION_MODEL_ID = os.environ.get("VISION_MODEL_ID", "gemini-2.5-flash")
 
-# ── S3 (for transcription temp files) ────────────────────────────────────────
+# ── S3 (legacy, unused in Gemini) ──────────────────────────────────────────
 TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "langhub-transcribe-temp")
 
-# ── Video Understanding (TwelveLabs Pegasus) ─────────────────────────────────
-VIDEO_MODEL_ID = os.environ.get("VIDEO_MODEL_ID", "global.twelvelabs.pegasus-1-2-v1:0")
+# ── Video Understanding ──────────────────────────────────────────────────────
+VIDEO_MODEL_ID = os.environ.get("VIDEO_MODEL_ID", "gemini-2.5-flash")
 
 # ── Video Compliance Model (single-model pipeline v3) ────────────────────────
 # Which model to use for direct video compliance evaluation.
-# Options: "pegasus" (TwelveLabs Pegasus via Bedrock) or "claude" (Claude via Bedrock Converse)
-VIDEO_COMPLIANCE_MODEL = os.environ.get("VIDEO_COMPLIANCE_MODEL", "claude")
+# Options: "gemini" (Google Gemini File API)
+VIDEO_COMPLIANCE_MODEL = os.environ.get("VIDEO_COMPLIANCE_MODEL", "gemini")
 CLAUDE_VIDEO_MODEL_ID = os.environ.get(
-    "CLAUDE_VIDEO_MODEL_ID", "apac.anthropic.claude-sonnet-4-20250514-v1:0"
+    "CLAUDE_VIDEO_MODEL_ID", "gemini-2.5-flash"
 )
 

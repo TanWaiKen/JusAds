@@ -1,6 +1,6 @@
 """Step 6: Compliance evaluation node for the content compliance pipeline.
 
-Invokes AWS Bedrock LLM with unified content and retrieved guidelines to
+Invokes Google Gemini LLM with unified content and retrieved guidelines to
 produce a structured compliance evaluation. Constructs a market-specific
 prompt requesting JSON output with risk level, score, high_risk_indicators
 (with localization), explanation, and suggestion.
@@ -12,36 +12,13 @@ import re
 import time
 from typing import Optional
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
-
-from ..config import AWS_REGION_LLM, LLM_MODEL_ID
+from ..config import LLM_MODEL_ID
 from ..models.schemas import Market, PipelineState
 from ..scoring import get_scoring_config
+from ..gemini_client import generate_text
 
 logger = logging.getLogger(__name__)
 
-# Bedrock client configuration with adaptive retries
-_bedrock_config = Config(
-    retries={
-        "max_attempts": 3,
-        "mode": "adaptive",
-    }
-)
-
-
-def _get_bedrock_client():
-    """Create a Bedrock Runtime client.
-
-    Returns:
-        A boto3 bedrock-runtime client configured for the LLM region.
-    """
-    return boto3.client(
-        "bedrock-runtime",
-        region_name=AWS_REGION_LLM,
-        config=_bedrock_config,
-    )
 
 
 def _parse_llm_json(raw: str) -> Optional[dict]:
@@ -351,48 +328,35 @@ def compliance_evaluation(state: PipelineState) -> PipelineState:
     model_id = LLM_MODEL_ID
 
     logger.info(
-        "Invoking Bedrock LLM model '%s' for compliance evaluation", model_id
+        "Invoking Gemini LLM model '%s' for compliance evaluation", model_id
     )
 
-    # Invoke Bedrock LLM and track response time
+    # Invoke Gemini LLM and track response time
     start_time_ms = time.time() * 1000
 
     try:
-        client = _get_bedrock_client()
-        response = client.converse(
-            modelId=model_id,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [{"text": prompt}],
-                }
-            ],
-            inferenceConfig={
-                "maxTokens": 4096,
-                "temperature": 0.0,
-                "topP": 1.0,
-            },
+        raw_text = generate_text(
+            prompt=prompt,
+            model=model_id,
+            json_mode=True,
         )
 
         # Calculate response time
         end_time_ms = time.time() * 1000
         response_time_ms = int(end_time_ms - start_time_ms)
 
-        # Extract text from response
-        raw_text = response["output"]["message"]["content"][0]["text"]
-
         logger.info(
-            "Bedrock LLM '%s' responded in %d ms",
+            "Gemini LLM '%s' responded in %d ms",
             model_id,
             response_time_ms,
         )
 
-    except (ClientError, KeyError, IndexError, Exception) as e:
+    except Exception as e:
         end_time_ms = time.time() * 1000
         response_time_ms = int(end_time_ms - start_time_ms)
 
         logger.error(
-            "Bedrock LLM invocation failed after %d ms: %s",
+            "Gemini LLM invocation failed after %d ms: %s",
             response_time_ms,
             str(e),
         )

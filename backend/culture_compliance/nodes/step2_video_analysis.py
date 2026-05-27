@@ -2,14 +2,11 @@
 
 Validates video format, size, and duration, then either:
 - v3 path: If persona_narrative is set, sends video + compliance prompt
-  directly to a single multimodal model (Pegasus/Claude) and produces
+  directly to Gemini multimodal model (gemini-2.5-flash) and produces
   the final compliance JSON in one step.
-- v2 fallback: Sends video to Pegasus for a universal visual audit.
-
-Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.10
+- v2 fallback: Sends video to Gemini for a universal visual audit.
 """
 
-import base64
 import json
 import logging
 import os
@@ -17,21 +14,16 @@ import re
 import subprocess
 from typing import Optional
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
-
-from culture_compliance.config import AWS_REGION_LLM, CLAUDE_VIDEO_MODEL_ID, VIDEO_COMPLIANCE_MODEL, VIDEO_MODEL_ID
+from culture_compliance.config import VIDEO_COMPLIANCE_MODEL, VIDEO_MODEL_ID, CLAUDE_VIDEO_MODEL_ID
 from culture_compliance.models.schemas import Market, PipelineState
 from culture_compliance.scoring import get_scoring_config
-from culture_compliance.services.video_model import analyze_video_for_compliance
+from culture_compliance.gemini_client import analyze_video as gemini_analyze_video
 
 logger = logging.getLogger(__name__)
 
 # Constraints
 MAX_VIDEO_SIZE_BYTES = 104_857_600  # 100 MB
 MAX_DURATION_SECONDS = 300  # 5 minutes
-MAX_BASE64_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB for Pegasus base64 input
 
 # Supported video formats by extension
 SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".webm"}
@@ -39,59 +31,6 @@ SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".webm"}
 # Magic bytes for video format detection
 _MP4_FTYP_MARKER = b"ftyp"
 _WEBM_MAGIC = b"\x1a\x45\xdf\xa3"  # EBML header (Matroska/WebM)
-
-# Boto3 client configuration
-_bedrock_config = Config(
-    retries={"max_attempts": 3, "mode": "adaptive"},
-    read_timeout=300,
-)
-
-
-def _get_bedrock_client():
-    """Create a Bedrock Runtime client for Pegasus invocation."""
-    return boto3.client(
-        "bedrock-runtime",
-        region_name=AWS_REGION_LLM,
-        config=_bedrock_config,
-    )
-
-
-def _merge_chronologically(
-    frame_descriptions: list[dict], transcript_segments: list[dict]
-) -> str:
-    """Merge frame descriptions and transcript segments in chronological order.
-
-    Args:
-        frame_descriptions: List of dicts with 'timestamp' (float) and 'description' (str).
-        transcript_segments: List of dicts with 'start_time' (float), 'end_time' (float), and 'text' (str).
-
-    Returns:
-        A newline-separated string with entries formatted as [MM:SS] [Visual|Audio] description,
-        ordered by timestamp. Returns empty string if both inputs are empty.
-    """
-    if not frame_descriptions and not transcript_segments:
-        return ""
-
-    entries: list[tuple[float, str]] = []
-
-    for frame in frame_descriptions:
-        ts = frame.get("timestamp", 0.0)
-        desc = frame.get("description", "")
-        minutes = int(ts) // 60
-        seconds = int(ts) % 60
-        entries.append((ts, f"[{minutes:02d}:{seconds:02d}] [Visual] {desc}"))
-
-    for segment in transcript_segments:
-        ts = segment.get("start_time", 0.0)
-        text = segment.get("text", "")
-        minutes = int(ts) // 60
-        seconds = int(ts) % 60
-        entries.append((ts, f"[{minutes:02d}:{seconds:02d}] [Audio] {text}"))
-
-    # Sort by timestamp (stable sort preserves insertion order for equal timestamps)
-    entries.sort(key=lambda x: x[0])
-
-    return "\n".join(entry[1] for entry in entries)
 
 
 def _detect_video_format_by_extension(video_path: str) -> Optional[str]:
@@ -140,64 +79,14 @@ def _get_video_duration(video_path: str) -> Optional[float]:
         return None
 
 
-def _analyze_video_with_pegasus(video_path: str, prompt: str) -> str:
-    """Analyze a video using TwelveLabs Pegasus via Bedrock InvokeModel.
-
-    Reads the video file, base64-encodes it, and sends to Pegasus for
-    whole-video understanding in a single API call.
-
-    Args:
-        video_path: Path to the video file.
-        prompt: The analysis prompt to send to Pegasus.
-
-    Returns:
-        The model's text response describing the video content.
-
-    Raises:
-        Exception: If the API call fails.
-    """
-    # Read and base64-encode the video
-    with open(video_path, "rb") as f:
-        video_bytes = f.read()
-
-    if len(video_bytes) > MAX_BASE64_SIZE_BYTES:
-        raise ValueError(
-            f"Video file too large for Pegasus base64 input "
-            f"({len(video_bytes)} bytes, max {MAX_BASE64_SIZE_BYTES})"
-        )
-
-    video_b64 = base64.b64encode(video_bytes).decode("utf-8")
-
-    # Build Pegasus request body
-    request_body = {
-        "inputPrompt": prompt,
-        "mediaSource": {
-            "base64String": video_b64,
-        },
-        "temperature": 0,
-        "maxOutputTokens": 4096,
-    }
-
-    client = _get_bedrock_client()
-    response = client.invoke_model(
-        modelId=VIDEO_MODEL_ID,
-        body=json.dumps(request_body),
-        contentType="application/json",
-        accept="application/json",
-    )
-
-    response_body = json.loads(response["body"].read())
-    return response_body.get("message", "")
-
-
 def video_processing(state: PipelineState) -> PipelineState:
-    """Analyze video using TwelveLabs Pegasus for whole-video understanding.
+    """Analyze video using Gemini for whole-video understanding.
 
     Performs the following steps:
     1. Validate video file exists
     2. Validate format (MP4/MOV/WebM)
     3. Validate size (≤100 MB) and duration (≤5 minutes)
-    4. Send entire video to Pegasus for comprehensive analysis
+    4. Send entire video to Gemini for comprehensive analysis
     5. Set unified_content in state with the analysis result
 
     Args:
@@ -271,10 +160,10 @@ def video_processing(state: PipelineState) -> PipelineState:
 
 
 def _video_audit_v2(state: PipelineState, video_path: str, file_size: int) -> PipelineState:
-    """v2 path: Universal visual audit using Pegasus.
+    """v2 path: Universal visual audit using Gemini.
 
-    Sends the video to Pegasus with a generic audit prompt. The text output
-    is stored in unified_content for downstream evaluation by Nova-Pro (step6).
+    Sends the video to Gemini with a generic audit prompt. The text output
+    is stored in unified_content for downstream evaluation by Gemini (step6).
     """
     prompt = (
         "Analyze this video and provide a structured visual audit. Do not evaluate if the content is legal or illegal. "
@@ -288,26 +177,17 @@ def _video_audit_v2(state: PipelineState, video_path: str, file_size: int) -> Pi
         "- Gestures & Text (Specific hand signs, numbers, or prominent text, and provide timestamps)"
     )
 
-    logger.info("[v2] Analyzing video with Pegasus: %s (%.2f MB)", video_path, file_size / (1024 * 1024))
+    logger.info("[v2] Analyzing video with Gemini: %s (%.2f MB)", video_path, file_size / (1024 * 1024))
 
     try:
-        analysis = _analyze_video_with_pegasus(video_path, prompt)
+        analysis = gemini_analyze_video(video_path, prompt, model=VIDEO_MODEL_ID, json_mode=False)
         state.models_used.append(VIDEO_MODEL_ID)
-        logger.info("[v2] Pegasus analysis completed: %d characters", len(analysis))
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        logger.error("Pegasus API error: %s - %s", error_code, str(e))
-        state.errors.append({
-            "error_type": "service_unavailable",
-            "message": f"Video analysis model unavailable: {error_code}",
-            "details": {"model": VIDEO_MODEL_ID},
-        })
-        return state
+        logger.info("[v2] Gemini video audit analysis completed: %d characters", len(analysis))
     except Exception as e:
-        logger.error("Video analysis failed: %s", str(e))
+        logger.error("Gemini video audit analysis failed: %s", str(e))
         state.errors.append({
             "error_type": "service_unavailable",
-            "message": f"Video analysis failed: {str(e)}",
+            "message": f"Gemini video analysis failed: {str(e)}",
             "details": {"model": VIDEO_MODEL_ID},
         })
         return state
@@ -315,7 +195,7 @@ def _video_audit_v2(state: PipelineState, video_path: str, file_size: int) -> Pi
     if not analysis:
         state.warnings.append({
             "step_name": "video_analysis",
-            "description": "Pegasus returned empty analysis",
+            "description": "Gemini returned empty analysis",
             "result_may_be_incomplete": True,
         })
         state.unified_content = "[Video] No analyzable content could be extracted."
@@ -333,22 +213,7 @@ def _build_compliance_prompt(
     ethnicity: str,
     age_group: str,
 ) -> str:
-    """Build the single-model compliance evaluation prompt.
-
-    Combines the persona narrative, regulatory guidelines, and scoring
-    instructions into a prompt that asks the video model to directly
-    output the compliance JSON.
-
-    Args:
-        persona_narrative: The cultural persona narrative text.
-        regulatory_guidelines: Formatted regulatory guidelines string.
-        market: Target market name.
-        ethnicity: Target ethnicity.
-        age_group: Target age group.
-
-    Returns:
-        The complete prompt string.
-    """
+    """Build the single-model compliance evaluation prompt."""
     try:
         market_enum = Market(market.lower())
     except (ValueError, AttributeError):
@@ -455,7 +320,7 @@ def _video_compliance_v3(state: PipelineState, video_path: str, file_size: int) 
     """v3 path: Single-model persona-driven compliance evaluation.
 
     Sends the video + compliance prompt (with persona narrative and regulatory
-    guidelines) directly to the configured video model (Pegasus or Claude).
+    guidelines) directly to Gemini (gemini-2.5-flash).
     The model watches the video and outputs the final compliance JSON.
     """
     market_value = state.market.value if hasattr(state.market, "value") else str(state.market)
@@ -479,22 +344,22 @@ def _video_compliance_v3(state: PipelineState, video_path: str, file_size: int) 
 
     logger.info(
         "[v3] Prompt length: %d chars. Model: %s",
-        len(prompt), VIDEO_COMPLIANCE_MODEL if VIDEO_COMPLIANCE_MODEL else "pegasus",
+        len(prompt), CLAUDE_VIDEO_MODEL_ID,
     )
 
     logger.info(
-        "[v3] Single-model compliance evaluation: %s (%.2f MB)",
+        "[v3] Single-model Gemini compliance evaluation: %s (%.2f MB)",
         video_path, file_size / (1024 * 1024),
     )
 
     try:
-        raw_response = analyze_video_for_compliance(video_path, prompt)
-        logger.info("[v3] Model response: %d characters", len(raw_response))
+        raw_response = gemini_analyze_video(video_path, prompt, model=CLAUDE_VIDEO_MODEL_ID, json_mode=True)
+        logger.info("[v3] Gemini response: %d characters", len(raw_response))
     except Exception as e:
-        logger.error("[v3] Video compliance model failed: %s", str(e))
+        logger.error("[v3] Gemini video compliance model failed: %s", str(e))
         state.errors.append({
             "error_type": "service_unavailable",
-            "message": f"Video compliance model failed: {str(e)}",
+            "message": f"Gemini video compliance model failed: {str(e)}",
             "details": {},
         })
         return state
@@ -502,26 +367,26 @@ def _video_compliance_v3(state: PipelineState, video_path: str, file_size: int) 
     # Parse JSON response
     parsed = _parse_llm_json(raw_response)
     if parsed is None:
-        logger.error("[v3] Failed to parse model response as JSON: %s", raw_response[:300])
+        logger.error("[v3] Failed to parse Gemini response as JSON: %s", raw_response[:300])
         state.errors.append({
             "error_type": "parse_error",
-            "message": "Video compliance model returned unparseable response.",
+            "message": "Gemini video compliance model returned unparseable response.",
             "details": {"raw_preview": raw_response[:200]},
         })
         return state
 
     # Store results — same fields step6 would populate
     state.raw_llm_output = parsed
-    state.unified_content = f"[Video compliance evaluated directly by video model]"
+    state.unified_content = f"[Video compliance evaluated directly by Gemini video model]"
 
     # Track which model was used
-    model_id = CLAUDE_VIDEO_MODEL_ID if VIDEO_COMPLIANCE_MODEL == "claude" else VIDEO_MODEL_ID
-    if model_id not in state.models_used:
-        state.models_used.append(model_id)
+    if CLAUDE_VIDEO_MODEL_ID not in state.models_used:
+        state.models_used.append(CLAUDE_VIDEO_MODEL_ID)
 
     logger.info(
-        "[v3] Video compliance complete: risk_level=%s, score=%s",
+        "[v3] Gemini video compliance complete: risk_level=%s, score=%s",
         parsed.get("risk_level", "unknown"),
         parsed.get("score", "unknown"),
     )
     return state
+
