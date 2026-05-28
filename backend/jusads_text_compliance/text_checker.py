@@ -122,7 +122,7 @@ class TextComplianceChecker:
             "age_group": age_group,
             "risk_level": evaluation.get("risk_level", "Unknown"),
             "score": evaluation.get("score", 0),
-            "violations": evaluation.get("violations", []),
+            "high_risk_indicators": evaluation.get("high_risk_indicators", []),
             "explanation": evaluation.get("explanation", ""),
             "suggestion": evaluation.get("suggestion", ""),
             "persona_used": persona_text if persona_text else "No specific persona (ethnicity: all)",
@@ -175,13 +175,19 @@ class TextComplianceChecker:
         )
 
         try:
+            # Enforce JSON output at the API level
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
+            
             response = client.models.generate_content(
                 model=LLM_MODEL_ID,
                 contents=prompt,
+                config=config,
             )
             result_text = response.text
 
-            # Parse the LLM response (expecting structured format)
+            # Parse the LLM response
             evaluation = self._parse_llm_response(result_text)
             return evaluation
 
@@ -190,7 +196,7 @@ class TextComplianceChecker:
             return {
                 "risk_level": "Unknown",
                 "score": 0,
-                "violations": [],
+                "high_risk_indicators": [],
                 "explanation": f"LLM evaluation error: {str(e)}",
                 "suggestion": "Please retry or contact support.",
             }
@@ -247,17 +253,15 @@ class TextComplianceChecker:
 
 Evaluate the advertisement text against ALL the regulatory guidelines and cultural guidelines listed above. Consider the target audience persona if provided.
 
-**Output Format (JSON-like structure):**
-
-Risk Level: [Low/Medium/High]
-Score: [0-100, where 100 = fully compliant]
-
-Violations:
-- [Category] (Severity: [Severe/Moderate/Minor], Source: [regulatory/cultural]): Brief description of the violation and which specific phrase or concept violates which guideline.
-
-Explanation: A 2-3 sentence summary of the overall compliance status.
-
-Suggestion: Concrete recommendation to fix the violations (if any).
+**Output Format:**
+Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with these exact fields:
+{{
+  "risk_level": "High" | "Medium" | "Low",
+  "score": integer 0-100,
+  "high_risk_indicators": [{{"description": "category, severity, and explanation of violation"}}],
+  "explanation": "concise reasoning (max 500 characters)",
+  "suggestion": "clear, actionable advice (max 400 characters)"
+}}
 
 **Scoring Logic:**
 - Start at 100
@@ -271,10 +275,9 @@ Suggestion: Concrete recommendation to fix the violations (if any).
 - Risk Level: Low (75-100), Medium (40-74), High (0-39)
 
 **Important:**
-- Only flag violations that are CLEARLY present in the ad text
-- Quote the specific phrase or word that violates the guideline
-- Be precise and avoid false positives
-- If no violations are found, state "No violations detected"
+- Return ONLY valid JSON.
+- If no issues are found, return score 100, risk_level "Low", and empty high_risk_indicators array.
+- Limit high_risk_indicators to maximum 10 items, ranked by severity (most severe first).
 """
 
         return prompt
@@ -283,79 +286,33 @@ Suggestion: Concrete recommendation to fix the violations (if any).
         """Parse the LLM response into structured evaluation dict.
 
         Args:
-            response_text: Raw text response from Gemini.
+            response_text: Raw text response from Gemini (JSON).
 
         Returns:
-            Evaluation dict with risk_level, score, violations, explanation.
+            Evaluation dict with risk_level, score, high_risk_indicators, explanation.
         """
-        # Simple text parsing (assuming LLM follows the format)
-        lines = response_text.strip().split("\n")
-
-        result = {
-            "risk_level": "Unknown",
-            "score": 0,
-            "violations": [],
-            "explanation": "",
-            "suggestion": "",
-        }
-
-        current_section = None
-        violation_buffer = []
-
-        for line in lines:
-            line = line.strip()
-
-            # Extract Risk Level
-            if line.lower().startswith("risk level:"):
-                risk = line.split(":", 1)[1].strip()
-                result["risk_level"] = risk
-
-            # Extract Score
-            elif line.lower().startswith("score:"):
-                score_text = line.split(":", 1)[1].strip()
-                try:
-                    result["score"] = int(score_text.split()[0])
-                except (ValueError, IndexError):
-                    result["score"] = 0
-
-            # Section markers
-            elif line.lower().startswith("violations:"):
-                current_section = "violations"
-            elif line.lower().startswith("explanation:"):
-                current_section = "explanation"
-                explanation_text = line.split(":", 1)[1].strip()
-                if explanation_text:
-                    result["explanation"] = explanation_text
-            elif line.lower().startswith("suggestion:"):
-                current_section = "suggestion"
-                suggestion_text = line.split(":", 1)[1].strip()
-                if suggestion_text:
-                    result["suggestion"] = suggestion_text
-
-            # Content lines
-            elif current_section == "violations" and line.startswith("-"):
-                violation_buffer.append(line[1:].strip())
-            elif current_section == "explanation" and line:
-                if result["explanation"]:
-                    result["explanation"] += " " + line
-                else:
-                    result["explanation"] = line
-            elif current_section == "suggestion" and line:
-                if result["suggestion"]:
-                    result["suggestion"] += " " + line
-                else:
-                    result["suggestion"] = line
-
-        # Process violations
-        result["violations"] = [{"description": v} for v in violation_buffer if v]
-
-        # Fallbacks
-        if not result["explanation"]:
-            result["explanation"] = "No explanation provided by LLM."
-        if not result["suggestion"]:
-            result["suggestion"] = "Review the ad against the guidelines listed above."
-
-        return result
+        import json
+        try:
+            # Sometimes LLMs still wrap in markdown even when told not to
+            clean_text = response_text.strip()
+            if clean_text.startswith("```json"):
+                clean_text = clean_text[7:]
+            if clean_text.startswith("```"):
+                clean_text = clean_text[3:]
+            if clean_text.endswith("```"):
+                clean_text = clean_text[:-3]
+                
+            return json.loads(clean_text)
+            
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse JSON response: %s", str(e))
+            return {
+                "risk_level": "Unknown",
+                "score": 0,
+                "high_risk_indicators": [],
+                "explanation": "Failed to parse JSON response from LLM.",
+                "suggestion": "Try again."
+            }
 
     def _error_result(self, error_message: str) -> dict[str, Any]:
         """Return a standardized error result."""

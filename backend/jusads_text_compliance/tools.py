@@ -47,7 +47,18 @@ def check_text_compliance(
             ethnicity=ethnicity,
             age_group=age_group
         )
-        return json.dumps(result, indent=2, ensure_ascii=False)
+        
+        # Strictly enforce the output format for the ReAct agent
+        # The LLM now returns 'high_risk_indicators' instead of 'violations'
+        agent_payload = {
+            "risk_level": result.get("risk_level", "Unknown"),
+            "score": result.get("score", 0),
+            "high_risk_indicators": result.get("high_risk_indicators", []),
+            "explanation": result.get("explanation", ""),
+            "suggestion": result.get("suggestion", "")
+        }
+        
+        return json.dumps(agent_payload, indent=2, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
