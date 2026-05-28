@@ -17,8 +17,10 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # ── AWS Bedrock (Kept legacy env variables for fallback/history, default to Gemini) ──
 AWS_REGION_LLM = os.environ.get("AWS_REGION_LLM", "ap-southeast-1")
 AWS_REGION_EMBED = os.environ.get("AWS_REGION_EMBED", "ap-southeast-1")
-EMBED_MODEL_ID = os.environ.get("EMBED_MODEL_ID", "text-embedding-004")
-EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "768"))
+EMBED_MODEL_ID = os.environ.get("EMBED_MODEL_ID", "global.cohere.embed-v4:0")
+if any(legacy in EMBED_MODEL_ID for legacy in ("nova", "claude", "apac", "amazon")):
+    EMBED_MODEL_ID = "global.cohere.embed-v4:0"
+EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "1536"))
 
 # ── Qdrant ────────────────────────────────────────────────────────────────────
 QDRANT_URL = os.environ.get("QDRANT_URL", "")
@@ -51,10 +53,15 @@ PERSONA_COLLECTION_CONFIG = {
 
 # ── Gemini Models ─────────────────────────────────────────────────────────────
 LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "gemini-2.5-flash")
+if any(legacy in LLM_MODEL_ID for legacy in ("nova", "claude", "apac", "amazon")):
+    LLM_MODEL_ID = "gemini-2.5-flash"
+
 VISION_MODEL_ID = os.environ.get("VISION_MODEL_ID", "gemini-2.5-flash")
+if any(legacy in VISION_MODEL_ID for legacy in ("nova", "claude", "apac", "amazon")):
+    VISION_MODEL_ID = "gemini-2.5-flash"
 
 # ── S3 (legacy, unused in Gemini) ──────────────────────────────────────────
-TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "langhub-transcribe-temp")
+TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "jusads-transcribe-temp")
 
 # ── Video Understanding ──────────────────────────────────────────────────────
 VIDEO_MODEL_ID = os.environ.get("VIDEO_MODEL_ID", "gemini-2.5-flash")

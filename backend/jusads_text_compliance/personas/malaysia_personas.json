@@ -1,0 +1,84 @@
+{
+  "malay": {
+    "demographics": {
+      "ethnicity": "Malay",
+      "religion": "Islam",
+      "location": "Malaysia"
+    },
+    "historical_and_cultural_context": "Malay culture in Malaysia is deeply intertwined with Islamic principles. Advertising must respect both traditional Malay cultural norms (kesopanan/politeness) and strict Islamic jurisprudence (Shariah).",
+    "core_values": [
+      "Modesty (Aurat) in dress and behavior",
+      "Halal compliance in all consumption",
+      "Respect for religious sanctity"
+    ],
+    "strict_taboos": [
+      "NEVER show or mention pork, alcohol, or non-halal ingredients (e.g., pig-derived collagen).",
+      "NEVER show women's hair uncovered (without hijab).",
+      "NEVER show arms above the elbow or legs above the knee.",
+      "NEVER show bare armpits (even for deodorant ads) or bare male torsos.",
+      "NEVER use Islamic symbols (Mosques, Quran verses, Arabic calligraphy) as commercial props or placed disrespectfully (e.g., on floors/footwear).",
+      "NEVER show people eating or drinking during daylight in Ramadan-themed ads."
+    ],
+    "nuances_and_behavior": [
+      "Physical contact (hugging, hand-holding) between non-related males and females (non-mahram) is highly inappropriate.",
+      "Romantic scenes must remain strictly within publicly acceptable limits and ideally depict married couples.",
+      "Sensual dancing, hip movements, provocative poses, and suggestive body movements are offensive regardless of product category.",
+      "Applying products to intimate body areas (underarms, thighs) must not be shown directly."
+    ]
+  },
+  "chinese": {
+    "demographics": {
+      "ethnicity": "Chinese",
+      "location": "Malaysia"
+    },
+    "historical_and_cultural_context": "Malaysian Chinese culture is shaped by traditional Chinese beliefs, including Confucian respect for elders, Taoist/Buddhist spiritual practices, and deep-seated beliefs in numerology and symbolism.",
+    "core_values": [
+      "Respect for elders and ancestors (filial piety)",
+      "Auspicious symbolism and prosperity",
+      "Superstitions surrounding gift-giving and death"
+    ],
+    "strict_taboos": [
+      "NEVER use the number 4 (sounds like death) in pricing, quantities, or phone numbers. 14 and 44 are extremely inauspicious.",
+      "NEVER show clocks, broken mirrors, scissors, or shoes as gifts (associated with funerals, broken relationships, or bad luck).",
+      "NEVER show umbrellas opened indoors.",
+      "NEVER show chopsticks stuck vertically in rice (resembles funeral incense).",
+      "NEVER use ancestral tablets, altars, or Qing Ming (Tomb Sweeping) items (joss paper, incense) as commercial props.",
+      "NEVER use Buddhist monks or Taoist priests to endorse commercial products."
+    ],
+    "nuances_and_behavior": [
+      "White is associated with mourning — avoid all-white packaging or backgrounds for celebratory occasions.",
+      "Black combined with white evokes funeral imagery.",
+      "Red signifies prosperity and is highly encouraged for festive contexts (like Chinese New Year).",
+      "Elderly Chinese individuals must never be depicted in undignified or foolish situations.",
+      "During the Nine Emperor Gods vegetarian festival, meat product advertisements should be scheduled sensitively."
+    ]
+  },
+  "indian": {
+    "demographics": {
+      "ethnicity": "Indian",
+      "religion": "Predominantly Hindu",
+      "location": "Malaysia"
+    },
+    "historical_and_cultural_context": "Malaysian Indian culture is heavily influenced by Hindu religious traditions, requiring deep reverence for sacred symbols, respect for family hierarchy, and adherence to specific dietary restrictions.",
+    "core_values": [
+      "Reverence for the divine and sacred symbols",
+      "Respect for family hierarchy and elders",
+      "Egalitarian representation (avoiding caste stereotypes)"
+    ],
+    "strict_taboos": [
+      "NEVER show beef or beef-derived products (including explicit cow-leather). The cow is sacred.",
+      "NEVER place Hindu deities or sacred symbols (Om, Swastika, Trishul, Lotus) on footwear, floor materials, or below waist level.",
+      "NEVER use sacred symbols or deities to sell alcohol or meat.",
+      "NEVER use Hindu deity imagery (e.g., Ganesha) as cartoon characters or playful mascots for children's products.",
+      "NEVER show the sacred lamp (vilakku/deepam) extinguished or used merely as a decorative prop.",
+      "NEVER depict occupational stereotyping based on caste associations or untouchability concepts."
+    ],
+    "nuances_and_behavior": [
+      "During major Hindu festivals (Navratri, Maha Shivaratri), non-vegetarian food should not be prominently featured.",
+      "Saffron (kesari) represents sacrifice/purity and must not be used frivolously.",
+      "White represents mourning — avoid all-white attire on Indian models in celebratory contexts.",
+      "Vermillion (sindoor) and married woman symbols (mangalsutra, toe rings, bindi) must not be commercialized as mere fashion accessories.",
+      "Traditional attire (saree, salwar kameez) must be depicted respectfully without sexualization."
+    ]
+  }
+}

@@ -60,10 +60,10 @@ def ensure_collection(
 
     if name in existing:
         if recreate:
-            print(f"  ♻️  Recreating collection '{name}'...")
+            print(f"  [RECREATE] Recreating collection '{name}'...")
             _client.delete_collection(name)
         else:
-            print(f"  ℹ️  Collection '{name}' already exists — upserting into it.")
+            print(f"  [INFO] Collection '{name}' already exists — upserting into it.")
             return
 
     _client.create_collection(
@@ -73,7 +73,7 @@ def ensure_collection(
             distance=Distance.COSINE,
         ),
     )
-    print(f"  ✅ Collection '{name}' created ({EMBED_DIMENSIONS}-dim, cosine).")
+    print(f"  [OK] Collection '{name}' created ({EMBED_DIMENSIONS}-dim, cosine).")
 
 
 # ── Ingest CSV rows ──────────────────────────────────────────────────────────
