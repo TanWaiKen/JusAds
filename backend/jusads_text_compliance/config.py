@@ -35,6 +35,9 @@ AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 EMBED_MODEL_ID = "global.cohere.embed-v4:0"
 EMBED_DIMENSIONS = 1536
 
+# ── AWS Transcribe ────────────────────────────────────────────────────────────
+TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "")
+
 # ── Google Gemini (LLM for evaluation) ────────────────────────────────────────
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
 LLM_MODEL_ID = "gemini-2.5-flash"

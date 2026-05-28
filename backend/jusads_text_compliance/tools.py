@@ -20,54 +20,71 @@ from .text_checker import TextComplianceChecker
 
 logger = logging.getLogger(__name__)
 
-# Lazy singleton — created on first call
-_checker: TextComplianceChecker | None = None
 
-
-def _get_checker() -> TextComplianceChecker:
-    global _checker
-    if _checker is None:
-        _checker = TextComplianceChecker()
-    return _checker
+@tool
+def check_text_compliance(arguments_json: str) -> str:
+    """Evaluate advertisement text for regulatory and cultural compliance.
+    
+    Args:
+        arguments_json: A JSON string containing:
+            - text (str): The advertisement text to evaluate.
+            - market (str): Target market ('malaysia' or 'singapore').
+            - ethnicity (str): Target ethnicity ('malay', 'chinese', 'indian', 'all').
+            - age_group (str): Target age group ('all_ages', 'adults_only', 'children').
+            
+    Returns:
+        JSON string containing risk_level, score, violations, and explanation.
+    """
+    try:
+        args = json.loads(arguments_json)
+        text = args.get("text", "")
+        market = args.get("market", "malaysia")
+        ethnicity = args.get("ethnicity", "all")
+        age_group = args.get("age_group", "all_ages")
+        
+        checker = TextComplianceChecker()
+        result = checker.check_compliance(
+            ad_text=text,
+            market=market,
+            ethnicity=ethnicity,
+            age_group=age_group
+        )
+        
+        return json.dumps(result, indent=2, ensure_ascii=False)
+        
+    except json.JSONDecodeError:
+        return json.dumps({"error": "Invalid JSON arguments provided."})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
 @tool
-def check_text_compliance(
-    ad_text: str,
-    market: str = "malaysia",
-    ethnicity: str = "all",
-    age_group: str = "all_ages",
-) -> str:
-    """Check advertising text for regulatory and cultural compliance in Malaysia/Singapore.
-
-    Evaluates ad copy against MCMC regulatory guidelines and cultural
-    sensitivities for Malay, Chinese, and Indian audiences.
-
+def transcribe_media(arguments_json: str) -> str:
+    """Extract and transcribe spoken text from an audio or video file.
+    
     Args:
-        ad_text: The advertisement text to evaluate.
-        market: Target market — "malaysia" or "singapore".
-        ethnicity: Target ethnicity — "malay", "chinese", "indian", or "all".
-        age_group: Target age group — "all_ages", "adults_only", or "children".
-
+        arguments_json: A JSON string containing:
+            - media_path (str): The absolute or relative path to the audio/video file.
+            - use_ffmpeg (bool, optional): Whether to use ffmpeg to extract audio first (default: true).
+            
     Returns:
-        JSON string with risk_level, score (0-100), violations, explanation,
-        and suggestion.
+        JSON string containing the extracted transcript text or an error message.
     """
-    checker = _get_checker()
-    result = checker.check_compliance(
-        ad_text=ad_text,
-        market=market,
-        ethnicity=ethnicity,
-        age_group=age_group,
-    )
-
-    # Return a concise JSON summary (strip bulky rule lists for agent consumption)
-    summary = {
-        "risk_level": result["risk_level"],
-        "score": result["score"],
-        "violations": result["violations"],
-        "explanation": result["explanation"],
-        "suggestion": result["suggestion"],
-        "processing_time_ms": result["processing_time_ms"],
-    }
-    return json.dumps(summary, ensure_ascii=False, indent=2)
+    try:
+        args = json.loads(arguments_json)
+        media_path = args.get("media_path", "")
+        use_ffmpeg = args.get("use_ffmpeg", True)
+        
+        if not media_path:
+            return json.dumps({"error": "No media_path provided."})
+            
+        from jusads_transcription.transcriber import VideoTranscriber
+        transcriber = VideoTranscriber(use_ffmpeg=use_ffmpeg)
+        transcript = transcriber.transcribe_media(media_path)
+        
+        return json.dumps({"transcript": transcript}, ensure_ascii=False)
+        
+    except json.JSONDecodeError:
+        return json.dumps({"error": "Invalid JSON arguments provided."})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
