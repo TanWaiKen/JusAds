@@ -13,61 +13,36 @@ A clean, easy-to-use text compliance checker that:
 
 ## Quick Start (5 minutes)
 
-### Step 1: Verify Setup
+### Step 1: Using the Compliance Tool
 
-```bash
-cd backend/
-python -m jusads_text_compliance.test_setup
+This module is designed to be used directly as a LangChain `@tool` within your LangGraph ReAct framework.
+
+```python
+from jusads_text_compliance.tools import check_text_compliance
+
+# It accepts a JSON string argument as required by LangChain tools
+result = check_text_compliance.invoke(
+    '{"text": "Try our new whitening cream today! Get fairer skin in just 7 days.", "market": "malaysia", "ethnicity": "all", "age_group": "all_ages"}'
+)
+
+print(result)
 ```
 
-If you see "✓ SETUP TEST PASSED", you're ready to go!
+The output is a JSON-formatted string containing:
+- `risk_level`: (Low/Medium/High)
+- `score`: (0-100)
+- `violations`: List of specific rule breaks
+- `explanation`: Summary of issues
+- `suggestion`: How to fix them
 
-If not, the test will tell you what's missing:
-- Missing env vars? Add them to `backend/.env`
-- Missing Qdrant collections? Run the ingestion scripts shown
+### Step 2: Customizing Personas
 
-### Step 2: Export Personas (Optional but Recommended)
+Personas are no longer stored in the Qdrant vector database. Instead, they are strictly structured JSON files located at:
+- `backend/jusads_text_compliance/personas/malaysia_personas.json`
+- `backend/jusads_text_compliance/personas/singapore_personas.json`
 
-This creates local JSON files so you can easily see what personas look like:
+If you need to update a persona's `strict_taboos` or `core_values`, simply edit these JSON files directly.
 
-```bash
-python -m jusads_text_compliance.export_personas
-```
-
-Check `personas/malaysia_personas.json` to see the cultural personas.
-
-### Step 3: Try Your First Compliance Check
-
-```bash
-python -m jusads_text_compliance.cli \
-  --text "Try our new whitening cream today! Get fairer skin in just 7 days."
-```
-
-You'll see:
-- Risk Level (Low/Medium/High)
-- Score (0-100)
-- List of violations (if any)
-- Explanation of issues
-- Suggestions to fix them
-
-### Step 4: Try Different Ethnicities
-
-```bash
-# Check for Malay audience (Islamic sensitivities)
-python -m jusads_text_compliance.cli \
-  --text "Win big at our casino this weekend!" \
-  --ethnicity malay
-
-# Check for Chinese audience (numerology, symbolism)
-python -m jusads_text_compliance.cli \
-  --text "Unit #14-04, call 444-4444" \
-  --ethnicity chinese
-
-# Check for Indian audience (religious symbols, caste)
-python -m jusads_text_compliance.cli \
-  --text "Our premium leather shoes" \
-  --ethnicity indian
-```
 
 ## Understanding the Output
 
