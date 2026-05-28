@@ -61,7 +61,7 @@ class TextComplianceChecker:
 
         # Step 1: Generate embedding for the ad text
         logger.info("Generating embedding for ad text...")
-        query_vector = embed_text(ad_text, task_type="RETRIEVAL_QUERY")
+        query_vector = embed_text(ad_text)
         if not query_vector:
             return self._error_result("Failed to generate text embedding")
 
@@ -85,8 +85,21 @@ class TextComplianceChecker:
         # Step 4: Retrieve persona (if specific ethnicity is targeted)
         persona_text = None
         if ethnicity != "all":
-            logger.info("Retrieving persona for %s/%s...", market, ethnicity)
-            persona_text = self.qdrant.get_persona(market=market, ethnicity=ethnicity)
+            logger.info("Retrieving structured persona for %s/%s...", market, ethnicity)
+            try:
+                import json
+                from pathlib import Path
+                persona_file = Path(__file__).parent / "personas" / f"{market}_personas.json"
+                if persona_file.exists():
+                    with open(persona_file, "r", encoding="utf-8") as f:
+                        all_personas = json.load(f)
+                        if ethnicity in all_personas:
+                            # Format as JSON string for the LLM prompt
+                            persona_text = json.dumps(all_personas[ethnicity], indent=2, ensure_ascii=False)
+                if not persona_text:
+                    logger.warning("No structured persona found for %s/%s", market, ethnicity)
+            except Exception as e:
+                logger.error("Failed to load local persona: %s", str(e))
 
         # Step 5: Evaluate compliance using LLM
         logger.info("Evaluating compliance with Gemini LLM...")
@@ -208,9 +221,11 @@ class TextComplianceChecker:
         persona_section = ""
         if persona_text:
             persona_section = f"""
-## Target Audience Persona
+## Target Audience Persona (Structured Profile)
 
+```json
 {persona_text}
+```
 """
 
         prompt = f"""You are a compliance expert evaluating advertising content for the {market.upper()} market (target ethnicity: {ethnicity}).

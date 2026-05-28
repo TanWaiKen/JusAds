@@ -150,7 +150,7 @@ def ingest_guidelines(csv_path: Path, market: str, recreate: bool = False) -> in
     # Ensure collection exists (or recreate)
     ensure_collection(name=collection_name, recreate=recreate)
 
-    print(f"\n📄 {csv_path.name}: {len(rows)} rows → collection '{collection_name}'")
+    print(f"\n[START] {csv_path.name}: {len(rows)} rows -> collection '{collection_name}'")
 
     # Prepare texts for embedding
     texts = [row_to_text(row) for row in rows]
@@ -187,7 +187,7 @@ def ingest_guidelines(csv_path: Path, market: str, recreate: bool = False) -> in
         _client.upsert(collection_name=collection_name, points=points)
         total_upserted += len(points)
         print(
-            f"  ✅ Upserted {total_upserted}/{len(rows)} "
+            f"  [OK] Upserted {total_upserted}/{len(rows)} "
             f"(Batch {batch_start // UPSERT_BATCH_SIZE + 1})"
         )
 
@@ -195,7 +195,7 @@ def ingest_guidelines(csv_path: Path, market: str, recreate: bool = False) -> in
         if batch_start + UPSERT_BATCH_SIZE < len(rows):
             time.sleep(1.0)
 
-    print(f"  🎉 Total {total_upserted} vectors upserted to '{collection_name}'")
+    print(f"  [DONE] Total {total_upserted} vectors upserted to '{collection_name}'")
     return total_upserted
 
 
@@ -228,7 +228,7 @@ def main() -> None:
         csv_path = DEFAULT_CSV_PATHS[resolved_market]
 
     total = ingest_guidelines(csv_path, market=args.market, recreate=args.recreate)
-    print(f"\n✅ Done — {total} vectors in Qdrant.")
+    print(f"\n[DONE] {total} vectors in Qdrant.")
 
 
 if __name__ == "__main__":

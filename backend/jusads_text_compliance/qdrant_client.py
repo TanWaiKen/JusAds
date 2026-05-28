@@ -61,11 +61,11 @@ class JusAdsQdrantClient:
         )
 
         try:
-            results = self.client.search(
+            results = self.client.query_points(
                 collection_name=collection_name,
-                query_vector=query_vector,
+                query=query_vector,
                 limit=top_k,
-            )
+            ).points
 
             guidelines = []
             for result in results:
@@ -129,12 +129,12 @@ class JusAdsQdrantClient:
         query_filter = Filter(must=filter_conditions)
 
         try:
-            results = self.client.search(
+            results = self.client.query_points(
                 collection_name=CULTURAL_COLLECTION,
-                query_vector=query_vector,
+                query=query_vector,
                 query_filter=query_filter,
                 limit=top_k,
-            )
+            ).points
 
             guidelines = []
             for result in results:
@@ -161,46 +161,4 @@ class JusAdsQdrantClient:
             logger.error("Failed to retrieve cultural guidelines: %s", str(e))
             return []
 
-    def get_persona(
-        self, market: str = "malaysia", ethnicity: str = "malay"
-    ) -> Optional[str]:
-        """Retrieve persona narrative for the specified market and ethnicity.
 
-        Args:
-            market: Target market ('malaysia' or 'singapore').
-            ethnicity: Target ethnicity ('malay', 'chinese', 'indian').
-
-        Returns:
-            Persona narrative text, or None if not found.
-        """
-        # Build filter for exact market+ethnicity match
-        query_filter = Filter(
-            must=[
-                FieldCondition(key="market", match=MatchValue(value=market)),
-                FieldCondition(key="ethnicity", match=MatchValue(value=ethnicity)),
-            ]
-        )
-
-        try:
-            # We don't need semantic search for personas - just exact filter match
-            # Use a dummy vector since we're filtering by metadata only
-            results = self.client.scroll(
-                collection_name=PERSONA_COLLECTION,
-                scroll_filter=query_filter,
-                limit=1,
-            )
-
-            if results and results[0]:
-                points = results[0]
-                if points:
-                    payload = points[0].payload or {}
-                    persona_text = payload.get("persona_text", "")
-                    logger.info("Retrieved persona for %s/%s", market, ethnicity)
-                    return persona_text
-
-            logger.warning("No persona found for %s/%s", market, ethnicity)
-            return None
-
-        except Exception as e:
-            logger.error("Failed to retrieve persona: %s", str(e))
-            return None

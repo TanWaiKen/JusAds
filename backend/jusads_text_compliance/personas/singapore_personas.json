@@ -1,0 +1,75 @@
+{
+  "malay": {
+    "demographics": {
+      "ethnicity": "Malay",
+      "religion": "Islam",
+      "location": "Singapore"
+    },
+    "historical_and_cultural_context": "Singapore is a cosmopolitan, multicultural society, but core Islamic values regarding modesty and halal compliance remain extremely important to the Singaporean Malay Muslim community.",
+    "core_values": [
+      "Modesty (Aurat) in dress and public behavior",
+      "Strict halal compliance in food and personal care",
+      "Respectful representation of religious elements"
+    ],
+    "strict_taboos": [
+      "NEVER show or mention pork, alcohol, or non-halal ingredients.",
+      "NEVER show cross-contamination imagery (e.g., halal food placed near alcohol).",
+      "NEVER show female aurat exposed (hair, arms above the elbow, legs above the knee).",
+      "NEVER show bare armpits regardless of gender.",
+      "NEVER use Islamic religious symbols or mosque imagery as casual commercial props."
+    ],
+    "nuances_and_behavior": [
+      "While dress standards might be slightly more relaxed than in Malaysia due to the cosmopolitan context, core modesty principles must still be maintained.",
+      "Physical intimacy between unrelated males and females (casual touching, embracing, suggestive proximity) must not be depicted.",
+      "Non-halal ingredients in cosmetics and personal care items must be clearly disclosed."
+    ]
+  },
+  "chinese": {
+    "demographics": {
+      "ethnicity": "Chinese",
+      "location": "Singapore"
+    },
+    "historical_and_cultural_context": "Singaporean Chinese culture is shaped by traditional Chinese beliefs within a highly modernized, multicultural context. Superstitions and symbolism remain culturally significant.",
+    "core_values": [
+      "Auspicious symbolism and numerology",
+      "Respect for ancestral worship and spiritual practices",
+      "Strict adherence to gift-giving taboos"
+    ],
+    "strict_taboos": [
+      "NEVER use the number 4 in pricing or quantities due to its death association (si).",
+      "NEVER show clocks, scissors, or shoes as gifts (they carry strong negative symbolic meanings).",
+      "NEVER use ancestral worship items (joss paper, incense, altar items) as commercial props.",
+      "NEVER treat Buddhist or Taoist religious imagery, temples, or monks casually or disrespectfully."
+    ],
+    "nuances_and_behavior": [
+      "White is associated with mourning — avoid dominant white themes for celebratory products.",
+      "Red signifies prosperity and good fortune, highly encouraged for festive contexts.",
+      "During Hungry Ghost Festival month, advertisements should be sensitive to spiritual practices; avoid scheduling major product launches or highly celebratory campaigns during this period."
+    ]
+  },
+  "indian": {
+    "demographics": {
+      "ethnicity": "Indian",
+      "religion": "Predominantly Hindu",
+      "location": "Singapore"
+    },
+    "historical_and_cultural_context": "Singaporean Indian values are shaped by Hindu traditions operating within Singapore's egalitarian and multicultural society.",
+    "core_values": [
+      "Reverence for sacred symbols and deities",
+      "Dignity and respect for elders",
+      "Egalitarian representation across the community"
+    ],
+    "strict_taboos": [
+      "NEVER show beef or beef-derived products when targeting Hindu audiences.",
+      "NEVER place Hindu deities or sacred symbols on footwear, floor items, or below waist level.",
+      "NEVER use sacred imagery to promote alcohol or meat products.",
+      "NEVER commercialize or use sacred married woman symbols (mangalsutra, sindoor, toe rings) as mere fashion props.",
+      "NEVER use occupational stereotyping or hierarchical depictions that reinforce caste-based assumptions."
+    ],
+    "nuances_and_behavior": [
+      "Cow imagery must be treated with reverence consistent with Hindu beliefs.",
+      "Saffron and vermillion colors hold religious significance and must not be used in trivial contexts.",
+      "Elderly Indian individuals must be depicted with dignity; elder authority and family hierarchy should be portrayed positively."
+    ]
+  }
+}

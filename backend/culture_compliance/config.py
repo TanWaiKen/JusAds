@@ -17,10 +17,10 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # ── AWS Bedrock (Kept legacy env variables for fallback/history, default to Gemini) ──
 AWS_REGION_LLM = os.environ.get("AWS_REGION_LLM", "ap-southeast-1")
 AWS_REGION_EMBED = os.environ.get("AWS_REGION_EMBED", "ap-southeast-1")
-EMBED_MODEL_ID = os.environ.get("EMBED_MODEL_ID", "text-embedding-004")
-if any(legacy in EMBED_MODEL_ID for legacy in ("cohere", "global", "titan")):
-    EMBED_MODEL_ID = "text-embedding-004"
-EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "768"))
+EMBED_MODEL_ID = os.environ.get("EMBED_MODEL_ID", "global.cohere.embed-v4:0")
+if any(legacy in EMBED_MODEL_ID for legacy in ("nova", "claude", "apac", "amazon")):
+    EMBED_MODEL_ID = "global.cohere.embed-v4:0"
+EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "1536"))
 
 # ── Qdrant ────────────────────────────────────────────────────────────────────
 QDRANT_URL = os.environ.get("QDRANT_URL", "")
