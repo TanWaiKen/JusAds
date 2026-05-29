@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from culture_compliance.config import EMBED_DIMENSIONS
+from config import EMBED_DIMENSIONS
 from culture_compliance.gemini_client import parse_json_response
 from culture_compliance.models.schemas import (
     ComplianceResult,

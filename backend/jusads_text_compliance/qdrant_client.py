@@ -12,7 +12,7 @@ from typing import Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-from .config import (
+from config import (
     CULTURAL_COLLECTION,
     PERSONA_COLLECTION,
     QDRANT_API_KEY,

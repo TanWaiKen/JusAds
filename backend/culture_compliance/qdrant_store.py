@@ -12,7 +12,7 @@ from pathlib import Path
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
-from .config import (
+from config import (
     EMBED_DIMENSIONS,
     QDRANT_API_KEY,
     QDRANT_COLLECTION_NAME,

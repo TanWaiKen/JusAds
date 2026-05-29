@@ -14,7 +14,7 @@ import re
 import subprocess
 from typing import Optional
 
-from culture_compliance.config import VIDEO_COMPLIANCE_MODEL, VIDEO_MODEL_ID, CLAUDE_VIDEO_MODEL_ID
+from config import VIDEO_COMPLIANCE_MODEL, VIDEO_MODEL_ID, CLAUDE_VIDEO_MODEL_ID
 from culture_compliance.models.schemas import Market, PipelineState
 from culture_compliance.scoring import get_scoring_config
 from culture_compliance.gemini_client import analyze_video as gemini_analyze_video

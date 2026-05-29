@@ -14,7 +14,7 @@ from typing import Any, Optional
 import vertexai
 from vertexai.generative_models import GenerativeModel
 
-from .config import VERTEX_PROJECT_ID, VERTEX_LOCATION, LLM_MODEL_ID
+from config import VERTEX_PROJECT_ID, VERTEX_LOCATION, LLM_MODEL_ID
 from .embeddings import embed_text
 from .qdrant_client import JusAdsQdrantClient
 

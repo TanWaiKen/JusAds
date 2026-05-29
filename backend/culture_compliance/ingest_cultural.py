@@ -26,7 +26,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, ValidationError
 from qdrant_client.models import PointStruct
 
-from .config import CULTURAL_COLLECTION_NAME, CULTURAL_COLLECTION_CONFIG
+from config import CULTURAL_COLLECTION_NAME, CULTURAL_COLLECTION_CONFIG
 from .models.cultural_schemas import GuidelineEntry
 
 logger = logging.getLogger(__name__)

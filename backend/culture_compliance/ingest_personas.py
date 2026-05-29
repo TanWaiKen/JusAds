@@ -26,7 +26,7 @@ from typing import Optional
 from pydantic import ValidationError
 from qdrant_client.models import PointStruct
 
-from .config import PERSONA_COLLECTION_NAME, PERSONA_COLLECTION_CONFIG
+from config import PERSONA_COLLECTION_NAME, PERSONA_COLLECTION_CONFIG
 from .models.cultural_schemas import PersonaEntry
 
 logger = logging.getLogger(__name__)
