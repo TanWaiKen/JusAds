@@ -15,8 +15,8 @@ import logging
 import time
 from typing import Any, Optional
 
-import vertexai
-from vertexai.generative_models import GenerativeModel
+from google import genai
+from google.genai import types
 
 from config import VERTEX_PROJECT_ID, VERTEX_LOCATION, LLM_MODEL_ID
 from .embeddings import embed_text
@@ -24,9 +24,8 @@ from .qdrant_client import JusAdsQdrantClient
 
 logger = logging.getLogger(__name__)
 
-# Initialize Vertex AI
-vertexai.init(project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
-model = GenerativeModel(LLM_MODEL_ID)
+# Initialize Google GenAI Client
+client = genai.Client(vertexai=True, project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
 
 
 class TextComplianceChecker:
@@ -59,8 +58,6 @@ class TextComplianceChecker:
             - violations: List of detected issues
             - explanation: Summary of findings
             - persona_used: Persona narrative used for evaluation
-            - regulatory_rules: Retrieved regulatory guidelines
-            - cultural_rules: Retrieved cultural guidelines
         """
         start_time = time.time()
 
@@ -155,8 +152,6 @@ class TextComplianceChecker:
             "persona_used": persona_text if persona_text else "No specific persona (ethnicity: all)",
             "regulatory_rules_count": len(regulatory_rules),
             "cultural_rules_count": len(cultural_guidelines),
-            "regulatory_rules": regulatory_rules,
-            "cultural_rules": cultural_guidelines,
             "processing_time_ms": duration_ms,
         }
 
@@ -202,10 +197,13 @@ class TextComplianceChecker:
         )
 
         try:
-            # Enforce JSON output at the API level via Vertex AI
-            response = model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"}
+            # Enforce JSON output at the API level via Google GenAI SDK
+            response = client.models.generate_content(
+                model=LLM_MODEL_ID,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
             )
             result_text = response.text
 
@@ -347,7 +345,5 @@ Produce ONLY a single JSON object (no extra text, no explanation outside the JSO
             "persona_used": None,
             "regulatory_rules_count": 0,
             "cultural_rules_count": 0,
-            "regulatory_rules": [],
-            "cultural_rules": [],
             "processing_time_ms": 0,
         }
