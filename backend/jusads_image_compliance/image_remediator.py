@@ -82,7 +82,51 @@ class ImageRemediator:
                     thinking_config=types.ThinkingConfig(thinking_level="MEDIUM"),
                 ),
             )
-            return self._parse_response(response.text)
+            result = self._parse_response(response.text)
+            
+            # ---------------------------------------------------------
+            # Step 2: Generate the image using Imagen 3 (google-cloud-aiplatform)
+            # ---------------------------------------------------------
+            compliant_prompt = result.get("compliant_image_prompt")
+            if compliant_prompt:
+                try:
+                    import os
+                    import uuid
+                    import vertexai
+                    from vertexai.preview.vision_models import ImageGenerationModel
+
+                    logger.info("Generating compliant image using Imagen 3 (Vertex AI)...")
+                    
+                    # Ensure vertexai is initialized (using config vars, but hardcode us-central1 for Imagen)
+                    vertexai.init(project=VERTEX_PROJECT_ID, location="us-central1")
+                    
+                    generation_model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+                    
+                    images = generation_model.generate_images(
+                        prompt=compliant_prompt,
+                        number_of_images=1,
+                        aspect_ratio="1:1",
+                        person_generation="allow_all"
+                    )
+                    
+                    if images:
+                        generated_image = images[0]
+                        output_dir = os.path.join("backend", "assets", "remediated")
+                        os.makedirs(output_dir, exist_ok=True)
+                        
+                        filename = f"remediated_{uuid.uuid4().hex[:8]}.png"
+                        file_path = os.path.join(output_dir, filename)
+                        
+                        # Save using the built-in save method from vertexai Image
+                        generated_image.save(location=file_path, include_generation_parameters=False)
+                            
+                        logger.info(f"Successfully generated and saved image to {file_path}")
+                        result["generated_image_path"] = file_path
+                except Exception as e:
+                    logger.error(f"Image generation failed: {e}")
+                    result["generated_image_error"] = str(e)
+                    
+            return result
         except Exception as e:
             logger.error(f"Image remediation failed: {e}")
             return {

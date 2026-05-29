@@ -62,6 +62,13 @@ def test_image_pipeline(image_path: str, market: str = "malaysia", ethnicity: st
     print("\nChanges Suggested:")
     for change in remediation_result.get('changes_suggested', []):
         print(f"  - {change}")
+        
+    generated_path = remediation_result.get('generated_image_path')
+    if generated_path:
+        print(f"\n[SUCCESS] Generated Compliant Image Saved To:")
+        print(f"  -> {generated_path}")
+    elif remediation_result.get('generated_image_error'):
+        print(f"\n[ERROR] Image generation failed: {remediation_result.get('generated_image_error')}")
 
 if __name__ == "__main__":
     # Test on the non-compliant armpit ad
