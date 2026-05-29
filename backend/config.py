@@ -46,13 +46,13 @@ TOP_K_CULTURAL = int(os.environ.get("TOP_K_CULTURAL", "10"))
 
 CULTURAL_COLLECTION_CONFIG = {
     "collection_name": "cultural-guidelines",
-    "vector_size": 768,
+    "vector_size": EMBED_DIMENSIONS,
     "distance": "Cosine",
 }
 
 PERSONA_COLLECTION_CONFIG = {
     "collection_name": "cultural-personas",
-    "vector_size": 768,
+    "vector_size": EMBED_DIMENSIONS,
     "distance": "Cosine",
 }
 
