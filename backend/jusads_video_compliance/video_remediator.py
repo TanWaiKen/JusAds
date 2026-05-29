@@ -6,6 +6,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import time
 import uuid
 from typing import Any
@@ -14,6 +15,7 @@ from google import genai
 from google.genai import types
 
 from config import VERTEX_PROJECT_ID, VERTEX_LOCATION
+from jusads_video_compliance.audio_generator import AudioGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -96,13 +98,24 @@ class VideoRemediator:
                 logger.info(f"Found {len(broll_prompts)} B-Roll prompts. Generating clips with Veo...")
                 for broll in broll_prompts:
                     prompt_text = broll.get("prompt")
+                    timestamp = broll.get("timestamp", "")
+                    
                     if prompt_text:
-                        video_path = self.step2_generate_video_broll(prompt_text)
+                        duration = self._parse_duration(timestamp)
+                        video_path = self.step2_generate_video_broll(prompt_text, duration_seconds=duration)
                         if video_path:
                             broll["generated_video_path"] = video_path
                             generated_brolls.append(video_path)
             
             result["generated_brolls"] = generated_brolls
+            
+            # Step 3: Generate Localized Voiceover using ElevenLabs
+            script = result.get("rewritten_script")
+            if script:
+                audio_gen = AudioGenerator()
+                audio_path = audio_gen.generate_audio(script, market=market)
+                result["generated_voiceover_path"] = audio_path
+                
             return result
         except Exception as e:
             logger.error(f"Video remediation failed: {e}")
@@ -186,10 +199,22 @@ Return ONLY a JSON object:
                 "changes_made": [f"Parse error: {e}"],
             }
 
-    def step2_generate_video_broll(self, prompt: str) -> str | None:
-        """Step 2: Generate an 8s B-Roll video using Veo."""
+    def _parse_duration(self, timestamp: str) -> int:
+        """Parses a timestamp like '[00:03-00:08]' into a duration in seconds. Defaults to 8."""
+        match = re.search(r'\[(\d+):(\d+)-(\d+):(\d+)\]', timestamp)
+        if match:
+            m1, s1, m2, s2 = map(int, match.groups())
+            start_sec = m1 * 60 + s1
+            end_sec = m2 * 60 + s2
+            duration = end_sec - start_sec
+            # Clamp between 1 and 8 seconds for Veo
+            return max(1, min(8, duration))
+        return 8
+
+    def step2_generate_video_broll(self, prompt: str, duration_seconds: int = 8) -> str | None:
+        """Step 2: Generate a variable length B-Roll video using Veo."""
         try:
-            logger.info(f"Generating Veo video for prompt: {prompt[:50]}...")
+            logger.info(f"Generating {duration_seconds}s Veo video for prompt: {prompt[:50]}...")
             
             source = types.GenerateVideosSource(
                 prompt=prompt,
@@ -198,7 +223,7 @@ Return ONLY a JSON object:
             config = types.GenerateVideosConfig(
                 aspect_ratio="16:9",
                 number_of_videos=1,
-                duration_seconds=8,
+                duration_seconds=duration_seconds,
                 person_generation="allow_all",
                 generate_audio=False,
                 resolution="720p",
