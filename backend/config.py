@@ -24,7 +24,7 @@ if any(legacy in EMBED_MODEL_ID for legacy in ("nova", "claude", "apac", "amazon
     EMBED_MODEL_ID = "global.cohere.embed-v4:0"
 EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "1536"))
 
-TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "jusads-transcribe-temp")
+TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "")
 
 # ── Qdrant ────────────────────────────────────────────────────────────────────
 QDRANT_URL = os.environ.get("QDRANT_URL", "")
@@ -58,7 +58,7 @@ PERSONA_COLLECTION_CONFIG = {
 
 # ── Google Gemini (Vertex AI & standard) ──────────────────────────────────────
 # Vertex AI settings for gemini-3.1-pro-preview
-VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "project-d53d74fb-f547-4728-977")
+VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
 LLM_MODEL_ID = os.environ.get("GEMINI_MODEL_ID", "gemini-3.1-pro-preview")
 
