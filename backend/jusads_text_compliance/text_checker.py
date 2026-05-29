@@ -144,9 +144,9 @@ class TextComplianceChecker:
             "market": market,
             "ethnicity": ethnicity,
             "age_group": age_group,
-            "risk_level": evaluation.get("risk_level", "Unknown"),
-            "score": evaluation.get("score", 0),
-            "high_risk_indicators": evaluation.get("high_risk_indicators", []),
+            "risk_level": evaluation.get("RISK", evaluation.get("risk_level", "Unknown")),
+            "score": evaluation.get("SCORE", evaluation.get("score", 0)),
+            "high_risk_indicators": evaluation.get("high_risk_indicator", evaluation.get("high_risk_indicators", [])),
             "explanation": evaluation.get("explanation", ""),
             "suggestion": evaluation.get("suggestion", ""),
             "persona_used": persona_text if persona_text else "No specific persona (ethnicity: all)",
@@ -254,34 +254,29 @@ class TextComplianceChecker:
 ```
 """
 
-        prompt = f"""You are a compliance expert evaluating advertising content for the {market.upper()} market (target ethnicity: {ethnicity}).
+        prompt = f"""You are a {market.title()} Cultural Appropriateness Evaluator. Your job is to take a transcript/ad text and determine whether it is culturally appropriate for a {market.title()} audience (target ethnicity: {ethnicity}).
 
-## Advertisement Text to Evaluate
-
+INPUT (transcript/ad text):
 {ad_text}
 
-## Regulatory Guidelines ({len(regulatory_rules)} rules)
+REGULATORY & CULTURAL GUIDELINES (from {market.title()} Communications and Multimedia Content Code & Cultural Norms):
+To inform your evaluation, consider the following chunks of documents, which provide guidance on content standards in {market.title()}.
 
-{reg_text if reg_text else "No regulatory rules retrieved."}
+### Regulatory Guidelines
+{reg_text if reg_text else "No specific regulatory rules retrieved."}
 
-## Cultural Guidelines ({len(cultural_guidelines)} guidelines)
-
-{cultural_text if cultural_text else "No cultural guidelines retrieved."}
+### Cultural Guidelines
+{cultural_text if cultural_text else "No specific cultural guidelines retrieved."}
 {persona_section}
 
-## Your Task
-
-Evaluate the advertisement text against ALL the regulatory guidelines and cultural guidelines listed above. Consider the target audience persona if provided.
-
-**Output Format:**
-Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with these exact fields:
-{{
-  "risk_level": "High" | "Medium" | "Low",
-  "score": integer 0-100,
-  "high_risk_indicators": [{{"description": "category, severity, and explanation of violation"}}],
-  "explanation": "concise reasoning (max 500 characters)",
-  "suggestion": "clear, actionable advice (max 400 characters)"
-}}
+PRIMARY TASK:
+1. Read the full transcript and detect phrases, sentences or themes that may be culturally sensitive, offensive, or inappropriate for audiences in {market.title()}, paying close attention to the regulatory guidelines and persona provided above.
+2. Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with the exact fields below:
+   - RISK: one of "High", "Medium", "Low"
+   - SCORE: integer 0–100 (Cultural Appropriateness Score; 100 = fully appropriate)
+   - high_risk_indicator: array of strings (words/phrases or short snippets that were flagged). Include up to the top 10 flagged items, ranked by severity.
+   - explanation: concise reasoning (max ~300 words) describing why the content received that SCORE and RISK. Reference which categories drove the rating and, where applicable, cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "This violates the guideline on..."). Note any contextual factors (e.g., satire, educational intent).
+   - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the video/script to make it more culturally appropriate for a {market.title()} audience (e.g., remove or rephrase flagged terms, replace insensitive jokes with neutral humor, provide cultural context, or add disclaimers).
 
 **Scoring Logic:**
 - Start at 100
@@ -296,8 +291,55 @@ Produce ONLY a single JSON object (no extra text, no explanation outside the JSO
 
 **Important:**
 - Return ONLY valid JSON.
-- If no issues are found, return score 100, risk_level "Low", and empty high_risk_indicators array.
-- Limit high_risk_indicators to maximum 10 items, ranked by severity (most severe first).
+- If no issues are found, return SCORE 100, RISK "Low", and empty high_risk_indicator array.
+- Limit high_risk_indicator to maximum 10 items, ranked by severity (most severe first).
+
+CONTEXTUAL RULES (how to treat context & intent):
+- Quoted, reported, or critical context reduces severity by one level.
+- Satire or parody: treat as contextual but only reduce if clear from transcript indicators.
+- Repetition or emphasis increases severity.
+- If unsure about speaker identity or target, err on the side of conservatism (raise severity).
+
+FLAGGING RULES (for high_risk_indicator):
+- Provide the exact phrase or short snippet (3–12 words) that triggered the flag.
+- Exclude benign mentions of sensitive words used neutrally unless used disrespectfully.
+
+OUTPUT FORMAT (strict):
+Return exactly one JSON object and nothing else. Example structure:
+
+{{
+  "RISK": "Medium",
+  "SCORE": 63,
+  "high_risk_indicator": [
+    "insulting phrase 1",
+    "derogatory stereotype about ethnicity",
+    "explicit sexual description"
+  ],
+  "explanation": "Short, clear reasoning (max ~300 words)...",
+  "suggestion": "Concrete advice (max ~200 words)..."
+}}
+
+### ONE-SHOT EXAMPLE
+
+**Transcript Input:**  
+This comedian says, "Malaysians are lazy and always late, it's just in their culture."
+Later in the show, he makes a joke about religious fasting being pointless.
+Finally, he uses mild profanity when complaining about traffic: "This damn traffic jam every day!"
+
+**Expected Output (JSON only):**  
+```json
+{{
+  "RISK": "Medium",
+  "SCORE": 58,
+  "high_risk_indicator": [
+    "Malaysians are lazy and always late",
+    "fasting being pointless",
+    "damn traffic jam"
+  ],
+  "explanation": "The transcript includes an ethnic stereotype ('Malaysians are lazy'), a dismissive religious comment ('fasting being pointless'), and mild profanity ('damn'). These correspond to the Ethnic/Racial Stereotypes, Religious Sensitivity, and Profanity categories. The religious remark and stereotype received moderate penalties. Total penalties reduced the score to 58, mapping to Medium risk.",
+  "suggestion": "Remove or rephrase the ethnic stereotype to avoid portraying Malaysians negatively, replace the dismissive joke about fasting with a neutral or positive cultural observation, and substitute profanity with lighter language."
+}}
+```
 """
 
         return prompt
