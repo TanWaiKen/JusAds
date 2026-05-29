@@ -230,7 +230,7 @@ PRIMARY TASK:
 4. Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with the exact fields below:
    - RISK: one of "High", "Medium", "Low"
    - SCORE: integer 0–100 (Cultural Appropriateness Score; 100 = fully appropriate)
-   - high_risk_indicator: array of strings (describe specific visual elements or transcript phrases that were flagged). Include up to the top 10 flagged items, ranked by severity.
+   - high_risk_indicator: array of strings. You MUST include the exact timestamp (e.g. [00:04-00:06]) at the beginning of each string to pinpoint exactly when the visual or auditory violation occurred. Example: "[00:10-00:12] Sleeveless tank top on model (Visual)". Include up to the top 10 flagged items, ranked by severity.
    - explanation: concise reasoning (max ~300 words) describing why the video received that SCORE and RISK. Reference which visual/auditory elements drove the rating and cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "The exposed clothing at 0:15 violates the guideline on modesty...").
    - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the video to make it more culturally appropriate for a {market.title()} audience (e.g., change clothing, remove or rephrase spoken lines, blur explicit elements).
 
@@ -249,6 +249,7 @@ PRIMARY TASK:
 - Return ONLY valid JSON.
 - If no issues are found, return SCORE 100, RISK "Low", and empty high_risk_indicator array.
 - Limit high_risk_indicator to maximum 10 items, ranked by severity (most severe first).
+- You MUST provide timestamps for every issue found in high_risk_indicator. This is critical for downstream editing.
 
 CONTEXTUAL RULES (how to treat context & intent):
 - Quoted, reported, or critical context reduces severity by one level.
@@ -262,8 +263,8 @@ Return exactly one JSON object and nothing else. Example structure:
   "RISK": "Medium",
   "SCORE": 63,
   "high_risk_indicator": [
-    "Sleeveless tank top on model (Visual)",
-    "Unsubstantiated health claim (Audio)"
+    "[00:05-00:08] Sleeveless tank top on model (Visual)",
+    "[00:12-00:15] Unsubstantiated health claim (Audio)"
   ],
   "explanation": "Short, clear reasoning (max ~300 words)...",
   "suggestion": "Concrete advice (max ~200 words)..."

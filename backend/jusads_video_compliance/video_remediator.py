@@ -125,10 +125,11 @@ Watch the attached video advertisement. It has been flagged for cultural complia
 {suggestion}
 
 ## RULES
+## RULES
 1. Fix every flagged issue (both audio and visual).
 2. Preserve the core product pitch and brand identity.
 3. Keep the rewritten script roughly the same duration as the original.
-4. For the visual edit guide, reference approximate timestamps (e.g., "0:05-0:10").
+4. For the visual edit guide, you MUST provide EXACT timestamps matching the `high_risk_indicator` timestamps from the compliance checker (e.g., "[00:05-00:08]"). Since many video generation models only generate up to 10 seconds of video, these timestamps are critical for targeting edits.
 5. Be specific about clothing changes, pose adjustments, and any elements to add/remove.
 
 ## OUTPUT FORMAT
@@ -137,7 +138,7 @@ Return ONLY a JSON object:
   "rewritten_script": "The full corrected voiceover script...",
   "visual_edit_guide": [
     {{
-      "timestamp": "0:00-0:05",
+      "timestamp": "[00:00-00:05]",
       "current": "Woman in sleeveless top introduces herself",
       "change_to": "Woman in modest long-sleeved blouse introduces herself",
       "reason": "Modesty standards require covered shoulders"
