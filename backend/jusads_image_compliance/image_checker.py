@@ -55,29 +55,35 @@ class ImageComplianceChecker:
             logger.error(f"Failed to load image at {image_path}: {str(e)}")
             return self._error_result(image_path, market, ethnicity, age_group, f"Failed to load image: {str(e)}")
 
-        # Step 2: Use Qdrant to retrieve default market rules (since we don't have text to search yet,
-        # we do a generic query or we can just fetch top guidelines using a generic placeholder).
-        # For an image, a generic query like "advertising regulations and cultural taboos" works well.
-        search_query = "advertising regulations, cultural taboos, modesty, offensive symbols"
-        
-        try:
-            logger.info(f"Retrieving rules for market='{market}', ethnicity='{ethnicity}'")
-            regulatory_rules = self.qdrant.search_regulatory_rules(
-                query_text=search_query,
-                market=market,
-                limit=5
-            )
-            
-            cultural_guidelines = self.qdrant.search_cultural_guidelines(
-                query_text=search_query,
-                market=market,
-                ethnicity=ethnicity,
-                limit=5
-            )
-        except Exception as e:
-            logger.warning(f"Failed to retrieve rules from Qdrant: {e}. Proceeding without context.")
-            regulatory_rules = []
-            cultural_guidelines = []
+        # Step 2a: Gemini pre-scan — describe the image for Qdrant retrieval
+        logger.info("Running Gemini pre-scan to describe image content...")
+        prescan_description = self._prescan_image(image_bytes, mime_type)
+        logger.info(f"Pre-scan description: {prescan_description}")
+
+        # Step 2b: Embed the description for Qdrant vector search
+        from jusads_text_compliance.embeddings import embed_text
+        query_vector = embed_text(prescan_description)
+
+        # Step 2c: Retrieve regulatory and cultural rules from Qdrant
+        regulatory_rules = []
+        cultural_guidelines = []
+        if query_vector:
+            try:
+                logger.info(f"Retrieving rules for market='{market}', ethnicity='{ethnicity}'")
+                regulatory_rules = self.qdrant.get_regulatory_rules(
+                    query_vector=query_vector,
+                    market=market,
+                )
+                cultural_guidelines = self.qdrant.get_cultural_guidelines(
+                    query_vector=query_vector,
+                    market=market,
+                    ethnicity=ethnicity,
+                    age_group=age_group,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to retrieve rules from Qdrant: {e}. Proceeding without context.")
+        else:
+            logger.warning("Failed to generate embedding for pre-scan description. Proceeding without Qdrant rules.")
 
         # Step 3: Get Persona Context
         persona_text = None
@@ -248,6 +254,36 @@ Return exactly one JSON object and nothing else. Example structure:
 }}
 """
         return prompt
+
+    def _prescan_image(self, image_bytes: bytes, mime_type: str) -> str:
+        """Lightweight Gemini call to describe the image for Qdrant retrieval."""
+        try:
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_text(
+                            text="Describe this advertisement image in 2-3 sentences. "
+                                 "Focus on: what product is being advertised, what people are wearing, "
+                                 "their poses, any symbols/colors/text visible, and the setting. "
+                                 "Do NOT evaluate or judge. Just describe factually."
+                        ),
+                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    ],
+                )
+            ]
+            response = client.models.generate_content(
+                model="gemini-3.1-flash-lite",
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=256,
+                ),
+            )
+            return response.text.strip()
+        except Exception as e:
+            logger.warning(f"Pre-scan failed: {e}. Using generic fallback query.")
+            return "advertising content with people, clothing, products, and text"
 
     def _evaluate_with_llm(self, image_bytes: bytes, mime_type: str, prompt: str) -> dict[str, Any]:
         """Send the image and prompt to Gemini and parse the JSON response."""

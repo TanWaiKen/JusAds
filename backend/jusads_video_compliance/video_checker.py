@@ -65,25 +65,38 @@ class VideoComplianceChecker:
             logger.error(f"Failed to load video file at {video_path}: {str(e)}")
             return self._error_result(video_path, market, ethnicity, age_group, f"Failed to load video: {str(e)}")
 
-        # Step 3: Use Qdrant to retrieve rules based on the transcript
-        try:
-            logger.info(f"Retrieving rules for market='{market}', ethnicity='{ethnicity}' based on transcript...")
-            regulatory_rules = self.qdrant.search_regulatory_rules(
-                query_text=transcript,
-                market=market,
-                limit=5
-            )
-            
-            cultural_guidelines = self.qdrant.search_cultural_guidelines(
-                query_text=transcript,
-                market=market,
-                ethnicity=ethnicity,
-                limit=5
-            )
-        except Exception as e:
-            logger.warning(f"Failed to retrieve rules from Qdrant: {e}. Proceeding without context.")
-            regulatory_rules = []
-            cultural_guidelines = []
+        # Step 3a: Gemini pre-scan — describe the video visuals for Qdrant retrieval
+        logger.info("Running Gemini pre-scan to describe video visuals...")
+        visual_description = self._prescan_video(video_bytes, mime_type)
+        logger.info(f"Pre-scan visual description: {visual_description}")
+
+        # Step 3b: Combine transcript + visual description for a comprehensive query
+        combined_query = f"{transcript} {visual_description}"
+
+        # Step 3c: Embed the combined text for Qdrant vector search
+        from jusads_text_compliance.embeddings import embed_text
+        query_vector = embed_text(combined_query)
+
+        # Step 3d: Retrieve regulatory and cultural rules from Qdrant
+        regulatory_rules = []
+        cultural_guidelines = []
+        if query_vector:
+            try:
+                logger.info(f"Retrieving rules for market='{market}', ethnicity='{ethnicity}' based on transcript + visuals...")
+                regulatory_rules = self.qdrant.get_regulatory_rules(
+                    query_vector=query_vector,
+                    market=market,
+                )
+                cultural_guidelines = self.qdrant.get_cultural_guidelines(
+                    query_vector=query_vector,
+                    market=market,
+                    ethnicity=ethnicity,
+                    age_group=age_group,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to retrieve rules from Qdrant: {e}. Proceeding without context.")
+        else:
+            logger.warning("Failed to generate embedding. Proceeding without Qdrant rules.")
 
         # Step 4: Get Persona Context
         persona_text = None
@@ -257,6 +270,36 @@ Return exactly one JSON object and nothing else. Example structure:
 }}
 """
         return prompt
+
+    def _prescan_video(self, video_bytes: bytes, mime_type: str) -> str:
+        """Lightweight Gemini call to describe the video visuals for Qdrant retrieval."""
+        try:
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_text(
+                            text="Describe the visual content of this video advertisement in 2-3 sentences. "
+                                 "Focus on: what the characters are wearing, their actions, any on-screen text, "
+                                 "the setting, and any symbols or gestures. "
+                                 "Do NOT evaluate or judge. Just describe factually."
+                        ),
+                        types.Part.from_bytes(data=video_bytes, mime_type=mime_type),
+                    ],
+                )
+            ]
+            response = client.models.generate_content(
+                model="gemini-3.1-flash-lite",
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=256,
+                ),
+            )
+            return response.text.strip()
+        except Exception as e:
+            logger.warning(f"Video pre-scan failed: {e}. Using transcript only for Qdrant.")
+            return ""
 
     def _evaluate_with_llm(self, video_bytes: bytes, mime_type: str, prompt: str) -> dict[str, Any]:
         """Send the video and prompt to Gemini and parse the JSON response."""
