@@ -1,4 +1,8 @@
-"""JusAds Text Compliance Checker
+"""
+🌟 CORE COMPLIANCE ENGINE - MAIN ENTRY POINT 🌟
+
+JusAds Text Compliance Checker
+================================
 
 Simple, transparent text compliance evaluation using:
 1. Qdrant retrieval for relevant rules + persona
