@@ -38,6 +38,7 @@ EMBED_DIMENSIONS = 1536
 # ── AWS Transcribe ────────────────────────────────────────────────────────────
 TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "")
 
-# ── Google Gemini (LLM for evaluation) ────────────────────────────────────────
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
-LLM_MODEL_ID = "gemini-2.5-flash"
+# ── Google Gemini (LLM for evaluation via Vertex AI) ──────────────────────────
+VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "project-d53d74fb-f547-4728-977")
+VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
+LLM_MODEL_ID = os.environ.get("GEMINI_MODEL_ID", "gemini-3.1-pro-preview")

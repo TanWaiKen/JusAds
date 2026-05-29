@@ -11,17 +11,18 @@ import logging
 import time
 from typing import Any, Optional
 
-from google import genai
-from google.genai import types
+import vertexai
+from vertexai.generative_models import GenerativeModel
 
-from .config import GOOGLE_API_KEY, LLM_MODEL_ID
+from .config import VERTEX_PROJECT_ID, VERTEX_LOCATION, LLM_MODEL_ID
 from .embeddings import embed_text
 from .qdrant_client import JusAdsQdrantClient
 
 logger = logging.getLogger(__name__)
 
-# Initialize Gemini client
-client = genai.Client(api_key=GOOGLE_API_KEY)
+# Initialize Vertex AI
+vertexai.init(project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
+model = GenerativeModel(LLM_MODEL_ID)
 
 
 class TextComplianceChecker:
@@ -175,15 +176,10 @@ class TextComplianceChecker:
         )
 
         try:
-            # Enforce JSON output at the API level
-            config = types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-            
-            response = client.models.generate_content(
-                model=LLM_MODEL_ID,
-                contents=prompt,
-                config=config,
+            # Enforce JSON output at the API level via Vertex AI
+            response = model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json"}
             )
             result_text = response.text
 
