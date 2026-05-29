@@ -39,9 +39,10 @@ Don't miss out on the greatest party in town!
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_test_case(name: str, text: str) -> None:
+def run_test_case(name: str, text: str, market: str = "malaysia", ethnicity: str = "malay", age_group: str = "all_ages") -> None:
     print(f"\n{'='*60}")
     print(f" TEST CASE: {name.upper()}")
+    print(f" Target: {market.title()} | {ethnicity.title()} | {age_group}")
     print(f"{'='*60}")
     print(f"Input Text:\n{text.strip()}\n")
     print("-" * 60)
@@ -50,9 +51,9 @@ def run_test_case(name: str, text: str) -> None:
         # The ReAct agent natively calls the tool like this
         json_output = check_text_compliance.invoke({
             "text": text,
-            "market": "malaysia",
-            "ethnicity": "malay",
-            "age_group": "all_ages"
+            "market": market,
+            "ethnicity": ethnicity,
+            "age_group": age_group
         })
         
         print("OUTPUT FORMAT (JSON):")
@@ -61,12 +62,21 @@ def run_test_case(name: str, text: str) -> None:
     except Exception as e:
         print(f"Error during evaluation: {e}")
 
+SINGAPORE_GEN_Z_CASE = """
+Hey besties! Ready for the ultimate deal? Our new bubble tea shop is opening! 
+We're launching our exclusive 'Deadly Good' series. Buy 4 drinks for just $4.44! 
+Don't be basic, come down and chope your seats early or you'll miss out on the aesthetic vibes. 
+Warning: It's so good it's almost a sin! #kiasu #shiok
+"""
 
 def main():
     print("Testing LangChain ReAct Tools...")
     run_test_case("Best Case (Fully Compliant)", BEST_CASE)
     run_test_case("Moderate Case (Borderline Claims)", MODERATE_CASE)
     run_test_case("Worst Case (Severe Violations)", WORST_CASE)
+    
+    # Test the new Singapore Chinese Gen Z persona logic
+    run_test_case("Singapore Gen Z (Taboo Test)", SINGAPORE_GEN_Z_CASE, market="singapore", ethnicity="chinese", age_group="gen_z")
 
 
 if __name__ == "__main__":
