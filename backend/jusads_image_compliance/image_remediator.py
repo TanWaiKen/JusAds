@@ -117,7 +117,7 @@ class ImageRemediator:
             from vertexai.preview.vision_models import (
                 Image,
                 ImageGenerationModel,
-                StyleReferenceImage
+                RawReferenceImage
             )
 
             logger.info("Generating compliant image using Imagen 3 (Vertex AI)...")
@@ -131,7 +131,7 @@ class ImageRemediator:
                 orig_bytes = f.read()
 
             reference_images = [
-                StyleReferenceImage(
+                RawReferenceImage(
                     reference_id=1,
                     image=Image(image_bytes=orig_bytes)
                 )
