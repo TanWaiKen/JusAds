@@ -84,3 +84,58 @@ def transcribe_media(media_path: str) -> str:
         return json.dumps({"transcript": transcript}, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+@tool
+def check_audio_compliance(
+    media_path: str,
+    market: str = "malaysia",
+    ethnicity: str = "all",
+    age_group: str = "all_ages"
+) -> str:
+    """Evaluate spoken audio/video content for regulatory and cultural compliance.
+    
+    Args:
+        media_path (str): The absolute or relative path to the audio or video file.
+        market (str): Target market ('malaysia' or 'singapore').
+        ethnicity (str): Target ethnicity ('malay', 'chinese', 'indian', 'all').
+        age_group (str): Target age group ('all_ages', 'adults_only', 'children').
+            
+    Returns:
+        JSON string containing risk_level, score, high_risk_indicators, explanation, and the transcript used.
+    """
+    try:
+        if not media_path:
+            return json.dumps({"error": "No media_path provided."})
+            
+        logger.info(f"Checking audio compliance for {media_path}...")
+        
+        # 1. Transcribe the media
+        from jusads_transcription.transcriber import Transcriber
+        transcriber = Transcriber()
+        transcript = transcriber.transcribe_media(media_path)
+        logger.info(f"Transcription successful. Passing to text compliance checker...")
+        
+        # 2. Run text compliance on the transcript
+        checker = TextComplianceChecker()
+        result = checker.check_compliance(
+            ad_text=transcript,
+            market=market,
+            ethnicity=ethnicity,
+            age_group=age_group
+        )
+        
+        # 3. Format response
+        agent_payload = {
+            "transcript_used": transcript,
+            "risk_level": result.get("risk_level", "Unknown"),
+            "score": result.get("score", 0),
+            "high_risk_indicators": result.get("high_risk_indicators", []),
+            "explanation": result.get("explanation", ""),
+            "suggestion": result.get("suggestion", "")
+        }
+        
+        return json.dumps(agent_payload, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Audio compliance check failed: {str(e)}")
+        return json.dumps({"error": str(e)})
