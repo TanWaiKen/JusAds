@@ -20,7 +20,12 @@ AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 
 EMBED_MODEL_ID = os.environ.get("EMBED_MODEL_ID", "global.cohere.embed-v4:0")
 EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "1536"))
-LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "apac.amazon.nova-pro-v1:0")
+
+AWS_LLM_MODEL_ID = os.environ.get("AWS_LLM_MODEL_ID", "apac.amazon.nova-pro-v1:0")
+GOOGLE_LLM_MODEL_ID = os.environ.get("GOOGLE_LLM_MODEL_ID", "gemini-3.0-pro")
+
+# Default LLM model for the app
+LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "gemini-3.0-pro")
 VIDEO_MODEL_ID = os.environ.get("VIDEO_MODEL_ID", "global.twelvelabs.pegasus-1-2-v1:0")
 
 TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "")
