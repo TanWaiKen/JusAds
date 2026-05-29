@@ -39,7 +39,7 @@ def main():
         "Commercial Video Test", 
         "backend/assets/Test Video.mp4",
         market="malaysia",
-        ethnicity="malay"
+        ethnicity="all"
     )
 
 if __name__ == "__main__":

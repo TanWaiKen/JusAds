@@ -10,6 +10,15 @@
       "gen_x": "Born 1965-1980 | Age ~45-60 (2026)",
       "baby_boomer": "Born 1946-1964 | Age ~61-79 (2026)",
       "silent_gen": "Born before 1946 | Age 80+ (2026)"
+    },
+    "_nation_notes": {
+      "sensitivities": "Multi-ethnic nation (Malay ~69%, Chinese ~23%, Indian ~7%) with Islam as the state religion. The Sedition Act 1948 and Communications and Multimedia Act 1998 restrict content that could cause racial or religious disharmony. Content must respect the Rukunegara principles and the constitutional position of the Malay rulers. Racial and religious harmony is a foundational national value — any content perceived as divisive is treated with extreme severity.",
+      "language_complexity": "Bahasa Melayu is the national language and must be used in all official contexts. English is widely used in business and urban settings. Chinese (Mandarin, Cantonese, Hokkien) and Tamil are community languages. Code-switching between languages (Manglish, Rojak) is common in informal contexts but must be used authentically, not mockingly.",
+      "digital_landscape": "Very high smartphone penetration (~97%). Dominant platforms: TikTok, Instagram, Facebook, WhatsApp. E-wallets (Touch 'n Go eWallet, GrabPay, Boost) widely adopted. Strong social commerce via Shopee and TikTok Shop. Astro remains dominant for TV/streaming.",
+      "general_modesty": "Conservative dress standards apply across all ethnicities in public-facing advertising. Avoid showing excessive skin (armpits, midriff, thighs), intimate body areas, or suggestive poses regardless of target ethnicity. This is especially critical for Malay audiences but applies as a general national baseline.",
+      "food_sensitivity": "Malaysia has strict halal certification governed by JAKIM (Department of Islamic Development Malaysia). Non-halal food/drink must be clearly separated in advertising. During Ramadan, food advertising timing and imagery must be sensitive. Pork and alcohol must never appear in the same frame as halal products.",
+      "religious_diversity": "While Islam is the state religion, Malaysia is home to significant Buddhist, Hindu, Christian, and Taoist communities. Advertising that targets 'all' Malaysians must be respectful of all faiths and avoid privileging or marginalizing any single religious group.",
+      "political_sensitivity": "Avoid references to politically sensitive topics including race-based policies (NEP/DEB), political parties, or the royal institution (unless in a respectful, ceremonial context). Satirizing government officials or policies in commercial advertising is high-risk."
     }
   },
   "malay": {
