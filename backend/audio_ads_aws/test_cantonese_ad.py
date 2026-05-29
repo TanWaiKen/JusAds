@@ -9,7 +9,10 @@ import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-load_dotenv()
+from pathlib import Path
+
+# Load .env from backend/ directory
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 def test_cantonese_ad():
     idea = "A smart cooling pillow that helps you sleep better in hot weather"

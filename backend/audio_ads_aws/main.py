@@ -23,7 +23,8 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent / ".env")
+# Load .env from backend/ directory
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from step1_product_idea import enhance_product_idea
 from step2_script_generation import generate_ad_script
