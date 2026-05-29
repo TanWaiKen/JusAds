@@ -185,74 +185,74 @@ class ImageComplianceChecker:
         persona_section = ""
         if persona_text:
             persona_section = f"""
-## Target Audience Persona (Structured Profile)
-```json
-{persona_text}
-```
-"""
+                                ## Target Audience Persona (Structured Profile)
+                                ```json
+                                {persona_text}
+                                ```
+                                """
 
-        prompt = f"""You are a {market.title()} Cultural Appropriateness Evaluator. Your job is to analyze the provided image advertisement and determine whether it is culturally appropriate for a {market.title()} audience (target ethnicity: {ethnicity}).
+            prompt = f"""You are a {market.title()} Cultural Appropriateness Evaluator. Your job is to analyze the provided image advertisement and determine whether it is culturally appropriate for a {market.title()} audience (target ethnicity: {ethnicity}).
 
-REGULATORY & CULTURAL GUIDELINES (from {market.title()} Communications and Multimedia Content Code & Cultural Norms):
-To inform your evaluation, consider the following rules, which provide guidance on content standards in {market.title()}.
+                        REGULATORY & CULTURAL GUIDELINES (from {market.title()} Communications and Multimedia Content Code & Cultural Norms):
+                        To inform your evaluation, consider the following rules, which provide guidance on content standards in {market.title()}.
 
-### Regulatory Guidelines
-{reg_text if reg_text else "No specific regulatory rules retrieved."}
+                        ### Regulatory Guidelines
+                        {reg_text if reg_text else "No specific regulatory rules retrieved."}
 
-### Cultural Guidelines
-{cultural_text if cultural_text else "No specific cultural guidelines retrieved."}
-{persona_section}
+                        ### Cultural Guidelines
+                        {cultural_text if cultural_text else "No specific cultural guidelines retrieved."}
+                        {persona_section}
 
-PRIMARY TASK:
-1. Carefully inspect the visual elements of the image (e.g., clothing modesty, physical gestures, symbols, colors, character interactions).
-2. Read and analyze any text or copy present in the image.
-3. Detect elements that may be culturally sensitive, offensive, taboo, or inappropriate for audiences in {market.title()}, paying close attention to the regulatory guidelines and persona provided above.
-4. Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with the exact fields below:
-   - RISK: one of "High", "Medium", "Low"
-   - SCORE: integer 0–100 (Cultural Appropriateness Score; 100 = fully appropriate)
-   - high_risk_indicator: array of strings (describe specific visual elements or text phrases that were flagged). Include up to the top 10 flagged items, ranked by severity.
-   - explanation: concise reasoning (max ~300 words) describing why the image received that SCORE and RISK. Reference which visual/text elements and categories drove the rating and, where applicable, cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "The exposed clothing violates the guideline on modesty..."). Note any contextual factors.
-   - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the image to make it more culturally appropriate for a {market.title()} audience (e.g., change clothing to be more modest, remove or rephrase flagged terms, change colors, etc.).
+                        PRIMARY TASK:
+                        1. Carefully inspect the visual elements of the image (e.g., clothing modesty, physical gestures, symbols, colors, character interactions).
+                        2. Read and analyze any text or copy present in the image.
+                        3. Detect elements that may be culturally sensitive, offensive, taboo, or inappropriate for audiences in {market.title()}, paying close attention to the regulatory guidelines and persona provided above.
+                        4. Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with the exact fields below:
+                        - RISK: one of "High", "Medium", "Low"
+                        - SCORE: integer 0–100 (Cultural Appropriateness Score; 100 = fully appropriate)
+                        - high_risk_indicator: array of strings (describe specific visual elements or text phrases that were flagged). Include up to the top 10 flagged items, ranked by severity.
+                        - explanation: concise reasoning (max ~300 words) describing why the image received that SCORE and RISK. Reference which visual/text elements and categories drove the rating and, where applicable, cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "The exposed clothing violates the guideline on modesty..."). Note any contextual factors.
+                        - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the image to make it more culturally appropriate for a {market.title()} audience (e.g., change clothing to be more modest, remove or rephrase flagged terms, change colors, etc.).
 
-**Scoring Logic:**
-- Start at 100
-- Deduct points for each violation:
-  - Severe regulatory: -30 points
-  - Moderate regulatory: -20 points
-  - Minor regulatory: -10 points
-  - Severe cultural: -25 points
-  - Moderate cultural: -15 points
-  - Minor cultural: -8 points
-- Risk Level: Low (75-100), Medium (40-74), High (0-39)
+                        **Scoring Logic:**
+                        - Start at 100
+                        - Deduct points for each violation:
+                        - Severe regulatory: -30 points
+                        - Moderate regulatory: -20 points
+                        - Minor regulatory: -10 points
+                        - Severe cultural: -25 points
+                        - Moderate cultural: -15 points
+                        - Minor cultural: -8 points
+                        - Risk Level: Low (75-100), Medium (40-74), High (0-39)
 
-**Important:**
-- Return ONLY valid JSON.
-- If no issues are found, return SCORE 100, RISK "Low", and empty high_risk_indicator array.
-- Limit high_risk_indicator to maximum 10 items, ranked by severity (most severe first).
+                        **Important:**
+                        - Return ONLY valid JSON.
+                        - If no issues are found, return SCORE 100, RISK "Low", and empty high_risk_indicator array.
+                        - Limit high_risk_indicator to maximum 10 items, ranked by severity (most severe first).
 
-CONTEXTUAL RULES (how to treat context & intent):
-- Quoted, reported, or critical context reduces severity by one level.
-- Satire or parody: treat as contextual but only reduce if clear.
-- If unsure about target demographic, err on the side of conservatism (raise severity).
+                        CONTEXTUAL RULES (how to treat context & intent):
+                        - Quoted, reported, or critical context reduces severity by one level.
+                        - Satire or parody: treat as contextual but only reduce if clear.
+                        - If unsure about target demographic, err on the side of conservatism (raise severity).
 
-FLAGGING RULES (for high_risk_indicator):
-- Provide a clear, short description of the visual element or exact text snippet that triggered the flag (e.g., "Exposed armpits on model", "Price tag of $4.44").
-- Exclude benign elements.
+                        FLAGGING RULES (for high_risk_indicator):
+                        - Provide a clear, short description of the visual element or exact text snippet that triggered the flag (e.g., "Exposed armpits on model", "Price tag of $4.44").
+                        - Exclude benign elements.
 
-OUTPUT FORMAT (strict):
-Return exactly one JSON object and nothing else. Example structure:
+                        OUTPUT FORMAT (strict):
+                        Return exactly one JSON object and nothing else. Example structure:
 
-{{
-  "RISK": "Medium",
-  "SCORE": 63,
-  "high_risk_indicator": [
-    "Exposed armpits on model",
-    "Derogatory phrase in the background"
-  ],
-  "explanation": "Short, clear reasoning (max ~300 words)...",
-  "suggestion": "Concrete advice (max ~200 words)..."
-}}
-"""
+                        {{
+                        "RISK": "Medium",
+                        "SCORE": 63,
+                        "high_risk_indicator": [
+                            "Exposed armpits on model",
+                            "Derogatory phrase in the background"
+                        ],
+                        "explanation": "Short, clear reasoning (max ~300 words)...",
+                        "suggestion": "Concrete advice (max ~200 words)..."
+                        }}
+                    """
         return prompt
 
     def _prescan_image(self, image_bytes: bytes, mime_type: str) -> str:
