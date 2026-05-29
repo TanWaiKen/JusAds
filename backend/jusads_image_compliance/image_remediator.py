@@ -140,7 +140,7 @@ class ImageRemediator:
             images = generation_model._generate_images(
                 prompt=compliant_prompt,
                 number_of_images=1,
-                aspect_ratio="3:4",  # Updated to 3:4 for phone portrait mode
+                aspect_ratio="1:1",  # Reverted to 1:1 for social media
                 person_generation="allow_all",
                 reference_images=reference_images
             )
