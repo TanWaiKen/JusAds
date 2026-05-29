@@ -1,4 +1,8 @@
-"""JusAds Text Compliance Checker
+"""
+🌟 CORE COMPLIANCE ENGINE - MAIN ENTRY POINT 🌟
+
+JusAds Text Compliance Checker
+================================
 
 Simple, transparent text compliance evaluation using:
 1. Qdrant retrieval for relevant rules + persona
@@ -95,8 +99,30 @@ class TextComplianceChecker:
                     with open(persona_file, "r", encoding="utf-8") as f:
                         all_personas = json.load(f)
                         if ethnicity in all_personas:
-                            # Format as JSON string for the LLM prompt
-                            persona_text = json.dumps(all_personas[ethnicity], indent=2, ensure_ascii=False)
+                            base_persona = all_personas[ethnicity].copy()
+                            
+                            # Layer on age-specific overrides if applicable
+                            if age_group != "all_ages" and "age_groups" in base_persona:
+                                if age_group in base_persona["age_groups"]:
+                                    age_layer = base_persona["age_groups"][age_group]
+                                    resolved_persona = {
+                                        "base": base_persona,
+                                        "targeted": age_layer
+                                    }
+                                    # Clean up the output to avoid dumping all age groups to the LLM
+                                    if "age_groups" in resolved_persona["base"]:
+                                        del resolved_persona["base"]["age_groups"]
+                                    
+                                    persona_text = json.dumps(resolved_persona, indent=2, ensure_ascii=False)
+                                else:
+                                    logger.warning("Age group %s not found for %s/%s, defaulting to base", age_group, market, ethnicity)
+                                    if "age_groups" in base_persona:
+                                        del base_persona["age_groups"]
+                                    persona_text = json.dumps(base_persona, indent=2, ensure_ascii=False)
+                            else:
+                                if "age_groups" in base_persona:
+                                    del base_persona["age_groups"]
+                                persona_text = json.dumps(base_persona, indent=2, ensure_ascii=False)
                 if not persona_text:
                     logger.warning("No structured persona found for %s/%s", market, ethnicity)
             except Exception as e:

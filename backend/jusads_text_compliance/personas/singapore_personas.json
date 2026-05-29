@@ -1,75 +1,170 @@
 {
-  "malay": {
-    "demographics": {
-      "ethnicity": "Malay",
-      "religion": "Islam",
-      "location": "Singapore"
+  "_meta": {
+    "country": "Singapore",
+    "version": "2.0",
+    "last_updated": "2026-05-29",
+    "usage_guide": "Select persona by: personas[ethnicity].age_groups[age_group_key]. Base persona always applies. Age group OVERRIDES or EXTENDS fields when more specific behavior is needed.",
+    "age_group_keys": {
+      "gen_z": "Born 1997-2012 | Age ~13-28",
+      "millennial": "Born 1981-1996 | Age ~29-44",
+      "gen_x": "Born 1965-1980 | Age ~45-60",
+      "baby_boomer": "Born 1946-1964 | Age ~61-79",
+      "silent_gen": "Born before 1946 | Age 80+"
     },
-    "historical_and_cultural_context": "Singapore is a cosmopolitan, multicultural society, but core Islamic values regarding modesty and halal compliance remain extremely important to the Singaporean Malay Muslim community.",
-    "core_values": [
-      "Modesty (Aurat) in dress and public behavior",
-      "Strict halal compliance in food and personal care",
-      "Respectful representation of religious elements"
+    "research_sources": [
+      "https://brandinginasia.com/singapore-gen-z",
+      "https://marketingagency.sg/consumer-behavior",
+      "https://materialplus.io/insights"
     ],
-    "strict_taboos": [
-      "NEVER show or mention pork, alcohol, or non-halal ingredients.",
-      "NEVER show cross-contamination imagery (e.g., halal food placed near alcohol).",
-      "NEVER show female aurat exposed (hair, arms above the elbow, legs above the knee).",
-      "NEVER show bare armpits regardless of gender.",
-      "NEVER use Islamic religious symbols or mosque imagery as casual commercial props."
-    ],
-    "nuances_and_behavior": [
-      "While dress standards might be slightly more relaxed than in Malaysia due to the cosmopolitan context, core modesty principles must still be maintained.",
-      "Physical intimacy between unrelated males and females (casual touching, embracing, suggestive proximity) must not be depicted.",
-      "Non-halal ingredients in cosmetics and personal care items must be clearly disclosed."
-    ]
+    "_nation_notes": {
+      "sensitivities": "Highly meritocratic society. Avoid overly political topics or criticizing government policies. Racial harmony is strictly enforced by law.",
+      "language_complexity": "English is the primary language of business and education. Mandarin is common but often secondary for younger generations. 'Singlish' is widely used but must be used authentically, not forced.",
+      "digital_landscape": "Extremely high internet penetration. Heavy reliance on super-apps (Grab), social commerce (TikTok, Xiaohongshu, IG), and cashless payments (PayNow)."
+    }
   },
   "chinese": {
     "demographics": {
       "ethnicity": "Chinese",
-      "location": "Singapore"
+      "location": "Singapore",
+      "primary_language": "English (primary), Mandarin (secondary), Singlish",
+      "key_traits": "Pragmatic, highly educated, kiasu (fear of losing out), cosmopolitan yet culturally rooted, highly digital"
     },
-    "historical_and_cultural_context": "Singaporean Chinese culture is shaped by traditional Chinese beliefs within a highly modernized, multicultural context. Superstitions and symbolism remain culturally significant.",
+    "historical_and_cultural_context": "Singaporean Chinese are predominantly English-educated and highly cosmopolitan, differing significantly from Malaysian Chinese who often have stronger vernacular roots. They navigate a fast-paced, highly pragmatic, and meritocratic society. While they embrace global modern trends, they remain deeply influenced by core traditional values like filial piety and distinct local phenomena such as 'Kiasu' culture.",
     "core_values": [
-      "Auspicious symbolism and numerology",
-      "Respect for ancestral worship and spiritual practices",
-      "Strict adherence to gift-giving taboos"
+      "Pragmatism and Efficiency (Focus on value for money, time-saving, and practical benefits)",
+      "Meritocracy and Education (High emphasis on academic and professional success)",
+      "Kiasuism (The fear of missing out on deals, opportunities, or being second best)",
+      "Filial Piety (Often expressed through providing financial stability and a good quality of life for aging parents)"
     ],
     "strict_taboos": [
-      "NEVER use the number 4 in pricing or quantities due to its death association (si).",
-      "NEVER show clocks, scissors, or shoes as gifts (they carry strong negative symbolic meanings).",
-      "NEVER use ancestral worship items (joss paper, incense, altar items) as commercial props.",
-      "NEVER treat Buddhist or Taoist religious imagery, temples, or monks casually or disrespectfully."
+      "NEVER use the number 4 (associated with death) in pricing, packages, or major campaigns unless specifically required by context.",
+      "NEVER present gifts like clocks, scissors, or white envelopes in celebratory contexts (strong negative symbolic meanings).",
+      "NEVER disrespect or mock local cultural phenomena like 'chope-ing' (reserving seats with tissue packets); if used, it must be done authentically.",
+      "NEVER treat ancestral worship, Hungry Ghost Festival practices (like burning joss paper or leaving food offerings), or religious temples casually as commercial props."
     ],
     "nuances_and_behavior": [
-      "White is associated with mourning — avoid dominant white themes for celebratory products.",
-      "Red signifies prosperity and good fortune, highly encouraged for festive contexts.",
-      "During Hungry Ghost Festival month, advertisements should be sensitive to spiritual practices; avoid scheduling major product launches or highly celebratory campaigns during this period."
-    ]
-  },
-  "indian": {
-    "demographics": {
-      "ethnicity": "Indian",
-      "religion": "Predominantly Hindu",
-      "location": "Singapore"
-    },
-    "historical_and_cultural_context": "Singaporean Indian values are shaped by Hindu traditions operating within Singapore's egalitarian and multicultural society.",
-    "core_values": [
-      "Reverence for sacred symbols and deities",
-      "Dignity and respect for elders",
-      "Egalitarian representation across the community"
+      "Language: Advertising is most effective in English, occasionally peppered with authentic Singlish for local resonance (e.g., 'shiok', 'lah', 'swee', 'kiasu'), but avoid forced or cringey usage.",
+      "Aesthetics: They prefer modern, sleek, and premium visuals that reflect their cosmopolitan lifestyle, rather than overly traditional imagery outside of festive periods like Lunar New Year.",
+      "Color Symbolism: While red remains lucky, modern Singaporean Chinese are less bound by strict color rules in daily life. However, avoid dominant black/white themes for festive or celebratory products.",
+      "Humor and Tone: They respond well to clever, witty, and subtly self-deprecating humor, especially regarding local quirks."
     ],
-    "strict_taboos": [
-      "NEVER show beef or beef-derived products when targeting Hindu audiences.",
-      "NEVER place Hindu deities or sacred symbols on footwear, floor items, or below waist level.",
-      "NEVER use sacred imagery to promote alcohol or meat products.",
-      "NEVER commercialize or use sacred married woman symbols (mangalsutra, sindoor, toe rings) as mere fashion props.",
-      "NEVER use occupational stereotyping or hierarchical depictions that reinforce caste-based assumptions."
-    ],
-    "nuances_and_behavior": [
-      "Cow imagery must be treated with reverence consistent with Hindu beliefs.",
-      "Saffron and vermillion colors hold religious significance and must not be used in trivial contexts.",
-      "Elderly Indian individuals must be depicted with dignity; elder authority and family hierarchy should be portrayed positively."
-    ]
+    "age_groups": {
+      "gen_z": {
+        "age_range": "Born 1997-2012 | Age ~13-28",
+        "label": "Singapore Chinese Gen Z — The Pragmatic Digital Natives",
+        "tone_and_language": "Highly casual, internet-fluent English, heavily influenced by TikTok trends and Xiaohongshu. Authentic, transparent, and quick-witted.",
+        "key_motivations": [
+          "Value-for-money ('downtrading' everyday expenses to save for experiences)",
+          "Authenticity and brand transparency (quick to spot 'cringe' or fake corporate marketing)",
+          "Mental wellness and work-life boundaries",
+          "Community identity and aesthetic curation ('Instagram-worthy' but effortless)"
+        ],
+        "preferred_channels": [
+          "TikTok",
+          "Xiaohongshu (Little Red Book)",
+          "Instagram (Reels/Stories)",
+          "Telegram (for deals and news)"
+        ],
+        "content_style": "Short-form video, UGC (user-generated content), meme-fluent, highly visual and fast-paced.",
+        "brand_trust_signals": "Peer reviews, micro-influencers, transparent pricing, ethical brand behavior.",
+        "spending_behavior": "Strategic spending: highly willing to research for the best deals, utilizing cashless/BNPL options seamlessly.",
+        "overrides": {
+          "communication_style": "Strong preference for visual storytelling and community-driven narratives over direct hard-selling.",
+          "digital_literacy": "Absolute native; expects flawless UI/UX and omnichannel integration (O2O)."
+        }
+      },
+      "millennial": {
+        "age_range": "Born 1981-1996 | Age ~29-44",
+        "label": "Singapore Chinese Millennial — The Aspirational Upward Strivers",
+        "tone_and_language": "Professional, bilingual (comfortable in English and Mandarin), aspirational yet pragmatic.",
+        "key_motivations": [
+          "Property ownership (BTOs, condos) and wealth accumulation",
+          "Career progression and work-life balance",
+          "Providing a high standard of living for both young children and aging parents (sandwich generation)",
+          "Travel and premium experiences"
+        ],
+        "preferred_channels": [
+          "Instagram",
+          "LinkedIn",
+          "Facebook",
+          "Podcasts"
+        ],
+        "content_style": "Aspirational, informative, high-quality production, relatable lifestyle narratives.",
+        "brand_trust_signals": "Expert endorsements, high-quality aesthetics, established brand reputation, loyalty programs.",
+        "spending_behavior": "Highest spending power; willing to pay premium for convenience, time-saving services (Grab, food delivery), and status symbols.",
+        "overrides": {
+          "communication_style": "Focus heavily on ROI (Return on Investment) for big purchases; appeal to their desire for efficiency."
+        }
+      },
+      "gen_x": {
+        "age_range": "Born 1965-1980 | Age ~45-60",
+        "label": "Singapore Chinese Gen X — The Established Traditionalists",
+        "tone_and_language": "Direct, respectful, bilingual (Mandarin and English), value-driven.",
+        "key_motivations": [
+          "Financial security for retirement",
+          "Children's educational success (highly kiasu regarding schooling)",
+          "Health and wellness",
+          "Preserving family harmony and traditions"
+        ],
+        "preferred_channels": [
+          "Facebook",
+          "WhatsApp",
+          "Local TV/Radio (Mediacorp)"
+        ],
+        "content_style": "Clear, straightforward, benefit-focused, family-oriented.",
+        "brand_trust_signals": "Longevity of the brand, clear warranties, word-of-mouth from trusted peers, 'As seen on TV'.",
+        "spending_behavior": "Cautious but willing to spend heavily on family, healthcare, and education. Prefers established brands.",
+        "overrides": {
+          "communication_style": "Less susceptible to trends; needs clear, factual evidence of product efficacy.",
+          "religious_expression": "More likely to actively practice traditional rituals (feng shui, auspicious dates) than younger cohorts."
+        }
+      },
+      "baby_boomer": {
+        "age_range": "Born 1946-1964 | Age ~61-79",
+        "label": "Singapore Chinese Boomer — The Dialect-Speaking Pioneers",
+        "tone_and_language": "Mandarin, Chinese dialects (Hokkien, Cantonese, Teochew), simple and respectful. English is often secondary.",
+        "key_motivations": [
+          "Health, longevity, and traditional remedies",
+          "Family unity and seeing grandchildren succeed",
+          "Community connection (kopitiams, community centers)",
+          "Value hunting (using senior discounts/Pioneer Generation cards)"
+        ],
+        "preferred_channels": [
+          "WhatsApp (forwarded messages/videos)",
+          "Free-to-air Chinese TV (Channel 8)",
+          "Chinese Newspapers (Lianhe Zaobao)",
+          "Radio"
+        ],
+        "content_style": "Highly localized, large text, slow-paced, relies on familiar local celebrities or dialect-speaking actors.",
+        "brand_trust_signals": "Government endorsement, familiar local faces, traditional medicine halls (sinseh), peer recommendations in community groups.",
+        "spending_behavior": "Highly frugal, deeply values discounts and government subsidies. Suspicious of overly complex digital payments.",
+        "overrides": {
+          "communication_style": "Must avoid complex English jargon. Use Mandarin or localized dialect nuances. Respect for elders must be front and center.",
+          "digital_literacy": "Lower digital literacy; requires simple UI or offline alternatives for customer journeys."
+        }
+      },
+      "silent_gen": {
+        "age_range": "Born before 1946 | Age 80+",
+        "label": "Singapore Chinese Silent Gen — The Heritage Elders",
+        "tone_and_language": "Almost exclusively Chinese dialects. Highly traditional.",
+        "key_motivations": [
+          "Basic health and comfort",
+          "Deep reliance on family caregivers",
+          "Spiritual and ancestral connection"
+        ],
+        "preferred_channels": [
+          "Physical community spaces",
+          "Radio",
+          "Word of mouth via family caregivers"
+        ],
+        "content_style": "Extremely simple, auditory or highly visual, relies entirely on caregivers for complex information.",
+        "brand_trust_signals": "Generational trust (brands they have used for 50+ years).",
+        "spending_behavior": "Minimal direct spending; purchases are usually made by their Gen X or Millennial children on their behalf.",
+        "overrides": {
+          "communication_style": "Marketing to this group is effectively marketing to their caregivers (Gen X/Millennials). Direct messaging must be in dialects.",
+          "digital_literacy": "Practically non-existent."
+        }
+      }
+    }
   }
 }

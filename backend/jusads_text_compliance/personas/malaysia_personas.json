@@ -1,15 +1,33 @@
 {
+  "_meta": {
+    "country": "Malaysia",
+    "version": "2.0",
+    "last_updated": "2026-05-29",
+    "usage_guide": "Select persona by: personas[ethnicity].age_groups[age_group_key]. Age group keys: gen_z (born 1997-2012, age ~13-28), millennial (born 1981-1996, age ~29-44), gen_x (born 1965-1980, age ~45-60), baby_boomer (born 1946-1964, age ~61-79), silent_gen (born before 1946, age 80+). The base_persona always applies; age_group OVERRIDES or EXTENDS fields when more specific behavior is needed.",
+    "age_group_keys": {
+      "gen_z": "Born 1997-2012 | Age ~13-28 (2026)",
+      "millennial": "Born 1981-1996 | Age ~29-44 (2026)",
+      "gen_x": "Born 1965-1980 | Age ~45-60 (2026)",
+      "baby_boomer": "Born 1946-1964 | Age ~61-79 (2026)",
+      "silent_gen": "Born before 1946 | Age 80+ (2026)"
+    }
+  },
   "malay": {
     "demographics": {
       "ethnicity": "Malay",
       "religion": "Islam",
-      "location": "Malaysia"
+      "location": "Malaysia",
+      "primary_language": "Bahasa Melayu, English (educated urban), mix of both",
+      "key_traits": "Community-oriented, deeply Islamic, respectful of hierarchy, warm hospitality (mesra), values family and gotong-royong (communal cooperation)"
     },
-    "historical_and_cultural_context": "Malay culture in Malaysia is deeply intertwined with Islamic principles. Advertising must respect both traditional Malay cultural norms (kesopanan/politeness) and strict Islamic jurisprudence (Shariah).",
+    "historical_and_cultural_context": "Malay culture in Malaysia is deeply intertwined with Islamic principles. Advertising must respect both traditional Malay cultural norms (kesopanan/politeness) and strict Islamic jurisprudence (Shariah). The community is united by shared faith, language, and a strong sense of national identity tied to the concept of 'Ketuanan Melayu' and Rukun Negara values.",
     "core_values": [
       "Modesty (Aurat) in dress and behavior",
       "Halal compliance in all consumption",
-      "Respect for religious sanctity"
+      "Respect for religious sanctity and Islamic principles",
+      "Filial piety and respect for elders (menghormati ibu bapa)",
+      "Community solidarity (gotong-royong)",
+      "Face-saving (maruah) — avoiding public embarrassment"
     ],
     "strict_taboos": [
       "NEVER show or mention pork, alcohol, or non-halal ingredients (e.g., pig-derived collagen).",
@@ -17,25 +35,134 @@
       "NEVER show arms above the elbow or legs above the knee.",
       "NEVER show bare armpits (even for deodorant ads) or bare male torsos.",
       "NEVER use Islamic symbols (Mosques, Quran verses, Arabic calligraphy) as commercial props or placed disrespectfully (e.g., on floors/footwear).",
-      "NEVER show people eating or drinking during daylight in Ramadan-themed ads."
+      "NEVER show people eating or drinking during daylight in Ramadan-themed ads.",
+      "NEVER mock or diminish the Malay language, royalty, or national identity.",
+      "NEVER show non-mahram physical contact between opposite genders."
     ],
     "nuances_and_behavior": [
       "Physical contact (hugging, hand-holding) between non-related males and females (non-mahram) is highly inappropriate.",
       "Romantic scenes must remain strictly within publicly acceptable limits and ideally depict married couples.",
       "Sensual dancing, hip movements, provocative poses, and suggestive body movements are offensive regardless of product category.",
-      "Applying products to intimate body areas (underarms, thighs) must not be shown directly."
-    ]
+      "Applying products to intimate body areas (underarms, thighs) must not be shown directly.",
+      "Ramadan and Hari Raya are peak emotional and commercial periods — authenticity and sincerity are paramount.",
+      "Local Malay slang (e.g., 'lah', 'kan', 'wehh') builds rapport but must be age-appropriate."
+    ],
+    "age_groups": {
+      "gen_z": {
+        "age_range": "Born 1997-2012 | Age ~13-28",
+        "label": "Malay Gen Z — The Digital Ummah",
+        "tone_and_language": "Casual Bahasa Melayu mixed with English (Manglish), heavy use of internet slang (e.g., 'boleh lagi ke?', 'fuh', 'gempak'), TikTok-native humor, meme culture",
+        "key_motivations": [
+          "Halal lifestyle content (halal skincare, fashion, food trends)",
+          "Islamic identity that feels modern, cool, and globally connected",
+          "Social justice and environmental awareness through Islamic lens",
+          "Creator economy and side hustles",
+          "Affordable but trendy products (value-for-money)"
+        ],
+        "preferred_channels": ["TikTok (primary)", "Instagram Reels", "YouTube Shorts", "X (Twitter)", "Telegram communities"],
+        "content_style": "Short-form video, memes, authentic UGC (User Generated Content), micro-influencer endorsements, relatable everyday scenarios",
+        "brand_trust_signals": "Muslim-owned brands, halal certification prominently displayed, micro-influencer authenticity over celebrity endorsements, peer reviews on TikTok/Shopee",
+        "spending_behavior": "Value-conscious, influenced by social commerce (TikTok Shop, Shopee Live), side-gig income, digital wallets (GrabPay, Touch 'n Go eWallet)",
+        "overrides": {
+          "communication_style": "Peer-to-peer, highly informal, humor and meme-driven",
+          "media_consumption": "Exclusively digital-first; newspaper and TV are near-irrelevant",
+          "religious_expression": "Islam is a personal identity badge — proudly visible (hijab fashion, halal lifestyle branding) but not preachy"
+        }
+      },
+      "millennial": {
+        "age_range": "Born 1981-1996 | Age ~29-44",
+        "label": "Malay Millennial — The Aspirational Muslim Professional",
+        "tone_and_language": "Bilingual (Bahasa Melayu + English), professional yet warm, code-switching is natural",
+        "key_motivations": [
+          "Career advancement and financial stability",
+          "Home ownership and family well-being",
+          "Giving children the best Islamic education",
+          "Halal travel (umrah packages, Islamic tourism)",
+          "Health-conscious halal food and supplements",
+          "Social status through lifestyle (cars, gadgets, home décor)"
+        ],
+        "preferred_channels": ["Instagram", "Facebook", "YouTube", "WhatsApp groups", "TikTok (secondary)"],
+        "content_style": "Aspirational lifestyle content, family-centric narratives, Islamic values woven naturally, testimonial-driven, Raya/Ramadan themed campaigns",
+        "brand_trust_signals": "Trusted local and regional brands, government-backed halal certification (JAKIM), word-of-mouth in WhatsApp family/friend groups, thought-leader endorsements",
+        "spending_behavior": "Highest spending power in the Malay demographic, purchase-driven by life milestones (marriage, children, home), balance between Islamic products and global mainstream brands",
+        "overrides": {
+          "communication_style": "Aspirational but grounded, family storytelling resonates deeply",
+          "media_consumption": "Omnichannel — active on both digital and traditional (Astro, Malay drama streaming)"
+        }
+      },
+      "gen_x": {
+        "age_range": "Born 1965-1980 | Age ~45-60",
+        "label": "Malay Gen X — The Established Provider",
+        "tone_and_language": "Formal-leaning Bahasa Melayu, respect for proper grammar, cautious with English-heavy content",
+        "key_motivations": [
+          "Financial security and retirement planning (KWSP/EPF awareness)",
+          "Children's education and future",
+          "Health and wellness (aging parents, personal health)",
+          "Religious obligations (Haji/Umrah savings, zakat)",
+          "Community leadership and social contribution"
+        ],
+        "preferred_channels": ["Facebook (primary)", "WhatsApp", "YouTube", "Astro (TV)", "Malay print media (Utusan, Berita Harian)"],
+        "content_style": "Informative, factual, respectful tone, longer-form content acceptable, endorsements by respected community figures or Islamic scholars (ustaz)",
+        "brand_trust_signals": "Established brand history, government affiliation or endorsement, Islamic scholarly approval, community recommendations",
+        "spending_behavior": "Brand loyal, less experimental, high investment in insurance, takaful, education, and health products",
+        "overrides": {
+          "communication_style": "Formal and respectful, avoid slang or overly casual tone",
+          "media_consumption": "TV (Astro Oasis, TV3) and Facebook are dominant; TikTok only for watching grandchildren's content"
+        }
+      },
+      "baby_boomer": {
+        "age_range": "Born 1946-1964 | Age ~61-79",
+        "label": "Malay Baby Boomer — The Merdeka Generation",
+        "tone_and_language": "Formal Bahasa Melayu, classical expressions, deep respect for authority and proper language",
+        "key_motivations": [
+          "Health products and medications (diabetes, hypertension are prevalent)",
+          "Religious activities and afterlife preparation",
+          "Grandchildren's welfare",
+          "Government pension and financial security",
+          "Traditional remedies (herbal, Malay traditional medicine — ubat kampung)"
+        ],
+        "preferred_channels": ["Television (TV1, TV2, TV3, Astro Oasis)", "Radio (ERA FM, Sinar FM)", "WhatsApp (family groups)", "Printed newspapers"],
+        "content_style": "Simple, clear, large text, authoritative voice, religious framing, health-focused testimonials from peers",
+        "brand_trust_signals": "Government endorsement, doctor/health professional recommendation, long-established brand heritage, religious figure approval",
+        "spending_behavior": "Fixed income (pension/EPF), highly price-sensitive, prefers proven products, very brand loyal, influenced by family members for digital purchases",
+        "overrides": {
+          "communication_style": "Simple, authoritative, use of classic Malay proverbs (peribahasa) builds emotional resonance",
+          "digital_literacy": "Low-to-moderate; WhatsApp is primary digital touchpoint, often rely on children to navigate apps"
+        }
+      },
+      "silent_gen": {
+        "age_range": "Born before 1946 | Age 80+",
+        "label": "Malay Silent Generation — The Patriarchs",
+        "tone_and_language": "Classical Malay, highly formal, deeply religious framing",
+        "key_motivations": [
+          "Religious devotion and akhirat (afterlife) preparation",
+          "Health and mobility support",
+          "Family legacy and spiritual guidance role"
+        ],
+        "preferred_channels": ["Television", "Radio", "Family-mediated communication (via children/grandchildren)"],
+        "content_style": "Extremely simple, large visuals, religious messaging, no digital complexity",
+        "brand_trust_signals": "Doctor or imam recommendation, family trust, nationally recognized brands",
+        "overrides": {
+          "digital_literacy": "Very low; essentially offline — reach through family intermediaries or traditional broadcast media"
+        }
+      }
+    }
   },
   "chinese": {
     "demographics": {
       "ethnicity": "Chinese",
-      "location": "Malaysia"
+      "location": "Malaysia",
+      "primary_language": "Mandarin, English, Cantonese (in KL/Selangor), Hokkien (in Penang/Northern states), Hakka",
+      "key_traits": "Pragmatic, education-driven, business-oriented, strong community bonds, superstition-aware, multilingual, filial piety"
     },
-    "historical_and_cultural_context": "Malaysian Chinese culture is shaped by traditional Chinese beliefs, including Confucian respect for elders, Taoist/Buddhist spiritual practices, and deep-seated beliefs in numerology and symbolism.",
+    "historical_and_cultural_context": "Malaysian Chinese culture is shaped by traditional Chinese beliefs, including Confucian respect for elders, Taoist/Buddhist spiritual practices, and deep-seated beliefs in numerology and symbolism. Unlike Singaporean Chinese who are predominantly English-educated, Malaysian Chinese retain strong vernacular roots through Chinese-medium education (SRJKCs), giving them a distinct Mandarin/dialect-first identity.",
     "core_values": [
-      "Respect for elders and ancestors (filial piety)",
-      "Auspicious symbolism and prosperity",
-      "Superstitions surrounding gift-giving and death"
+      "Respect for elders and ancestors (filial piety — xiao)",
+      "Auspicious symbolism, luck, and prosperity (fatt)",
+      "Education as the primary path to success",
+      "Superstitions surrounding gift-giving, death, and numbers",
+      "Face (mianzi) — reputation and social standing",
+      "Family business legacy and entrepreneurship"
     ],
     "strict_taboos": [
       "NEVER use the number 4 (sounds like death) in pricing, quantities, or phone numbers. 14 and 44 are extremely inauspicious.",
@@ -43,27 +170,137 @@
       "NEVER show umbrellas opened indoors.",
       "NEVER show chopsticks stuck vertically in rice (resembles funeral incense).",
       "NEVER use ancestral tablets, altars, or Qing Ming (Tomb Sweeping) items (joss paper, incense) as commercial props.",
-      "NEVER use Buddhist monks or Taoist priests to endorse commercial products."
+      "NEVER use Buddhist monks or Taoist priests to endorse commercial products.",
+      "NEVER depict elderly Chinese in foolish, undignified, or helpless situations."
     ],
     "nuances_and_behavior": [
       "White is associated with mourning — avoid all-white packaging or backgrounds for celebratory occasions.",
       "Black combined with white evokes funeral imagery.",
       "Red signifies prosperity and is highly encouraged for festive contexts (like Chinese New Year).",
-      "Elderly Chinese individuals must never be depicted in undignified or foolish situations.",
-      "During the Nine Emperor Gods vegetarian festival, meat product advertisements should be scheduled sensitively."
-    ]
+      "During the Nine Emperor Gods vegetarian festival, meat product advertisements should be scheduled sensitively.",
+      "The number 8 (sounds like 'prosper') and 6 (smooth/prosperous) are highly auspicious in pricing and branding.",
+      "CNY gifting culture is enormous — hampers, premium packaging, and gold imagery drive purchase decisions."
+    ],
+    "age_groups": {
+      "gen_z": {
+        "age_range": "Born 1997-2012 | Age ~13-28",
+        "label": "Malaysian Chinese Gen Z — The Digitally Bicultural",
+        "tone_and_language": "English-Mandarin-Cantonese mix (Manglish with Chinese code-switching), heavy internet slang, Chinese meme culture (from mainland China and local), streetwear and K-pop influenced vocabulary",
+        "key_motivations": [
+          "Authenticity and self-expression",
+          "Global-local identity (proud of Chinese heritage but also Malaysian)",
+          "Value-for-money with trendy aesthetics (dupes acceptable)",
+          "Social media clout and creator culture",
+          "Mental health awareness",
+          "Sustainability (growing awareness)"
+        ],
+        "preferred_channels": ["TikTok (primary)", "Instagram", "YouTube", "XiaoHongShu (RED app — especially for Chinese-educated segment)", "Telegram", "Discord gaming communities"],
+        "content_style": "Short-form video, bilingual content (Mandarin + English captions), aesthetic product shoots, 'day in the life' content, humor that blends Chinese and Malaysian cultural references",
+        "brand_trust_signals": "Peer reviews on Shopee/Lazada, KOL endorsements, authentic UGC, Chinese brand crossovers (local brands adopting CNY aesthetics year-round), transparent ingredient lists",
+        "spending_behavior": "Digitally-driven purchases (TikTok Shop, Shopee Live), influenced by trending aesthetics, participates in group buys, uses digital wallets",
+        "overrides": {
+          "communication_style": "Peers-only tone; celebrity advertising feels inauthentic — micro-influencers and relatable content win",
+          "cultural_identity": "Blend of local Malaysian Chinese pride + global Chinese pop culture (C-pop, Chinese drama); distinct from mainland Chinese identity",
+          "superstition_relevance": "Lower adherence to strict superstitions vs. older generations; however, CNY aesthetics and lucky numbers still organically resonate"
+        }
+      },
+      "millennial": {
+        "age_range": "Born 1981-1996 | Age ~29-44",
+        "label": "Malaysian Chinese Millennial — The Pragmatic Achiever",
+        "tone_and_language": "English-dominant in professional/urban contexts, Mandarin or Cantonese in family and community contexts, Manglish in casual social settings",
+        "key_motivations": [
+          "Career growth and financial investment",
+          "Children's education (high spend on tuition, enrichment classes)",
+          "Property investment (first home or upgrade)",
+          "Health and wellness (gym, organic food, supplements)",
+          "Work-life balance and experience economy (travel, dining)",
+          "Brand prestige and quality assurance"
+        ],
+        "preferred_channels": ["Facebook", "Instagram", "YouTube", "WhatsApp", "LinkedIn (professionals)", "XiaoHongShu (beauty/lifestyle segment)"],
+        "content_style": "Aspirational lifestyle, family milestones, product quality demonstrations, comparison content, testimonials from credible peers",
+        "brand_trust_signals": "Established brand with quality track record, strong online reviews, recommendations from peer networks, premium packaging, awards and certifications",
+        "spending_behavior": "Highest disposable income bracket of the Chinese demographic, brand-loyal for core products but willing to try premium alternatives, heavy spend on children, property, and experiences",
+        "overrides": {
+          "communication_style": "Blend of aspirational and practical; quality and value must co-exist",
+          "superstition_relevance": "CNY and major festivals still drive big purchases; auspicious numbers in pricing work well for high-ticket items"
+        }
+      },
+      "gen_x": {
+        "age_range": "Born 1965-1980 | Age ~45-60",
+        "label": "Malaysian Chinese Gen X — The Established Business Class",
+        "tone_and_language": "Cantonese or Mandarin in personal/community settings, English in business, reads both English and Chinese press",
+        "key_motivations": [
+          "Business stability and succession planning",
+          "Health investments (preventive healthcare, supplements, medical insurance)",
+          "Children's overseas education funding",
+          "Legacy and wealth preservation",
+          "High-value discretionary purchases (cars, luxury goods, premium travel)"
+        ],
+        "preferred_channels": ["Facebook", "WhatsApp (key for community info sharing)", "Chinese newspapers (Sin Chew, China Press)", "YouTube", "LinkedIn"],
+        "content_style": "Factual, quality-demonstrating, status-affirming, heritage and craftsmanship narratives, family legacy stories",
+        "brand_trust_signals": "Long brand heritage, word-of-mouth from peers in business networks, Chinese newspaper features, awards and industry recognition",
+        "spending_behavior": "High purchasing power, brand loyal but quality-driven; willing to pay premium for proven products; heavily influenced by community business networks (associations, guilds)",
+        "overrides": {
+          "communication_style": "Formal-to-moderate tone; respect for expertise and knowledge; avoid overly casual or slang-heavy communication",
+          "superstition_relevance": "High; especially for business decisions — auspicious dates for launches, lucky numbers in pricing, feng shui considerations"
+        }
+      },
+      "baby_boomer": {
+        "age_range": "Born 1946-1964 | Age ~61-79",
+        "label": "Malaysian Chinese Baby Boomer — The Merdeka Pragmatist",
+        "tone_and_language": "Chinese dialects (Cantonese, Hokkien, Hakka) in daily life, Mandarin in formal Chinese contexts, limited English",
+        "key_motivations": [
+          "Health maintenance (Traditional Chinese Medicine, supplements, hospitals)",
+          "Grandchildren's welfare and education",
+          "Retirement financial security",
+          "Religious/spiritual practice (Buddhism, Taoism)",
+          "Community association participation (clan associations, temple activities)"
+        ],
+        "preferred_channels": ["Television (Astro AEC, ntv7 Chinese channels)", "Chinese radio stations", "Chinese newspapers (Sin Chew Daily, Nanyang Siang Pau)", "WhatsApp family groups"],
+        "content_style": "Simple, health-focused, family-oriented narratives, traditional values affirmed, authoritative health expert testimonials in Mandarin/Cantonese",
+        "brand_trust_signals": "Doctor/sinseh (TCM practitioner) recommendation, long-established Chinese brand names, peers in clan/community associations, visible product efficacy",
+        "spending_behavior": "Fixed or pension income, price-sensitive, trusts established Chinese brands deeply, high spend on health products and grandchildren's gifts, CNY spending is significant",
+        "overrides": {
+          "communication_style": "Speak in dialects if possible; Mandarin is respectful; English-only alienates",
+          "superstition_relevance": "Very high — especially health superstitions, auspicious timing, and ancestral rituals during festivals",
+          "digital_literacy": "Low-moderate; WhatsApp and YouTube are primary digital touchpoints; navigated with family assistance"
+        }
+      },
+      "silent_gen": {
+        "age_range": "Born before 1946 | Age 80+",
+        "label": "Malaysian Chinese Silent Generation — The Clan Elders",
+        "tone_and_language": "Dialects (Cantonese/Hokkien/Hakka), very little English, classical Mandarin",
+        "key_motivations": [
+          "Health and longevity",
+          "Ancestral worship and spiritual practices",
+          "Family harmony and grandchildren's prosperity"
+        ],
+        "preferred_channels": ["Chinese TV channels", "Family-mediated communication", "Clan association newsletters"],
+        "content_style": "Simple visuals, classical Chinese motifs, health and longevity themes",
+        "brand_trust_signals": "Family recommendation, clan association trust, long-established brand",
+        "overrides": {
+          "digital_literacy": "Very low — reach through family intermediaries or traditional Chinese broadcast media",
+          "communication_style": "Dialects preferred; any content must be visually simple and text-minimal"
+        }
+      }
+    }
   },
   "indian": {
     "demographics": {
       "ethnicity": "Indian",
-      "religion": "Predominantly Hindu",
-      "location": "Malaysia"
+      "religion": "Predominantly Hindu (~85%), with Tamil Christian and Muslim minorities",
+      "location": "Malaysia",
+      "primary_language": "Tamil (dominant), English, Bahasa Malaysia",
+      "key_traits": "Family-centric, festival-driven, value-conscious, deeply spiritual, community-solidarity (especially Tamil community), resilient economic climbers"
     },
-    "historical_and_cultural_context": "Malaysian Indian culture is heavily influenced by Hindu religious traditions, requiring deep reverence for sacred symbols, respect for family hierarchy, and adherence to specific dietary restrictions.",
+    "historical_and_cultural_context": "Malaysian Indian culture is heavily influenced by Hindu religious traditions, requiring deep reverence for sacred symbols, respect for family hierarchy, and adherence to specific dietary restrictions. The community — predominantly Tamil — traces its history to plantation labor during British colonial rule and has since built strong professional and entrepreneurial communities. Tamil media (cinema, music) is a dominant cultural force across all age groups.",
     "core_values": [
       "Reverence for the divine and sacred symbols",
       "Respect for family hierarchy and elders",
-      "Egalitarian representation (avoiding caste stereotypes)"
+      "Egalitarian representation (avoiding caste stereotypes)",
+      "Education as upward mobility",
+      "Tamil cultural pride — language, cinema, music",
+      "Communal solidarity (koodum vizhavum — gathering and festivals)"
     ],
     "strict_taboos": [
       "NEVER show beef or beef-derived products (including explicit cow-leather). The cow is sacred.",
@@ -71,14 +308,117 @@
       "NEVER use sacred symbols or deities to sell alcohol or meat.",
       "NEVER use Hindu deity imagery (e.g., Ganesha) as cartoon characters or playful mascots for children's products.",
       "NEVER show the sacred lamp (vilakku/deepam) extinguished or used merely as a decorative prop.",
-      "NEVER depict occupational stereotyping based on caste associations or untouchability concepts."
+      "NEVER depict occupational stereotyping based on caste associations or untouchability concepts.",
+      "NEVER use Deepavali or Tamil New Year imagery as generic 'decoration' without cultural authenticity."
     ],
     "nuances_and_behavior": [
-      "During major Hindu festivals (Navratri, Maha Shivaratri), non-vegetarian food should not be prominently featured.",
+      "During major Hindu festivals (Navratri, Maha Shivaratri, Thaipusam), non-vegetarian food should not be prominently featured.",
       "Saffron (kesari) represents sacrifice/purity and must not be used frivolously.",
       "White represents mourning — avoid all-white attire on Indian models in celebratory contexts.",
       "Vermillion (sindoor) and married woman symbols (mangalsutra, toe rings, bindi) must not be commercialized as mere fashion accessories.",
-      "Traditional attire (saree, salwar kameez) must be depicted respectfully without sexualization."
-    ]
+      "Traditional attire (saree, salwar kameez, veshti) must be depicted respectfully without sexualization.",
+      "Tamil cinema references and Tamil music/BGM in ads resonate deeply as cultural shorthand."
+    ],
+    "age_groups": {
+      "gen_z": {
+        "age_range": "Born 1997-2012 | Age ~13-28",
+        "label": "Malaysian Indian Gen Z — The Tamil Digital Native",
+        "tone_and_language": "Tanglish (Tamil-English mix), Manglish, meme references from Tamil cinema (especially Thalapathy Vijay, Rajinikanth meme culture), casual and peer-driven",
+        "key_motivations": [
+          "Tamil cultural pride with modern twist (Tamil music, K-drama crossover, Tamil memes)",
+          "Affordable fashion and streetwear",
+          "Social media presence and creator economy",
+          "Educational content (competitive exam prep content, skill-building)",
+          "Mental health and identity representation",
+          "Vegetarian/vegan food content (growing festival-linked awareness)"
+        ],
+        "preferred_channels": ["TikTok", "Instagram Reels", "YouTube (Tamil content channels)", "WhatsApp", "Facebook (secondary)"],
+        "content_style": "Tamil-English mixed short videos, Tamil cinema BGM in ads, meme-driven content, festival content with modern aesthetic, relatable everyday Tamil Malaysian life scenarios",
+        "brand_trust_signals": "Tamil language content, community-relevant social causes, local Indian influencers, peer-reviewed products on social platforms, Deepavali campaign authenticity",
+        "spending_behavior": "Budget-conscious, strong festival (Deepavali) spending spikes, influenced by Tamil social media trends, prefers social commerce and digital wallets",
+        "overrides": {
+          "communication_style": "Casual Tamil-English mix; meme culture and Tamil cinema references are powerful engagement tools",
+          "religious_expression": "Hinduism is culturally celebrated but worn lightly in daily digital life — festivals are key activation moments",
+          "representation_need": "HIGH — Malaysian Indian community is underrepresented in mainstream ads; authentic Tamil representation drives very strong brand affinity"
+        }
+      },
+      "millennial": {
+        "age_range": "Born 1981-1996 | Age ~29-44",
+        "label": "Malaysian Indian Millennial — The Aspiring Professional",
+        "tone_and_language": "English-dominant professionally, Tamil in family and community contexts, code-switching between English and Tamil naturally",
+        "key_motivations": [
+          "Career advancement and professional reputation",
+          "Children's English-medium education investment",
+          "Property ownership (aspirational, first-gen buyers)",
+          "Family financial security (insurance, investments)",
+          "Deepavali celebrations — significant gifting and clothing spend",
+          "Health-conscious lifestyle (growing vegetarianism, yoga, wellness)"
+        ],
+        "preferred_channels": ["Facebook", "WhatsApp", "YouTube (Tamil channels)", "Instagram", "Tamil newspapers (Tamil Nesan, Malaysia Nanban)"],
+        "content_style": "Family-centric, aspirational, Tamil cultural themes, festival season campaigns, health and education narratives, relatable middle-class Indian Malaysian stories",
+        "brand_trust_signals": "Tamil community endorsements, doctor/health professional recommendations, strong Deepavali campaign associations, brands that support Tamil community causes",
+        "spending_behavior": "Growing disposable income, highest spend during Deepavali and wedding seasons, brand-loyal for trusted products, invests significantly in children's education",
+        "overrides": {
+          "communication_style": "Balance between Tamil cultural pride and modern professional aspirations; avoid patronizing or stereotyped 'plantation-era' imagery"
+        }
+      },
+      "gen_x": {
+        "age_range": "Born 1965-1980 | Age ~45-60",
+        "label": "Malaysian Indian Gen X — The Community Pillar",
+        "tone_and_language": "Tamil in home and community, English in professional settings, formal register",
+        "key_motivations": [
+          "Health and wellness (aging concerns, preventive healthcare)",
+          "Children's higher education (overseas universities)",
+          "Religious and temple community activities",
+          "Financial stability and retirement planning",
+          "Social status within the Indian community",
+          "Traditional Indian cultural preservation"
+        ],
+        "preferred_channels": ["Tamil TV channels (Astro Vaanavil)", "Tamil radio (THR Raaga)", "Facebook", "WhatsApp community groups", "Tamil newspapers"],
+        "content_style": "Traditional values affirmed, health expert testimonials in Tamil, family and community themes, religious festival anchoring, long-form storytelling acceptable",
+        "brand_trust_signals": "Tamil community leaders, religious authority figures, established brand with long Indian community association, doctor-recommended for health products",
+        "spending_behavior": "Stable income, high commitment to children's education, significant temple and community donations, loyal to brands that support Tamil community",
+        "overrides": {
+          "communication_style": "Formal Tamil is highly respected; reference to traditional Tamil values (kaaval, katrupadi — discipline) resonates",
+          "superstition_relevance": "High; auspicious timing for purchases, horoscope considerations for major life decisions"
+        }
+      },
+      "baby_boomer": {
+        "age_range": "Born 1946-1964 | Age ~61-79",
+        "label": "Malaysian Indian Baby Boomer — The Temple Generation",
+        "tone_and_language": "Predominantly Tamil, limited English, formal and traditional register",
+        "key_motivations": [
+          "Religious devotion and temple activities (Thaipusam kavadi, daily pooja)",
+          "Traditional Ayurvedic and herbal health remedies",
+          "Grandchildren's welfare",
+          "Community and temple association roles",
+          "Retirement financial security"
+        ],
+        "preferred_channels": ["Tamil TV (Astro Vaanavil, Astro Vinmeen)", "Tamil radio (THR Raaga)", "WhatsApp (family groups)", "Temple community networks"],
+        "content_style": "Simple Tamil language, health-focused, religious framing, traditional Indian imagery (temple festivals, classical attire), authority figure testimonials",
+        "brand_trust_signals": "Temple priest or community leader endorsement, traditionally used remedies, family generational trust in a brand",
+        "spending_behavior": "Fixed income, price-sensitive, high spend on temple donations and festival preparations, deeply loyal to brands used across family generations",
+        "overrides": {
+          "communication_style": "Pure Tamil; any English-heavy content is alienating",
+          "digital_literacy": "Low; WhatsApp is primary digital touchpoint, TV and radio remain dominant media"
+        }
+      },
+      "silent_gen": {
+        "age_range": "Born before 1946 | Age 80+",
+        "label": "Malaysian Indian Silent Generation — The Estate Elders",
+        "tone_and_language": "Classical Tamil dialect, very little English or Bahasa Malaysia",
+        "key_motivations": [
+          "Spiritual preparation and daily prayer",
+          "Family legacy and grandchildren blessings",
+          "Health and mobility"
+        ],
+        "preferred_channels": ["Tamil TV channels", "Temple radio broadcasts", "Family-mediated communication"],
+        "content_style": "Simple Tamil visuals, devotional themes, traditional motifs",
+        "brand_trust_signals": "Family and temple community recommendation only",
+        "overrides": {
+          "digital_literacy": "Near zero — exclusively reached through family intermediaries or Tamil broadcast media"
+        }
+      }
+    }
   }
 }
