@@ -46,6 +46,7 @@ class ImageRemediator:
         # Step 2: Generate the image using Imagen 3
         compliant_prompt = result.get("compliant_image_prompt")
         if compliant_prompt:
+            logger.info(f"Using compliant prompt for image generation:\n{compliant_prompt}\n")
             image_generation_result = self.step2_generate_image(compliant_prompt, image_path)
             result.update(image_generation_result)
             
