@@ -58,12 +58,17 @@ def test_video_pipeline(video_path: str, market: str = "malaysia", ethnicity: st
     print("\n[Remediation Result]")
     print("Rewritten Script:")
     print(f"{remediation_result.get('rewritten_script')}")
-    print("\nVisual Edit Guide:")
-    for edit in remediation_result.get('visual_edit_guide', []):
-        print(f"  [{edit.get('timestamp')}]")
-        print(f"    Current: {edit.get('current')}")
-        print(f"    Change : {edit.get('change_to')}")
-        print(f"    Reason : {edit.get('reason')}")
+    print("\nGenerated B-Roll Replacements:")
+    brolls = remediation_result.get('video_broll_prompts', [])
+    for idx, broll in enumerate(brolls):
+        print(f"  [{idx+1}] Timestamp: {broll.get('timestamp')}")
+        print(f"      Prompt: {broll.get('prompt')}")
+        print(f"      Reason: {broll.get('reason')}")
+        vid_path = broll.get("generated_video_path")
+        if vid_path:
+            print(f"      -> SUCCESS: Saved to {vid_path}")
+        else:
+            print(f"      -> FAILED to generate video for this prompt.")
     print("\nChanges Made:")
     for change in remediation_result.get('changes_made', []):
         print(f"  - {change}")
