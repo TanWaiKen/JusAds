@@ -139,3 +139,53 @@ def check_audio_compliance(
     except Exception as e:
         logger.error(f"Audio compliance check failed: {str(e)}")
         return json.dumps({"error": str(e)})
+
+
+@tool
+def check_video_compliance(
+    media_path: str,
+    market: str = "malaysia",
+    ethnicity: str = "all",
+    age_group: str = "all_ages"
+) -> str:
+    """Evaluate a video advertisement for regulatory and cultural compliance.
+    
+    Args:
+        media_path (str): The absolute or relative path to the video file (e.g., .mp4, .mov).
+        market (str): Target market ('malaysia' or 'singapore').
+        ethnicity (str): Target ethnicity ('malay', 'chinese', 'indian', 'all').
+        age_group (str): Target age group ('all_ages', 'adults_only', 'children').
+            
+    Returns:
+        JSON string containing risk_level, score, high_risk_indicators, explanation, suggestion, and the transcript used.
+    """
+    try:
+        if not media_path:
+            return json.dumps({"error": "No media_path provided."})
+            
+        logger.info(f"Checking video compliance for {media_path}...")
+        
+        from jusads_video_compliance.video_checker import VideoComplianceChecker
+        checker = VideoComplianceChecker()
+        
+        result = checker.check_compliance(
+            video_path=media_path,
+            market=market,
+            ethnicity=ethnicity,
+            age_group=age_group
+        )
+        
+        agent_payload = {
+            "transcript_used": result.get("transcript_used", ""),
+            "risk_level": result.get("risk_level", "Unknown"),
+            "score": result.get("score", 0),
+            "high_risk_indicators": result.get("high_risk_indicators", []),
+            "explanation": result.get("explanation", ""),
+            "suggestion": result.get("suggestion", "")
+        }
+        
+        return json.dumps(agent_payload, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Video compliance check failed: {str(e)}")
+        return json.dumps({"error": str(e)})
+
