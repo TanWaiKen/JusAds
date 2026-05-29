@@ -64,12 +64,11 @@ def check_text_compliance(
 
 
 @tool
-def transcribe_media(media_path: str, use_ffmpeg: bool = True) -> str:
+def transcribe_media(media_path: str) -> str:
     """Extract and transcribe spoken text from an audio or video file.
     
     Args:
         media_path (str): The absolute or relative path to the audio or video file.
-        use_ffmpeg (bool): Whether to use ffmpeg to compress audio first (default: True).
             
     Returns:
         JSON string containing the extracted transcript text or an error message.
@@ -78,8 +77,8 @@ def transcribe_media(media_path: str, use_ffmpeg: bool = True) -> str:
         if not media_path:
             return json.dumps({"error": "No media_path provided."})
             
-        from jusads_transcription.transcriber import VideoTranscriber
-        transcriber = VideoTranscriber(use_ffmpeg=use_ffmpeg)
+        from jusads_transcription.transcriber import Transcriber
+        transcriber = Transcriber()
         transcript = transcriber.transcribe_media(media_path)
         
         return json.dumps({"transcript": transcript}, ensure_ascii=False)
