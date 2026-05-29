@@ -55,9 +55,7 @@ def check_text_compliance(
             "score": result.get("score", 0),
             "high_risk_indicators": result.get("high_risk_indicators", []),
             "explanation": result.get("explanation", ""),
-            "suggestion": result.get("suggestion", ""),
-            "regulatory_rules_evaluated": result.get("regulatory_rules", [])[:5],
-            "cultural_rules_evaluated": result.get("cultural_rules", [])[:5]
+            "suggestion": result.get("suggestion", "")
         }
         
         return json.dumps(agent_payload, indent=2, ensure_ascii=False)
@@ -134,9 +132,7 @@ def check_audio_compliance(
             "score": result.get("score", 0),
             "high_risk_indicators": result.get("high_risk_indicators", []),
             "explanation": result.get("explanation", ""),
-            "suggestion": result.get("suggestion", ""),
-            "regulatory_rules_evaluated": result.get("regulatory_rules", [])[:5],
-            "cultural_rules_evaluated": result.get("cultural_rules", [])[:5]
+            "suggestion": result.get("suggestion", "")
         }
         
         return json.dumps(agent_payload, indent=2, ensure_ascii=False)
