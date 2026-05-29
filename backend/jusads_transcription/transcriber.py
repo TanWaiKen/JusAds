@@ -19,7 +19,7 @@ import boto3
 from config import (
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
-    AWS_REGION_EMBED,
+    AWS_REGION,
     TRANSCRIBE_S3_BUCKET,
 )
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 session = boto3.Session(
     aws_access_key_id=AWS_ACCESS_KEY_ID,
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-    region_name=AWS_REGION_EMBED,
+    region_name=AWS_REGION,
 )
 s3_client = session.client("s3")
 transcribe_client = session.client("transcribe")

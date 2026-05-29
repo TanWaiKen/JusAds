@@ -14,7 +14,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-AWS_REGION_EMBED = os.environ.get("AWS_REGION_EMBED", "ap-southeast-1")
+AWS_REGION = os.environ.get("AWS_REGION", "ap-southeast-1")
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 EMBED_MODEL_ID = "global.cohere.embed-v4:0"
@@ -24,13 +24,13 @@ def _get_bedrock_client():
     try:
         return boto3.client(
             service_name="bedrock-runtime",
-            region_name=AWS_REGION_EMBED,
+            region_name=AWS_REGION,
             aws_access_key_id=AWS_ACCESS_KEY_ID,
             aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
         )
     except Exception:
         # Fallback to default boto3 credential chain
-        return boto3.client("bedrock-runtime", region_name=AWS_REGION_EMBED)
+        return boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
 
 def embed_text(text: str, max_retries: int = 5, input_type: str = "search_document") -> list[float]:

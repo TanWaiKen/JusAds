@@ -11,7 +11,7 @@ import boto3
 
 from config import (
     AWS_ACCESS_KEY_ID,
-    AWS_REGION_EMBED,
+    AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
     EMBED_MODEL_ID,
 )
@@ -24,13 +24,13 @@ def _get_bedrock_client():
     try:
         return boto3.client(
             service_name="bedrock-runtime",
-            region_name=AWS_REGION_EMBED,
+            region_name=AWS_REGION,
             aws_access_key_id=AWS_ACCESS_KEY_ID,
             aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
         )
     except Exception:
         # Fallback to default boto3 credential chain (IAM role, etc.)
-        return boto3.client("bedrock-runtime", region_name=AWS_REGION_EMBED)
+        return boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
 
 def embed_text(text: str, input_type: str = "search_query") -> Optional[list[float]]:
