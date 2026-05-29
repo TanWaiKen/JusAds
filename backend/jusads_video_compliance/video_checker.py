@@ -1,39 +1,41 @@
 import json
 import logging
 import time
+import mimetypes
 from typing import Any, Optional
-
 
 from google import genai
 from google.genai import types
 
 from config import VERTEX_PROJECT_ID, VERTEX_LOCATION
 from jusads_text_compliance.qdrant_client import JusAdsQdrantClient
+from jusads_transcription.transcriber import Transcriber
 
 logger = logging.getLogger(__name__)
 
 # Initialize Google GenAI Client
 client = genai.Client(vertexai=True, project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
 
-class ImageComplianceChecker:
-    """Simple image compliance checker for Malaysian/Singaporean advertising."""
+class VideoComplianceChecker:
+    """Simple video compliance checker for Malaysian/Singaporean advertising."""
 
     def __init__(self):
-        """Initialize the checker with Qdrant client."""
+        """Initialize the checker with Qdrant client and Transcriber."""
         self.qdrant = JusAdsQdrantClient()
-        logger.info("Initialized ImageComplianceChecker")
+        self.transcriber = Transcriber()
+        logger.info("Initialized VideoComplianceChecker")
 
     def check_compliance(
         self,
-        image_path: str,
+        video_path: str,
         market: str = "malaysia",
         ethnicity: str = "all",
         age_group: str = "all_ages",
     ) -> dict[str, Any]:
-        """Check compliance of an ad image against regulatory and cultural guidelines.
+        """Check compliance of a video ad against regulatory and cultural guidelines.
 
         Args:
-            image_path: The absolute or relative path to the image file.
+            video_path: The absolute or relative path to the video file.
             market: Target market ('malaysia' or 'singapore').
             ethnicity: Target ethnicity ('malay', 'chinese', 'indian', 'all').
             age_group: Target age group.
@@ -44,32 +46,43 @@ class ImageComplianceChecker:
         start_time = time.time()
         
         try:
-            # Step 1: Attempt to load the image
-            import mimetypes
-            with open(image_path, "rb") as f:
-                image_bytes = f.read()
-            mime_type, _ = mimetypes.guess_type(image_path)
-            if not mime_type:
-                mime_type = "image/jpeg"
+            # Step 1: Transcribe the spoken audio using AWS Transcribe
+            logger.info(f"Extracting and transcribing audio from {video_path}...")
+            transcript = self.transcriber.transcribe_media(video_path)
+            logger.info(f"Transcription successful. Transcript: {transcript[:100]}...")
         except Exception as e:
-            logger.error(f"Failed to load image at {image_path}: {str(e)}")
-            return self._error_result(image_path, market, ethnicity, age_group, f"Failed to load image: {str(e)}")
+            logger.error(f"Failed to transcribe video at {video_path}: {str(e)}")
+            return self._error_result(video_path, market, ethnicity, age_group, f"Failed to transcribe video: {str(e)}")
 
-        # Step 2a: Gemini pre-scan — describe the image for Qdrant retrieval
-        logger.info("Running Gemini pre-scan to describe image content...")
-        prescan_description = self._prescan_image(image_bytes, mime_type)
-        logger.info(f"Pre-scan description: {prescan_description}")
+        try:
+            # Step 2: Attempt to load the video bytes for Gemini
+            with open(video_path, "rb") as f:
+                video_bytes = f.read()
+            mime_type, _ = mimetypes.guess_type(video_path)
+            if not mime_type:
+                mime_type = "video/mp4"
+        except Exception as e:
+            logger.error(f"Failed to load video file at {video_path}: {str(e)}")
+            return self._error_result(video_path, market, ethnicity, age_group, f"Failed to load video: {str(e)}")
 
-        # Step 2b: Embed the description for Qdrant vector search
+        # Step 3a: Gemini pre-scan — describe the video visuals for Qdrant retrieval
+        logger.info("Running Gemini pre-scan to describe video visuals...")
+        visual_description = self._prescan_video(video_bytes, mime_type)
+        logger.info(f"Pre-scan visual description: {visual_description}")
+
+        # Step 3b: Combine transcript + visual description for a comprehensive query
+        combined_query = f"{transcript} {visual_description}"
+
+        # Step 3c: Embed the combined text for Qdrant vector search
         from jusads_text_compliance.embeddings import embed_text
-        query_vector = embed_text(prescan_description)
+        query_vector = embed_text(combined_query)
 
-        # Step 2c: Retrieve regulatory and cultural rules from Qdrant
+        # Step 3d: Retrieve regulatory and cultural rules from Qdrant
         regulatory_rules = []
         cultural_guidelines = []
         if query_vector:
             try:
-                logger.info(f"Retrieving rules for market='{market}', ethnicity='{ethnicity}'")
+                logger.info(f"Retrieving rules for market='{market}', ethnicity='{ethnicity}' based on transcript + visuals...")
                 regulatory_rules = self.qdrant.get_regulatory_rules(
                     query_vector=query_vector,
                     market=market,
@@ -83,9 +96,9 @@ class ImageComplianceChecker:
             except Exception as e:
                 logger.warning(f"Failed to retrieve rules from Qdrant: {e}. Proceeding without context.")
         else:
-            logger.warning("Failed to generate embedding for pre-scan description. Proceeding without Qdrant rules.")
+            logger.warning("Failed to generate embedding. Proceeding without Qdrant rules.")
 
-        # Step 3: Get Persona Context
+        # Step 4: Get Persona Context
         persona_text = None
         logger.info(f"Retrieving structured persona for {market}/{ethnicity}...")
         try:
@@ -129,8 +142,9 @@ class ImageComplianceChecker:
         except Exception as e:
             logger.warning(f"Failed to load persona: {e}")
 
-        # Step 4: Build Evaluation Prompt
+        # Step 5: Build Evaluation Prompt
         prompt = self._build_evaluation_prompt(
+            transcript=transcript,
             regulatory_rules=regulatory_rules,
             cultural_guidelines=cultural_guidelines,
             persona_text=persona_text,
@@ -138,14 +152,15 @@ class ImageComplianceChecker:
             ethnicity=ethnicity,
         )
 
-        # Step 5: Evaluate with Gemini Multimodal Model
-        evaluation = self._evaluate_with_llm(image_bytes, mime_type, prompt)
+        # Step 6: Evaluate with Gemini Multimodal Model
+        evaluation = self._evaluate_with_llm(video_bytes, mime_type, prompt)
 
-        # Step 6: Format result
+        # Step 7: Format result
         duration_ms = int((time.time() - start_time) * 1000)
         
         result = {
-            "image_path": image_path,
+            "video_path": video_path,
+            "transcript_used": transcript,
             "market": market,
             "ethnicity": ethnicity,
             "age_group": age_group,
@@ -164,6 +179,7 @@ class ImageComplianceChecker:
 
     def _build_evaluation_prompt(
         self,
+        transcript: str,
         regulatory_rules: list[dict],
         cultural_guidelines: list[dict],
         persona_text: Optional[str],
@@ -185,90 +201,91 @@ class ImageComplianceChecker:
         persona_section = ""
         if persona_text:
             persona_section = f"""
-                                ## Target Audience Persona (Structured Profile)
-                                ```json
-                                {persona_text}
-                                ```
-                                """
+## Target Audience Persona (Structured Profile)
+```json
+{persona_text}
+```
+"""
 
-            prompt = f"""You are a {market.title()} Cultural Appropriateness Evaluator. Your job is to analyze the provided image advertisement and determine whether it is culturally appropriate for a {market.title()} audience (target ethnicity: {ethnicity}).
+        prompt = f"""You are a {market.title()} Cultural Appropriateness Evaluator. Your job is to analyze the provided video advertisement along with its spoken transcript and determine whether it is culturally appropriate for a {market.title()} audience (target ethnicity: {ethnicity}).
 
-                        REGULATORY & CULTURAL GUIDELINES (from {market.title()} Communications and Multimedia Content Code & Cultural Norms):
-                        To inform your evaluation, consider the following rules, which provide guidance on content standards in {market.title()}.
+## Accurate Transcript
+The following is the highly accurate spoken transcript extracted from the video. Rely on this to analyze any spoken dialogue or claims:
+"{transcript}"
 
-                        ### Regulatory Guidelines
-                        {reg_text if reg_text else "No specific regulatory rules retrieved."}
+REGULATORY & CULTURAL GUIDELINES (from {market.title()} Communications and Multimedia Content Code & Cultural Norms):
+To inform your evaluation, consider the following rules, which provide guidance on content standards in {market.title()}.
 
-                        ### Cultural Guidelines
-                        {cultural_text if cultural_text else "No specific cultural guidelines retrieved."}
-                        {persona_section}
+### Regulatory Guidelines
+{reg_text if reg_text else "No specific regulatory rules retrieved."}
 
-                        PRIMARY TASK:
-                        1. Carefully inspect the visual elements of the image (e.g., clothing modesty, physical gestures, symbols, colors, character interactions).
-                        2. Read and analyze any text or copy present in the image.
-                        3. Detect elements that may be culturally sensitive, offensive, taboo, or inappropriate for audiences in {market.title()}, paying close attention to the regulatory guidelines and persona provided above.
-                        4. Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with the exact fields below:
-                        - RISK: one of "High", "Medium", "Low"
-                        - SCORE: integer 0–100 (Cultural Appropriateness Score; 100 = fully appropriate)
-                        - high_risk_indicator: array of strings (describe specific visual elements or text phrases that were flagged). Include up to the top 10 flagged items, ranked by severity.
-                        - explanation: concise reasoning (max ~300 words) describing why the image received that SCORE and RISK. Reference which visual/text elements and categories drove the rating and, where applicable, cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "The exposed clothing violates the guideline on modesty..."). Note any contextual factors.
-                        - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the image to make it more culturally appropriate for a {market.title()} audience (e.g., change clothing to be more modest, remove or rephrase flagged terms, change colors, etc.).
+### Cultural Guidelines
+{cultural_text if cultural_text else "No specific cultural guidelines retrieved."}
+{persona_section}
 
-                        **Scoring Logic:**
-                        - Start at 100
-                        - Deduct points for each violation:
-                        - Severe regulatory: -30 points
-                        - Moderate regulatory: -20 points
-                        - Minor regulatory: -10 points
-                        - Severe cultural: -25 points
-                        - Moderate cultural: -15 points
-                        - Minor cultural: -8 points
-                        - Risk Level: Low (75-100), Medium (40-74), High (0-39)
+PRIMARY TASK:
+1. Watch the video carefully, observing all visual elements (e.g., clothing modesty, physical gestures, symbols, colors, character interactions, and on-screen text).
+2. Analyze the provided spoken transcript to evaluate any verbal claims or dialogue.
+3. Detect elements (both visual and auditory) that may be culturally sensitive, offensive, taboo, or inappropriate for audiences in {market.title()}, paying close attention to the regulatory guidelines and persona provided above.
+4. Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with the exact fields below:
+   - RISK: one of "High", "Medium", "Low"
+   - SCORE: integer 0–100 (Cultural Appropriateness Score; 100 = fully appropriate)
+   - high_risk_indicator: array of strings. You MUST include the exact timestamp (e.g. [00:04-00:06]) at the beginning of each string to pinpoint exactly when the visual or auditory violation occurred. Example: "[00:10-00:12] Sleeveless tank top on model (Visual)". Include up to the top 10 flagged items, ranked by severity.
+   - explanation: concise reasoning (max ~300 words) describing why the video received that SCORE and RISK. Reference which visual/auditory elements drove the rating and cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "The exposed clothing at 0:15 violates the guideline on modesty...").
+   - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the video to make it more culturally appropriate for a {market.title()} audience (e.g., change clothing, remove or rephrase spoken lines, blur explicit elements).
 
-                        **Important:**
-                        - Return ONLY valid JSON.
-                        - If no issues are found, return SCORE 100, RISK "Low", and empty high_risk_indicator array.
-                        - Limit high_risk_indicator to maximum 10 items, ranked by severity (most severe first).
+**Scoring Logic:**
+- Start at 100
+- Deduct points for each violation:
+  - Severe regulatory: -30 points
+  - Moderate regulatory: -20 points
+  - Minor regulatory: -10 points
+  - Severe cultural: -25 points
+  - Moderate cultural: -15 points
+  - Minor cultural: -8 points
+- Risk Level: Low (75-100), Medium (40-74), High (0-39)
 
-                        CONTEXTUAL RULES (how to treat context & intent):
-                        - Quoted, reported, or critical context reduces severity by one level.
-                        - Satire or parody: treat as contextual but only reduce if clear.
-                        - If unsure about target demographic, err on the side of conservatism (raise severity).
+**Important:**
+- Return ONLY valid JSON.
+- If no issues are found, return SCORE 100, RISK "Low", and empty high_risk_indicator array.
+- Limit high_risk_indicator to maximum 10 items, ranked by severity (most severe first).
+- You MUST provide timestamps for every issue found in high_risk_indicator. This is critical for downstream editing.
 
-                        FLAGGING RULES (for high_risk_indicator):
-                        - Provide a clear, short description of the visual element or exact text snippet that triggered the flag (e.g., "Exposed armpits on model", "Price tag of $4.44").
-                        - Exclude benign elements.
+CONTEXTUAL RULES (how to treat context & intent):
+- Quoted, reported, or critical context reduces severity by one level.
+- Satire or parody: treat as contextual but only reduce if clear.
+- If unsure about target demographic, err on the side of conservatism (raise severity).
 
-                        OUTPUT FORMAT (strict):
-                        Return exactly one JSON object and nothing else. Example structure:
+OUTPUT FORMAT (strict):
+Return exactly one JSON object and nothing else. Example structure:
 
-                        {{
-                        "RISK": "Medium",
-                        "SCORE": 63,
-                        "high_risk_indicator": [
-                            "Exposed armpits on model",
-                            "Derogatory phrase in the background"
-                        ],
-                        "explanation": "Short, clear reasoning (max ~300 words)...",
-                        "suggestion": "Concrete advice (max ~200 words)..."
-                        }}
-                    """
+{{
+  "RISK": "Medium",
+  "SCORE": 63,
+  "high_risk_indicator": [
+    "[00:05-00:08] Sleeveless tank top on model (Visual)",
+    "[00:12-00:15] Unsubstantiated health claim (Audio)"
+  ],
+  "explanation": "Short, clear reasoning (max ~300 words)...",
+  "suggestion": "Concrete advice (max ~200 words)..."
+}}
+"""
         return prompt
 
-    def _prescan_image(self, image_bytes: bytes, mime_type: str) -> str:
-        """Lightweight Gemini call to describe the image for Qdrant retrieval."""
+    def _prescan_video(self, video_bytes: bytes, mime_type: str) -> str:
+        """Lightweight Gemini call to describe the video visuals for Qdrant retrieval."""
         try:
             contents = [
                 types.Content(
                     role="user",
                     parts=[
                         types.Part.from_text(
-                            text="Describe this advertisement image in 2-3 sentences. "
-                                 "Focus on: what product is being advertised, what people are wearing, "
-                                 "their poses, any symbols/colors/text visible, and the setting. "
+                            text="Describe the visual content of this video advertisement in 2-3 sentences. "
+                                 "Focus on: what the characters are wearing, their actions, any on-screen text, "
+                                 "the setting, and any symbols or gestures. "
                                  "Do NOT evaluate or judge. Just describe factually."
                         ),
-                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                        types.Part.from_bytes(data=video_bytes, mime_type=mime_type),
                     ],
                 )
             ]
@@ -282,13 +299,13 @@ class ImageComplianceChecker:
             )
             return response.text.strip()
         except Exception as e:
-            logger.warning(f"Pre-scan failed: {e}. Using generic fallback query.")
-            return "advertising content with people, clothing, products, and text"
+            logger.warning(f"Video pre-scan failed: {e}. Using transcript only for Qdrant.")
+            return ""
 
-    def _evaluate_with_llm(self, image_bytes: bytes, mime_type: str, prompt: str) -> dict[str, Any]:
-        """Send the image and prompt to Gemini and parse the JSON response."""
+    def _evaluate_with_llm(self, video_bytes: bytes, mime_type: str, prompt: str) -> dict[str, Any]:
+        """Send the video and prompt to Gemini and parse the JSON response."""
         try:
-            logger.info("Sending image and prompt to Gemini for evaluation...")
+            logger.info("Sending video and prompt to Gemini for evaluation...")
             model = "gemini-3.1-flash-lite"
             
             contents = [
@@ -296,13 +313,13 @@ class ImageComplianceChecker:
                     role="user",
                     parts=[
                         types.Part.from_text(text=prompt),
-                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+                        types.Part.from_bytes(data=video_bytes, mime_type=mime_type)
                     ]
                 )
             ]
 
             generate_content_config = types.GenerateContentConfig(
-                temperature=0.2, # Low temperature for consistent compliance checks
+                temperature=0.2,
                 top_p=0.95,
                 max_output_tokens=8192,
                 safety_settings=[
@@ -324,12 +341,12 @@ class ImageComplianceChecker:
             return self._parse_llm_response(result_text)
 
         except Exception as e:
-            logger.error(f"Gemini API error during image compliance check: {str(e)}")
+            logger.error(f"Gemini API error during video compliance check: {str(e)}")
             return {
                 "RISK": "High",
                 "SCORE": 0,
                 "high_risk_indicator": ["API Error"],
-                "explanation": f"Failed to evaluate image. Error: {str(e)}",
+                "explanation": f"Failed to evaluate video. Error: {str(e)}",
                 "suggestion": "Please check the system logs and try again."
             }
 
@@ -356,10 +373,11 @@ class ImageComplianceChecker:
                 "suggestion": "Retry the request."
             }
 
-    def _error_result(self, image_path: str, market: str, ethnicity: str, age_group: str, error_msg: str) -> dict[str, Any]:
+    def _error_result(self, video_path: str, market: str, ethnicity: str, age_group: str, error_msg: str) -> dict[str, Any]:
         """Return a structured error response matching the expected payload."""
         return {
-            "image_path": image_path,
+            "video_path": video_path,
+            "transcript_used": "",
             "market": market,
             "ethnicity": ethnicity,
             "age_group": age_group,

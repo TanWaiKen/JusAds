@@ -139,3 +139,167 @@ def check_audio_compliance(
     except Exception as e:
         logger.error(f"Audio compliance check failed: {str(e)}")
         return json.dumps({"error": str(e)})
+
+
+@tool
+def check_video_compliance(
+    media_path: str,
+    market: str = "malaysia",
+    ethnicity: str = "all",
+    age_group: str = "all_ages"
+) -> str:
+    """Evaluate a video advertisement for regulatory and cultural compliance.
+    
+    Args:
+        media_path (str): The absolute or relative path to the video file (e.g., .mp4, .mov).
+        market (str): Target market ('malaysia' or 'singapore').
+        ethnicity (str): Target ethnicity ('malay', 'chinese', 'indian', 'all').
+        age_group (str): Target age group ('all_ages', 'adults_only', 'children').
+            
+    Returns:
+        JSON string containing risk_level, score, high_risk_indicators, explanation, suggestion, and the transcript used.
+    """
+    try:
+        if not media_path:
+            return json.dumps({"error": "No media_path provided."})
+            
+        logger.info(f"Checking video compliance for {media_path}...")
+        
+        from jusads_video_compliance.video_checker import VideoComplianceChecker
+        checker = VideoComplianceChecker()
+        
+        result = checker.check_compliance(
+            video_path=media_path,
+            market=market,
+            ethnicity=ethnicity,
+            age_group=age_group
+        )
+        
+        agent_payload = {
+            "transcript_used": result.get("transcript_used", ""),
+            "risk_level": result.get("risk_level", "Unknown"),
+            "score": result.get("score", 0),
+            "high_risk_indicators": result.get("high_risk_indicators", []),
+            "explanation": result.get("explanation", ""),
+            "suggestion": result.get("suggestion", "")
+        }
+        
+        return json.dumps(agent_payload, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Video compliance check failed: {str(e)}")
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def remediate_text(
+    original_text: str,
+    compliance_result_json: str,
+    market: str = "malaysia",
+    ethnicity: str = "all",
+    age_group: str = "all_ages"
+) -> str:
+    """Rewrite ad text to fix compliance violations.
+
+    Args:
+        original_text (str): The original ad text that failed compliance.
+        compliance_result_json (str): JSON string of the compliance check result.
+        market (str): Target market.
+        ethnicity (str): Target ethnicity.
+        age_group (str): Target age group.
+
+    Returns:
+        JSON string containing rewritten_text and changes_made.
+    """
+    try:
+        compliance_result = json.loads(compliance_result_json) if isinstance(compliance_result_json, str) else compliance_result_json
+
+        from jusads_text_compliance.text_remediator import TextRemediator
+        remediator = TextRemediator()
+        result = remediator.remediate(
+            original_text=original_text,
+            compliance_result=compliance_result,
+            market=market,
+            ethnicity=ethnicity,
+            age_group=age_group
+        )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Text remediation failed: {str(e)}")
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def remediate_image(
+    image_path: str,
+    compliance_result_json: str,
+    market: str = "malaysia",
+    ethnicity: str = "all",
+    age_group: str = "all_ages"
+) -> str:
+    """Generate a compliant image prompt based on a flagged image and its compliance issues.
+
+    Args:
+        image_path (str): Path to the original non-compliant image.
+        compliance_result_json (str): JSON string of the compliance check result.
+        market (str): Target market.
+        ethnicity (str): Target ethnicity.
+        age_group (str): Target age group.
+
+    Returns:
+        JSON string containing compliant_image_prompt and changes_suggested.
+    """
+    try:
+        compliance_result = json.loads(compliance_result_json) if isinstance(compliance_result_json, str) else compliance_result_json
+
+        from jusads_image_compliance.image_remediator import ImageRemediator
+        remediator = ImageRemediator()
+        result = remediator.remediate(
+            image_path=image_path,
+            compliance_result=compliance_result,
+            market=market,
+            ethnicity=ethnicity,
+            age_group=age_group
+        )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Image remediation failed: {str(e)}")
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def remediate_video(
+    video_path: str,
+    compliance_result_json: str,
+    market: str = "malaysia",
+    ethnicity: str = "all",
+    age_group: str = "all_ages"
+) -> str:
+    """Generate a compliant script rewrite and visual edit guide for a flagged video.
+
+    Args:
+        video_path (str): Path to the original non-compliant video.
+        compliance_result_json (str): JSON string of the compliance check result.
+        market (str): Target market.
+        ethnicity (str): Target ethnicity.
+        age_group (str): Target age group.
+
+    Returns:
+        JSON string containing rewritten_script, visual_edit_guide, and changes_made.
+    """
+    try:
+        compliance_result = json.loads(compliance_result_json) if isinstance(compliance_result_json, str) else compliance_result_json
+
+        from jusads_video_compliance.video_remediator import VideoRemediator
+        remediator = VideoRemediator()
+        result = remediator.remediate(
+            video_path=video_path,
+            compliance_result=compliance_result,
+            market=market,
+            ethnicity=ethnicity,
+            age_group=age_group
+        )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Video remediation failed: {str(e)}")
+        return json.dumps({"error": str(e)})
+

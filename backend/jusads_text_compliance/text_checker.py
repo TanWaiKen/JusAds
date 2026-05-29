@@ -86,44 +86,59 @@ class TextComplianceChecker:
 
         # Step 4: Retrieve persona (if specific ethnicity is targeted)
         persona_text = None
-        if ethnicity != "all":
-            logger.info("Retrieving structured persona for %s/%s...", market, ethnicity)
-            try:
-                import json
-                from pathlib import Path
-                persona_file = Path(__file__).parent / "personas" / f"{market}_personas.json"
-                if persona_file.exists():
-                    with open(persona_file, "r", encoding="utf-8") as f:
-                        all_personas = json.load(f)
-                        if ethnicity in all_personas:
-                            base_persona = all_personas[ethnicity].copy()
-                            
-                            # Layer on age-specific overrides if applicable
-                            if age_group != "all_ages" and "age_groups" in base_persona:
-                                if age_group in base_persona["age_groups"]:
-                                    age_layer = base_persona["age_groups"][age_group]
-                                    resolved_persona = {
-                                        "base": base_persona,
-                                        "targeted": age_layer
-                                    }
-                                    # Clean up the output to avoid dumping all age groups to the LLM
-                                    if "age_groups" in resolved_persona["base"]:
-                                        del resolved_persona["base"]["age_groups"]
-                                    
-                                    persona_text = json.dumps(resolved_persona, indent=2, ensure_ascii=False)
-                                else:
-                                    logger.warning("Age group %s not found for %s/%s, defaulting to base", age_group, market, ethnicity)
-                                    if "age_groups" in base_persona:
-                                        del base_persona["age_groups"]
-                                    persona_text = json.dumps(base_persona, indent=2, ensure_ascii=False)
+        logger.info("Retrieving structured persona for %s/%s...", market, ethnicity)
+        try:
+            import json
+            from pathlib import Path
+            persona_file = Path(__file__).parent / "personas" / f"{market}_personas.json"
+            if persona_file.exists():
+                with open(persona_file, "r", encoding="utf-8") as f:
+                    all_personas = json.load(f)
+
+                if ethnicity != "all":
+                    # Load ethnicity-specific persona
+                    if ethnicity in all_personas:
+                        base_persona = all_personas[ethnicity].copy()
+                        
+                        # Layer on age-specific overrides if applicable
+                        if age_group != "all_ages" and "age_groups" in base_persona:
+                            if age_group in base_persona["age_groups"]:
+                                age_layer = base_persona["age_groups"][age_group]
+                                resolved_persona = {
+                                    "base": base_persona,
+                                    "targeted": age_layer
+                                }
+                                # Clean up the output to avoid dumping all age groups to the LLM
+                                if "age_groups" in resolved_persona["base"]:
+                                    del resolved_persona["base"]["age_groups"]
+                                
+                                persona_text = json.dumps(resolved_persona, indent=2, ensure_ascii=False)
                             else:
+                                logger.warning("Age group %s not found for %s/%s, defaulting to base", age_group, market, ethnicity)
                                 if "age_groups" in base_persona:
                                     del base_persona["age_groups"]
                                 persona_text = json.dumps(base_persona, indent=2, ensure_ascii=False)
-                if not persona_text:
-                    logger.warning("No structured persona found for %s/%s", market, ethnicity)
-            except Exception as e:
-                logger.error("Failed to load local persona: %s", str(e))
+                        else:
+                            if "age_groups" in base_persona:
+                                del base_persona["age_groups"]
+                            persona_text = json.dumps(base_persona, indent=2, ensure_ascii=False)
+                else:
+                    # ethnicity == "all" → load nation-level context from _meta._nation_notes
+                    meta = all_personas.get("_meta", {})
+                    nation_notes = meta.get("_nation_notes")
+                    if nation_notes:
+                        persona_text = json.dumps({
+                            "country": meta.get("country", market.title()),
+                            "scope": "nation-level (all ethnicities)",
+                            "nation_notes": nation_notes
+                        }, indent=2, ensure_ascii=False)
+                    else:
+                        logger.warning("No _nation_notes found in _meta for %s", market)
+
+            if not persona_text:
+                logger.warning("No structured persona found for %s/%s", market, ethnicity)
+        except Exception as e:
+            logger.error("Failed to load local persona: %s", str(e))
 
         # Step 5: Evaluate compliance using LLM
         logger.info("Evaluating compliance with Gemini LLM...")
