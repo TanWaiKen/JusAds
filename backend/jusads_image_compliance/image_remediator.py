@@ -46,7 +46,12 @@ class ImageRemediator:
         # Step 2: Generate the image using Imagen 3
         compliant_prompt = result.get("compliant_image_prompt")
         if compliant_prompt:
-            image_generation_result = self.step2_generate_image(compliant_prompt, image_path)
+            combined_prompt = compliant_prompt + "\n\nChanges Suggested:\n"
+            for change in result.get("changes_suggested", []):
+                combined_prompt += f"  - {change}\n"
+                
+            logger.info(f"Using compliant prompt for image generation:\n{combined_prompt}\n")
+            image_generation_result = self.step2_generate_image(combined_prompt, image_path)
             result.update(image_generation_result)
             
         return result
@@ -140,7 +145,7 @@ class ImageRemediator:
             images = generation_model._generate_images(
                 prompt=compliant_prompt,
                 number_of_images=1,
-                aspect_ratio="3:4",  # Updated to 3:4 for phone portrait mode
+                aspect_ratio="1:1",  # Reverted to 1:1 for social media
                 person_generation="allow_all",
                 reference_images=reference_images
             )
@@ -196,6 +201,8 @@ class ImageRemediator:
                     3. Preserve the overall composition style (photo-realistic, illustrated, etc.).
                     4. The prompt must be detailed enough for an AI image generator (e.g., DALL-E, Imagen, Midjourney) to recreate the ad.
                     5. Include specific details: clothing description, pose, background, text overlays, color palette.
+                    6. The subject MUST clearly be described as a Malay woman (or target ethnicity).
+                    7. Translate and adapt any text overlays from the original image into casual, natural "Manglish" (Malaysian English slang) to better resonate with the local market.
 
                     ## OUTPUT FORMAT
                     Return ONLY a JSON object:

@@ -5,6 +5,9 @@ Video Remediator — Takes compliance results and produces a compliant script + 
 import json
 import logging
 import mimetypes
+import os
+import time
+import uuid
 from typing import Any
 
 from google import genai
@@ -83,12 +86,29 @@ class VideoRemediator:
                     thinking_config=types.ThinkingConfig(thinking_level="MEDIUM"),
                 ),
             )
-            return self._parse_response(response.text)
+            result = self._parse_response(response.text)
+            
+            # Step 2: Generate B-Roll clips for each prompt using Veo
+            broll_prompts = result.get("video_broll_prompts", [])
+            generated_brolls = []
+            
+            if broll_prompts:
+                logger.info(f"Found {len(broll_prompts)} B-Roll prompts. Generating clips with Veo...")
+                for broll in broll_prompts:
+                    prompt_text = broll.get("prompt")
+                    if prompt_text:
+                        video_path = self.step2_generate_video_broll(prompt_text)
+                        if video_path:
+                            broll["generated_video_path"] = video_path
+                            generated_brolls.append(video_path)
+            
+            result["generated_brolls"] = generated_brolls
+            return result
         except Exception as e:
             logger.error(f"Video remediation failed: {e}")
             return {
                 "rewritten_script": "",
-                "visual_edit_guide": [],
+                "video_broll_prompts": [],
                 "changes_made": [f"Remediation failed: {e}"],
             }
 
@@ -108,7 +128,7 @@ class VideoRemediator:
 ## TASK
 Watch the attached video advertisement. It has been flagged for cultural compliance issues. Produce:
 1. A **rewritten spoken script** that fixes all flagged audio/dialogue issues while preserving the product pitch.
-2. A **scene-by-scene visual edit guide** describing what visual changes are needed at each point in the video.
+2. A list of **video_broll_prompts** for Veo. For each flagged timestamp, write an exact, highly-detailed text-to-video generation prompt that describes the new compliant scene (max 8 seconds long). Include details about the environment, the actor's compliant clothing (e.g. long sleeves, hijab), and the action.
 3. A summary of all changes made.
 
 ## ORIGINAL TRANSCRIPT
@@ -125,28 +145,25 @@ Watch the attached video advertisement. It has been flagged for cultural complia
 {suggestion}
 
 ## RULES
-## RULES
 1. Fix every flagged issue (both audio and visual).
 2. Preserve the core product pitch and brand identity.
 3. Keep the rewritten script roughly the same duration as the original.
-4. For the visual edit guide, you MUST provide EXACT timestamps matching the `high_risk_indicator` timestamps from the compliance checker (e.g., "[00:05-00:08]"). Since many video generation models only generate up to 10 seconds of video, these timestamps are critical for targeting edits.
-5. Be specific about clothing changes, pose adjustments, and any elements to add/remove.
+4. For the `video_broll_prompts`, provide EXACT timestamps matching the `high_risk_indicator` timestamps (e.g., "[00:05-00:08]"). Be extremely descriptive in the `prompt` field, as it will be fed directly into a text-to-video model (Veo) to generate a replacement clip.
 
 ## OUTPUT FORMAT
 Return ONLY a JSON object:
 {{
   "rewritten_script": "The full corrected voiceover script...",
-  "visual_edit_guide": [
+  "video_broll_prompts": [
     {{
       "timestamp": "[00:00-00:05]",
-      "current": "Woman in sleeveless top introduces herself",
-      "change_to": "Woman in modest long-sleeved blouse introduces herself",
-      "reason": "Modesty standards require covered shoulders"
+      "prompt": "A high-quality commercial video shot: A beautiful young Malay woman wearing a modest long-sleeved pastel blue athletic blouse and a neatly styled hijab, standing confidently on a sunny beach with clear blue skies, smiling naturally. Cinematic lighting, 4k.",
+      "reason": "Modesty standards require covered shoulders and hair."
     }}
   ],
   "changes_made": [
     "Replaced 'gynecologists' reference with 'dermatologists recommend'",
-    "Changed wardrobe to modest long-sleeved clothing throughout"
+    "Changed wardrobe to modest long-sleeved clothing and hijab throughout"
   ]
 }}
 """
@@ -165,6 +182,62 @@ Return ONLY a JSON object:
             logger.error(f"Failed to parse video remediation JSON: {e}")
             return {
                 "rewritten_script": "",
-                "visual_edit_guide": [],
+                "video_broll_prompts": [],
                 "changes_made": [f"Parse error: {e}"],
             }
+
+    def step2_generate_video_broll(self, prompt: str) -> str | None:
+        """Step 2: Generate an 8s B-Roll video using Veo."""
+        try:
+            logger.info(f"Generating Veo video for prompt: {prompt[:50]}...")
+            
+            source = types.GenerateVideosSource(
+                prompt=prompt,
+            )
+
+            config = types.GenerateVideosConfig(
+                aspect_ratio="16:9",
+                number_of_videos=1,
+                duration_seconds=8,
+                person_generation="allow_all",
+                generate_audio=False,
+                resolution="720p",
+            )
+
+            operation = client.models.generate_videos(
+                model="veo-3.1-lite-generate-001", source=source, config=config
+            )
+
+            while not operation.done:
+                logger.info("Video has not been generated yet. Check again in 10 seconds...")
+                time.sleep(10)
+                operation = client.operations.get(operation)
+
+            response = operation.result
+            if not response:
+                logger.error("Error occurred while generating video.")
+                return None
+
+            generated_videos = response.generated_videos
+            if not generated_videos:
+                logger.error("No videos were generated.")
+                return None
+
+            generated_video = generated_videos[0]
+            if generated_video.video:
+                output_dir = os.path.join("backend", "assets", "remediated")
+                os.makedirs(output_dir, exist_ok=True)
+                filename = f"broll_{uuid.uuid4().hex[:8]}.mp4"
+                file_path = os.path.join(output_dir, filename)
+                
+                with open(file_path, "wb") as f:
+                    f.write(generated_video.video.video_bytes)
+                
+                logger.info(f"Saved Veo generated video to {file_path}")
+                return file_path
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Veo video generation failed: {e}")
+            return None
