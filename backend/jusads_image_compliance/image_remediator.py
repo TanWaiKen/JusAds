@@ -117,7 +117,7 @@ class ImageRemediator:
             from vertexai.preview.vision_models import (
                 Image,
                 ImageGenerationModel,
-                RawReferenceImage
+                StyleReferenceImage
             )
 
             logger.info("Generating compliant image using Imagen 3 (Vertex AI)...")
@@ -131,7 +131,7 @@ class ImageRemediator:
                 orig_bytes = f.read()
 
             reference_images = [
-                RawReferenceImage(
+                StyleReferenceImage(
                     reference_id=1,
                     image=Image(image_bytes=orig_bytes)
                 )
@@ -196,6 +196,8 @@ class ImageRemediator:
                     3. Preserve the overall composition style (photo-realistic, illustrated, etc.).
                     4. The prompt must be detailed enough for an AI image generator (e.g., DALL-E, Imagen, Midjourney) to recreate the ad.
                     5. Include specific details: clothing description, pose, background, text overlays, color palette.
+                    6. The subject MUST clearly be described as a Malay woman (or target ethnicity).
+                    7. Translate and adapt any text overlays from the original image into casual, natural "Manglish" (Malaysian English slang) to better resonate with the local market.
 
                     ## OUTPUT FORMAT
                     Return ONLY a JSON object:
