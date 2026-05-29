@@ -10,8 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env from the culture_compliance directory first, then fallback to backend/
-load_dotenv(Path(__file__).resolve().parent / ".env")
+# Load .env from backend/ directory
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ── AWS Bedrock (Kept legacy env variables for fallback/history, default to Gemini) ──

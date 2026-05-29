@@ -11,8 +11,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env from jusads_text_compliance directory, then fallback to backend/
-load_dotenv(Path(__file__).resolve().parent / ".env")
+# Load .env from backend/ directory
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ── Qdrant ────────────────────────────────────────────────────────────────────

@@ -4,7 +4,10 @@ import os
 import re
 from dotenv import load_dotenv
 
-load_dotenv()
+from pathlib import Path
+
+# Load .env from backend/ directory
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 # Load credentials from .env
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
