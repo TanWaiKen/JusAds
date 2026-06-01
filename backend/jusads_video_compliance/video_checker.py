@@ -111,6 +111,8 @@ class VideoComplianceChecker:
                 if ethnicity != "all":
                     if ethnicity in all_personas:
                         base_persona = all_personas[ethnicity].copy()
+                        # Remove strict_taboos — handled as soft guidance in ethnicity focus
+                        base_persona.pop("strict_taboos", None)
                         if age_group != "all_ages" and "age_groups" in base_persona:
                             if age_group in base_persona["age_groups"]:
                                 age_layer = base_persona["age_groups"][age_group]
@@ -169,6 +171,7 @@ class VideoComplianceChecker:
             "high_risk_indicators": evaluation.get("high_risk_indicator", evaluation.get("high_risk_indicators", [])),
             "explanation": evaluation.get("explanation", ""),
             "suggestion": evaluation.get("suggestion", ""),
+            "localization": evaluation.get("localization", {}),
             "persona_used": persona_text if persona_text else "No specific persona (ethnicity: all)",
             "regulatory_rules_count": len(regulatory_rules),
             "cultural_rules_count": len(cultural_guidelines),
@@ -233,6 +236,12 @@ PRIMARY TASK:
    - high_risk_indicator: array of strings. You MUST include the exact timestamp (e.g. [00:04-00:06]) at the beginning of each string to pinpoint exactly when the visual or auditory violation occurred. Example: "[00:10-00:12] Sleeveless tank top on model (Visual)". Include up to the top 10 flagged items, ranked by severity.
    - explanation: concise reasoning (max ~300 words) describing why the video received that SCORE and RISK. Reference which visual/auditory elements drove the rating and cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "The exposed clothing at 0:15 violates the guideline on modesty...").
    - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the video to make it more culturally appropriate for a {market.title()} audience (e.g., change clothing, remove or rephrase spoken lines, blur explicit elements).
+   - localization: an object with specific recommendations for localizing this ad for the {ethnicity} audience in {market.title()}. Must include:
+     - language: what language(s) the ad should be in (e.g. "Mandarin with English subtitles")
+     - model_talent: what the talent/model should look like (ethnicity, appearance, style)
+     - script_adaptation: how to adapt the script/voiceover for this audience
+     - visual_style: any visual style changes needed (colors, settings, aesthetics)
+     - platform: recommended platforms/channels for this audience
 
 **Scoring Logic:**
 - Start at 100
@@ -267,10 +276,123 @@ Return exactly one JSON object and nothing else. Example structure:
     "[00:12-00:15] Unsubstantiated health claim (Audio)"
   ],
   "explanation": "Short, clear reasoning (max ~300 words)...",
-  "suggestion": "Concrete advice (max ~200 words)..."
+  "suggestion": "Concrete advice (max ~200 words)...",
+  "localization": {{
+    "language": "Mandarin with English subtitles for Gen Z",
+    "model_talent": "Replace with Chinese Malaysian female talent, modern casual style",
+    "script_adaptation": "Translate script to Mandarin, use colloquial tone, remove clinical references",
+    "visual_style": "Bright, aesthetic product shots, pastel/clean tones popular on XiaoHongShu",
+    "platform": "TikTok, Instagram Reels, XiaoHongShu (RED)"
+  }}
 }}
 """
         return prompt
+
+    def _get_ethnicity_focus(self, ethnicity: str, market: str) -> str:
+        """Return ethnicity-specific evaluation guidance.
+
+        Focuses on what ACTUALLY matters for each audience in modern context:
+        - Model/talent selection (representation)
+        - Language and script choice
+        - Regulatory rules (from RAG)
+        - Persona-driven insights (not outdated taboos)
+        - Globalized modern audience awareness
+        """
+        ethnicity_lower = ethnicity.lower()
+
+        if ethnicity_lower == "chinese":
+            return """
+**For Malaysian Chinese audience, focus your evaluation on:**
+
+1. **MODEL/TALENT SELECTION (HIGH PRIORITY):**
+   - Are the models/actors representative of the Chinese Malaysian audience?
+   - Chinese audience expects to see Chinese faces in ads targeting them
+   - Mixed-race casting is acceptable but at least one Chinese talent should be featured
+
+2. **LANGUAGE & SCRIPT (HIGH PRIORITY):**
+   - Is the ad in a language the Chinese Malaysian audience connects with? (Mandarin, Cantonese, English, or a mix)
+   - If the ad is purely in Malay with no Chinese language elements, flag as a localization issue
+   - Code-switching (Manglish + Mandarin) is natural and preferred for younger audiences
+
+3. **REGULATORY COMPLIANCE (from RAG rules above):**
+   - Apply only the actual regulatory rules retrieved above
+   - These are legal requirements, not cultural preferences
+
+4. **CULTURAL AWARENESS (SOFT GUIDANCE — not hard rules):**
+   - Number 4 in pricing/branding is worth noting but NOT a severe violation in modern context
+   - Traditional taboos (clocks as gifts, white = mourning) are generational — younger audiences are less strict
+   - DO NOT apply Malay Islamic modesty standards (hijab, aurat) to Chinese audience
+   - Chinese Malaysians are generally more liberal about clothing/body exposure in advertising
+
+5. **MODERN CONTEXT:**
+   - Malaysian Chinese are globally connected (consume content from China, Taiwan, Korea, West)
+   - They are pragmatic consumers — focus on whether the ad is effective and respectful
+   - Suggestive/sexual content standards should match what's acceptable on Malaysian broadcast (MCMC rules), not religious standards
+"""
+
+        elif ethnicity_lower == "malay":
+            return """
+**For Malay Muslim audience, focus your evaluation on:**
+
+1. **MODEL/TALENT SELECTION (HIGH PRIORITY):**
+   - Models should represent the Malay audience appropriately
+   - Female models should observe modest dressing (hijab preferred, arms/legs covered)
+   - Mixed-gender interactions should be appropriate (no intimate physical contact between non-mahram)
+
+2. **LANGUAGE & SCRIPT (HIGH PRIORITY):**
+   - Bahasa Melayu is preferred; English is acceptable for urban audiences
+   - Avoid crude or vulgar language even in English
+
+3. **REGULATORY COMPLIANCE (from RAG rules above):**
+   - Apply the actual regulatory rules retrieved above (these are legal requirements)
+   - Halal compliance is mandatory for food/beverage/cosmetics
+
+4. **ISLAMIC SENSITIVITY (IMPORTANT):**
+   - No pork, alcohol, or non-halal references
+   - Modesty in dress and behavior (aurat guidelines)
+   - No suggestive/sexual content or double entendres
+   - No misuse of Islamic symbols or references
+
+5. **MODERN CONTEXT:**
+   - Urban Malay millennials/Gen Z are more moderate but still value Islamic principles
+   - Product application on intimate body areas should not be shown directly
+   - Focus on whether content would be acceptable on Malaysian TV (MCMC broadcast standards)
+"""
+
+        elif ethnicity_lower == "indian":
+            return """
+**For Malaysian Indian audience, focus your evaluation on:**
+
+1. **MODEL/TALENT SELECTION (HIGH PRIORITY):**
+   - Are Indian Malaysian faces represented in the ad?
+   - Indian audience expects representation — all-Chinese or all-Malay casting is a miss
+
+2. **LANGUAGE & SCRIPT (HIGH PRIORITY):**
+   - Tamil or English preferred; Malaysian English (Manglish) is natural
+   - If ad is purely in Malay/Mandarin with no English/Tamil, flag as localization issue
+
+3. **REGULATORY COMPLIANCE (from RAG rules above):**
+   - Apply the actual regulatory rules retrieved above
+
+4. **CULTURAL AWARENESS (SOFT GUIDANCE):**
+   - Respect for Hindu religious symbols (don't use as commercial props)
+   - Family values and respect for elders are important themes
+   - Generally more liberal about clothing/body exposure than Malay audience
+   - Vegetarianism is common — be sensitive with meat product ads during religious periods
+
+5. **MODERN CONTEXT:**
+   - Malaysian Indians are globally connected, consume Bollywood + Western content
+   - Younger generation is progressive and values authenticity
+"""
+
+        else:
+            return """
+**General evaluation (no specific ethnicity):**
+- Apply regulatory rules from RAG
+- Focus on general Malaysian broadcast standards (MCMC)
+- Consider whether content is appropriate for a diverse Malaysian audience
+- Flag anything that would be offensive to ANY major ethnic group
+"""
 
     def _prescan_video(self, video_bytes: bytes, mime_type: str) -> str:
         """Lightweight Gemini call to describe the video visuals for Qdrant retrieval."""
