@@ -58,6 +58,12 @@ def test_video_pipeline(video_path: str, market: str = "malaysia", ethnicity: st
     print("\n[Remediation Result]")
     print("Rewritten Script:")
     print(f"{remediation_result.get('rewritten_script')}")
+    
+    audio_path = remediation_result.get('generated_voiceover_path')
+    if audio_path:
+        print(f"\nGenerated Localized Voiceover:")
+        print(f"  -> SUCCESS: Saved to {audio_path}")
+        
     print("\nGenerated B-Roll Replacements:")
     brolls = remediation_result.get('video_broll_prompts', [])
     for idx, broll in enumerate(brolls):
