@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load .env from backend/ directory
-load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 # ── AWS ───────────────────────────────────────────────────────────────────────
 AWS_REGION = os.environ.get("AWS_REGION", "ap-southeast-1")
@@ -24,13 +24,12 @@ EMBED_DIMENSIONS = int(os.environ.get("EMBED_DIMENSIONS", "1536"))
 AWS_LLM_MODEL_ID = os.environ.get("AWS_LLM_MODEL_ID", "apac.amazon.nova-pro-v1:0")
 GOOGLE_LLM_MODEL_ID = os.environ.get("GOOGLE_LLM_MODEL_ID", "gemini-3.1-flash-lite")
 
-# Default LLM model for the app
 LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "gemini-3.1-flash-lite")
 VIDEO_MODEL_ID = os.environ.get("VIDEO_MODEL_ID", "global.twelvelabs.pegasus-1-2-v1:0")
 
 TRANSCRIBE_S3_BUCKET = os.environ.get("TRANSCRIBE_S3_BUCKET", "")
 
-# ── API Keys (ElevenLabs, Gemini, KIE) ────────────────────────────────────────
+# ── API Keys ──────────────────────────────────────────────────────────────────
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 KIE_API_KEY = os.environ.get("KIE_API_KEY", "")
@@ -39,7 +38,6 @@ KIE_API_KEY = os.environ.get("KIE_API_KEY", "")
 QDRANT_URL = os.environ.get("QDRANT_URL", "")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "")
 
-# Collection names
 QDRANT_COLLECTION_NAME = os.environ.get("QDRANT_COLLECTION_NAME", "mcmc-guidelines")
 REGULATORY_COLLECTION_MALAYSIA = "mcmc-guidelines"
 CULTURAL_COLLECTION = "cultural-guidelines"
@@ -48,7 +46,6 @@ PERSONA_COLLECTION = "cultural-personas"
 CULTURAL_COLLECTION_NAME = os.environ.get("CULTURAL_COLLECTION_NAME", "cultural-guidelines")
 PERSONA_COLLECTION_NAME = os.environ.get("PERSONA_COLLECTION_NAME", "cultural-personas")
 
-# Retrieval settings
 QDRANT_TOP_K = int(os.environ.get("QDRANT_TOP_K", "5"))
 TOP_K_REGULATORY = int(os.environ.get("TOP_K_REGULATORY", "10"))
 TOP_K_CULTURAL = int(os.environ.get("TOP_K_CULTURAL", "10"))

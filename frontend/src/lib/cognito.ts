@@ -10,8 +10,8 @@ const redirectUri = `${window.location.origin}/callback`;
 
 const cognitoAuthConfig: UserManagerSettings = {
   authority:
-    "https://cognito-idp.ap-southeast-1.amazonaws.com/ap-southeast-1_j6tIXepJB",
-  client_id: "3mnoq79fi9cu99rt5ni3e3rqv9",
+    "https://cognito-idp.ap-southeast-1.amazonaws.com/ap-southeast-1_8hAosB1se",
+  client_id: "41rfef3ni43sfr2v9lnjk0prj5",
   redirect_uri: redirectUri,
   post_logout_redirect_uri: window.location.origin,
   response_type: "code",
@@ -28,10 +28,10 @@ const cognitoAuthConfig: UserManagerSettings = {
 export const userManager = new UserManager(cognitoAuthConfig);
 
 export async function signOutRedirect(): Promise<void> {
-  const clientId = "3mnoq79fi9cu99rt5ni3e3rqv9";
+  const clientId = "41rfef3ni43sfr2v9lnjk0prj5";
   const logoutUri = encodeURIComponent(window.location.origin);
   const cognitoDomain =
-    "https://ap-southeast-1j6tixepjb.auth.ap-southeast-1.amazoncognito.com";
+    "https://cognito-idp.ap-southeast-1.amazonaws.com/ap-southeast-1_8hAosB1se";
   window.location.href = `${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${logoutUri}`;
 }
 

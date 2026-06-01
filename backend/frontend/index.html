@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JusAds Video Compliance Checker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e4e4e7; min-height: 100vh; }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        
+        h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #fff; }
+        .subtitle { color: #71717a; margin-bottom: 2rem; }
+        
+        /* Upload Section */
+        .upload-section { background: #1c1c22; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; border: 1px solid #27272a; }
+        .upload-area { border: 2px dashed #3f3f46; border-radius: 8px; padding: 3rem; text-align: center; cursor: pointer; transition: border-color 0.2s; }
+        .upload-area:hover { border-color: #6366f1; }
+        .upload-area.dragover { border-color: #6366f1; background: #1e1b4b; }
+        .upload-icon { font-size: 2.5rem; margin-bottom: 1rem; }
+        
+        .form-row { display: flex; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap; }
+        .form-group { flex: 1; min-width: 150px; }
+        .form-group label { display: block; font-size: 0.85rem; color: #a1a1aa; margin-bottom: 0.4rem; }
+        .form-group select, .form-group input { width: 100%; padding: 0.6rem; background: #27272a; border: 1px solid #3f3f46; border-radius: 6px; color: #fff; font-size: 0.9rem; }
+        
+        .btn { padding: 0.8rem 2rem; background: #6366f1; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 500; transition: background 0.2s; }
+        .btn:hover { background: #4f46e5; }
+        .btn:disabled { background: #3f3f46; cursor: not-allowed; }
+        .btn-row { margin-top: 1.5rem; text-align: center; }
+        
+        /* Loading */
+        .loading { display: none; text-align: center; padding: 3rem; }
+        .loading.active { display: block; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #3f3f46; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Results */
+        .results { display: none; }
+        .results.active { display: block; }
+        
+        .score-card { background: #1c1c22; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; border: 1px solid #27272a; }
+        .score-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .score-value { font-size: 3rem; font-weight: 700; }
+        .score-value.high { color: #ef4444; }
+        .score-value.medium { color: #f59e0b; }
+        .score-value.low { color: #22c55e; }
+        .risk-badge { padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+        .risk-badge.High { background: #7f1d1d; color: #fca5a5; }
+        .risk-badge.Medium { background: #78350f; color: #fcd34d; }
+        .risk-badge.Low { background: #14532d; color: #86efac; }
+        
+        .explanation { color: #a1a1aa; line-height: 1.6; margin-bottom: 1rem; }
+        .suggestion { background: #1e1b4b; border-left: 3px solid #6366f1; padding: 1rem; border-radius: 0 8px 8px 0; color: #c7d2fe; }
+        
+        /* Persona */
+        .persona-card { background: #1c1c22; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; border: 1px solid #27272a; }
+        .persona-card h3 { margin-bottom: 1rem; color: #a78bfa; }
+        .persona-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+        .persona-item { background: #27272a; padding: 1rem; border-radius: 8px; }
+        .persona-item h4 { font-size: 0.8rem; color: #71717a; text-transform: uppercase; margin-bottom: 0.4rem; }
+        .persona-item p { font-size: 0.9rem; color: #e4e4e7; }
+        .taboo-list { list-style: none; }
+        .taboo-list li { padding: 0.3rem 0; font-size: 0.85rem; color: #fca5a5; }
+        .taboo-list li::before { content: "⚠️ "; }
+        
+        /* Violations */
+        .violations-section h2 { margin-bottom: 1.5rem; }
+        .violation-card { background: #1c1c22; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid #27272a; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+        .violation-video { flex: 0 0 320px; }
+        .violation-video video { width: 100%; border-radius: 8px; background: #000; }
+        .violation-info { flex: 1; min-width: 250px; }
+        .violation-meta { display: flex; gap: 0.5rem; margin-bottom: 0.8rem; flex-wrap: wrap; }
+        .tag { padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .tag-visual { background: #312e81; color: #a5b4fc; }
+        .tag-audio { background: #1e3a5f; color: #93c5fd; }
+        .tag-severe { background: #7f1d1d; color: #fca5a5; }
+        .tag-moderate { background: #78350f; color: #fcd34d; }
+        .tag-minor { background: #14532d; color: #86efac; }
+        .violation-desc { color: #d4d4d8; line-height: 1.5; }
+        .violation-time { color: #71717a; font-size: 0.85rem; margin-top: 0.5rem; }
+        
+        /* Tabs */
+        .tab { padding: 0.5rem 1.2rem; background: #27272a; border: 1px solid #3f3f46; border-radius: 6px; color: #a1a1aa; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+        .tab:hover { border-color: #6366f1; color: #fff; }
+        .tab.active { background: #6366f1; border-color: #6366f1; color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛡️ JusAds Compliance Checker</h1>
+        <p class="subtitle">Check text, image, audio, or video ads for cultural & regulatory compliance</p>
+
+        <!-- Upload Section -->
+        <div class="upload-section" id="uploadSection">
+            <!-- Input Type Tabs -->
+            <div style="display:flex; gap:0.5rem; margin-bottom:1.5rem;">
+                <button class="tab active" data-tab="file" onclick="switchTab('file')">📁 Upload File</button>
+                <button class="tab" data-tab="text" onclick="switchTab('text')">📝 Text Input</button>
+            </div>
+
+            <!-- File Upload -->
+            <div id="tabFile">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <p>Drop your file here or click to browse</p>
+                    <p style="color: #71717a; font-size: 0.85rem; margin-top: 0.5rem;">Video (MP4), Image (PNG/JPG), Audio (MP3/WAV)</p>
+                    <input type="file" id="fileInput" accept="video/*,image/*,audio/*" hidden>
+                </div>
+                <div id="fileInfo" style="display:none; margin-top:1rem; color:#a1a1aa;"></div>
+            </div>
+
+            <!-- Text Input -->
+            <div id="tabText" style="display:none;">
+                <textarea id="textInput" placeholder="Paste your ad script or copy here..." style="width:100%; min-height:150px; padding:1rem; background:#27272a; border:1px solid #3f3f46; border-radius:8px; color:#fff; font-size:0.9rem; resize:vertical;"></textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Market</label>
+                    <select id="market">
+                        <option value="malaysia">Malaysia</option>
+                        <option value="singapore">Singapore</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Ethnicity</label>
+                    <select id="ethnicity">
+                        <option value="malay">Malay</option>
+                        <option value="chinese">Chinese</option>
+                        <option value="indian">Indian</option>
+                        <option value="all">All</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Age Group</label>
+                    <select id="ageGroup">
+                        <option value="all_ages">All Ages</option>
+                        <option value="gen_z">Gen Z</option>
+                        <option value="millennials">Millennials</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="btn-row">
+                <button class="btn" id="checkBtn" disabled>Check Compliance</button>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p id="loadingText">Uploading video...</p>
+            <p style="color: #71717a; font-size: 0.85rem; margin-top: 0.5rem;">This may take 1-3 minutes</p>
+            
+            <!-- Node Status -->
+            <div id="nodeStatus" style="margin-top: 1.5rem; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto;">
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div class="results" id="results">
+            <!-- Pipeline Execution Status -->
+            <div class="score-card" id="pipelineCard">
+                <h3 style="margin-bottom: 1rem; color: #a78bfa;">⚙️ Pipeline Execution</h3>
+                <div id="pipelineNodes" style="display: flex; gap: 0.75rem; flex-wrap: wrap;"></div>
+            </div>
+
+            <!-- Score Card -->
+            <div class="score-card">
+                <div class="score-header">
+                    <div>
+                        <p style="color: #71717a; font-size: 0.85rem;">Compliance Score</p>
+                        <div class="score-value" id="scoreValue">0</div>
+                    </div>
+                    <span class="risk-badge" id="riskBadge">-</span>
+                </div>
+                <p class="explanation" id="explanation"></p>
+                <div class="suggestion" id="suggestion"></div>
+            </div>
+
+            <!-- Persona Card -->
+            <div class="persona-card" id="personaCard" style="display:none;">
+                <h3>👤 Target Audience Persona</h3>
+                <div class="persona-grid" id="personaGrid"></div>
+            </div>
+
+            <!-- Localization Card -->
+            <div class="persona-card" id="localizationCard" style="display:none;">
+                <h3>🌏 Localization Recommendations</h3>
+                <div class="persona-grid" id="localizationGrid"></div>
+            </div>
+
+            <!-- Violations -->
+            <div class="violations-section">
+                <h2>🚨 Issues Found (<span id="violationCount">0</span>)</h2>
+                <div id="violationsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const textInput = document.getElementById('textInput');
+        const checkBtn = document.getElementById('checkBtn');
+        const fileInfo = document.getElementById('fileInfo');
+        let selectedFile = null;
+        let activeTab = 'file';
+
+        // Tab switching
+        function switchTab(tab) {
+            activeTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+            document.getElementById('tabFile').style.display = tab === 'file' ? 'block' : 'none';
+            document.getElementById('tabText').style.display = tab === 'text' ? 'block' : 'none';
+            updateCheckBtn();
+        }
+
+        function updateCheckBtn() {
+            if (activeTab === 'text') {
+                checkBtn.disabled = !textInput.value.trim();
+            } else {
+                checkBtn.disabled = !selectedFile;
+            }
+        }
+
+        // Text input
+        textInput.addEventListener('input', updateCheckBtn);
+
+        // File selection
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => { if (e.target.files[0]) selectFile(e.target.files[0]); });
+
+        function selectFile(file) {
+            selectedFile = file;
+            const type = file.type.startsWith('video') ? '🎬 Video' : file.type.startsWith('image') ? '🖼️ Image' : '🔊 Audio';
+            fileInfo.style.display = 'block';
+            fileInfo.textContent = `${type}: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`;
+            checkBtn.disabled = false;
+        }
+
+        // Submit
+        checkBtn.addEventListener('click', async () => {
+            if (activeTab === 'text' && !textInput.value.trim()) return;
+            if (activeTab === 'file' && !selectedFile) return;
+
+            document.getElementById('uploadSection').style.display = 'none';
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('results').classList.remove('active');
+            document.getElementById('nodeStatus').innerHTML = '';
+
+            const formData = new FormData();
+            if (activeTab === 'text') {
+                formData.append('text', textInput.value.trim());
+            } else {
+                formData.append('file', selectedFile);
+            }
+            formData.append('market', document.getElementById('market').value);
+            formData.append('ethnicity', document.getElementById('ethnicity').value);
+            formData.append('age_group', document.getElementById('ageGroup').value);
+
+            try {
+                const res = await fetch(`${API_BASE}/api/compliance/check`, { method: 'POST', body: formData });
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let finalData = null;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const event = JSON.parse(line.slice(6));
+                                if (event.type === 'node_status') {
+                                    updateNodeStatus(event);
+                                } else if (event.type === 'result') {
+                                    finalData = event.data;
+                                }
+                            } catch {}
+                        }
+                    }
+                }
+
+                if (finalData) {
+                    renderResults(finalData);
+                } else {
+                    alert('No result received from server');
+                    document.getElementById('uploadSection').style.display = 'block';
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+                document.getElementById('uploadSection').style.display = 'block';
+            } finally {
+                document.getElementById('loading').classList.remove('active');
+            }
+        });
+
+        function updateNodeStatus(event) {
+            const container = document.getElementById('nodeStatus');
+            const nodeId = `node-${event.node}`;
+            let el = document.getElementById(nodeId);
+
+            if (!el) {
+                el = document.createElement('div');
+                el.id = nodeId;
+                el.style.cssText = 'display:flex;align-items:center;gap:0.75rem;padding:0.6rem 1rem;margin-bottom:0.5rem;background:#1c1c22;border-radius:8px;border:1px solid #27272a;';
+                container.appendChild(el);
+            }
+
+            const icons = { running: '⏳', completed: '✅', error: '❌' };
+            const colors = { running: '#f59e0b', completed: '#22c55e', error: '#ef4444' };
+            const durationText = event.duration_ms ? ` (${(event.duration_ms / 1000).toFixed(1)}s)` : '';
+
+            el.innerHTML = `
+                <span style="font-size:1.1rem;">${icons[event.status]}</span>
+                <div style="flex:1;">
+                    <div style="font-size:0.85rem;font-weight:600;color:${colors[event.status]};">${event.node.replace(/_/g, ' ')}</div>
+                    <div style="font-size:0.75rem;color:#71717a;">${event.description}${durationText}</div>
+                </div>
+            `;
+
+            // Update loading text
+            if (event.status === 'running') {
+                document.getElementById('loadingText').textContent = event.description;
+            }
+        }
+
+        function renderResults(data) {
+            document.getElementById('results').classList.add('active');
+
+            // Score
+            const scoreEl = document.getElementById('scoreValue');
+            scoreEl.textContent = data.score;
+            scoreEl.className = 'score-value ' + (data.score < 40 ? 'high' : data.score < 75 ? 'medium' : 'low');
+
+            const badge = document.getElementById('riskBadge');
+            badge.textContent = data.risk_level + ' Risk';
+            badge.className = 'risk-badge ' + data.risk_level;
+
+            document.getElementById('explanation').textContent = data.explanation;
+            document.getElementById('suggestion').textContent = '💡 ' + data.suggestion;
+
+            // Persona
+            if (data.persona && typeof data.persona === 'object') {
+                document.getElementById('personaCard').style.display = 'block';
+                renderPersona(data.persona);
+            }
+
+            // Localization
+            if (data.localization && typeof data.localization === 'object' && Object.keys(data.localization).length > 0) {
+                document.getElementById('localizationCard').style.display = 'block';
+                renderLocalization(data.localization);
+            }
+
+            // Violations
+            document.getElementById('violationCount').textContent = data.violations.length;
+            const list = document.getElementById('violationsList');
+            list.innerHTML = '';
+
+            data.violations.forEach((v, i) => {
+                const card = document.createElement('div');
+                card.className = 'violation-card';
+                card.innerHTML = `
+                    <div class="violation-video">
+                        ${v.clip_url 
+                            ? `<video controls preload="metadata"><source src="${API_BASE}${v.clip_url}" type="video/mp4"></video>`
+                            : '<div style="background:#27272a;padding:2rem;border-radius:8px;text-align:center;color:#71717a;">Clip unavailable</div>'
+                        }
+                    </div>
+                    <div class="violation-info">
+                        <div class="violation-meta">
+                            <span class="tag tag-${v.type}">${v.type.toUpperCase()}</span>
+                            <span class="tag tag-${v.severity.toLowerCase()}">${v.severity}</span>
+                            <span class="tag" style="background:#27272a;color:#a1a1aa;">${v.category}</span>
+                        </div>
+                        <p class="violation-desc">${v.description}</p>
+                        <p class="violation-time">⏱️ ${formatTime(v.start)} — ${formatTime(v.end)}</p>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        function renderLocalization(loc) {
+            const grid = document.getElementById('localizationGrid');
+            grid.innerHTML = '';
+
+            const labels = {
+                language: '🗣️ Language',
+                model_talent: '🎭 Model / Talent',
+                script_adaptation: '📝 Script Adaptation',
+                visual_style: '🎨 Visual Style',
+                platform: '📱 Platform / Channel',
+            };
+
+            for (const [key, label] of Object.entries(labels)) {
+                if (loc[key]) {
+                    addPersonaItem(grid, label, loc[key]);
+                }
+            }
+        }
+
+        function renderPersona(persona) {
+            const grid = document.getElementById('personaGrid');
+            grid.innerHTML = '';
+
+            // Handle nested persona structure
+            const p = persona.base || persona;
+
+            if (p.demographics) {
+                addPersonaItem(grid, 'Demographics', `${p.demographics.ethnicity || ''} | ${p.demographics.religion || ''} | ${p.demographics.location || ''}`);
+            }
+            if (p.core_values) {
+                addPersonaItem(grid, 'Core Values', p.core_values.slice(0, 4).join(', '));
+            }
+            if (p.strict_taboos) {
+                const tabooHtml = p.strict_taboos.slice(0, 5).map(t => `<li>${t}</li>`).join('');
+                addPersonaItem(grid, 'Strict Taboos', `<ul class="taboo-list">${tabooHtml}</ul>`, true);
+            }
+            if (p.nuances_and_behavior) {
+                addPersonaItem(grid, 'Cultural Nuances', p.nuances_and_behavior.slice(0, 3).join('; '));
+            }
+        }
+
+        function addPersonaItem(grid, title, content, isHtml = false) {
+            const item = document.createElement('div');
+            item.className = 'persona-item';
+            item.innerHTML = `<h4>${title}</h4>${isHtml ? content : `<p>${content}</p>`}`;
+            grid.appendChild(item);
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+    </script>
+</body>
+</html>
