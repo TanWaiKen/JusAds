@@ -197,6 +197,20 @@
                 <h2>🚨 Issues Found (<span id="violationCount">0</span>)</h2>
                 <div id="violationsList"></div>
             </div>
+
+            <!-- Remix Section (hidden until ask_user event) -->
+            <div id="remixSection" style="display:none; margin-top:2rem;">
+                <div class="score-card" style="border-color: #6366f1; text-align:center;">
+                    <h3 style="color:#a78bfa; margin-bottom:0.75rem;">🎨 Auto-Remix Available</h3>
+                    <p style="color:#a1a1aa; margin-bottom:1.5rem;" id="remixMessage">Your content has compliance issues. Would you like to auto-remix it?</p>
+                    <div style="display:flex; gap:1rem; justify-content:center;">
+                        <button class="btn" id="remixYesBtn" onclick="startRemix()">✨ Yes, Remix It</button>
+                        <button class="btn" id="remixNoBtn" style="background:#3f3f46;" onclick="document.getElementById('remixSection').style.display='none'">No Thanks</button>
+                    </div>
+                    <!-- Remix progress -->
+                    <div id="remixProgress" style="display:none; margin-top:1.5rem; text-align:left;"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -294,6 +308,11 @@
                                     updateNodeStatus(event);
                                 } else if (event.type === 'result') {
                                     finalData = event.data;
+                                } else if (event.type === 'ask_user') {
+                                    // Show remix prompt after results render
+                                    currentCheckId = event.check_id;
+                                    document.getElementById('remixMessage').textContent = event.message;
+                                    document.getElementById('remixSection').style.display = 'block';
                                 }
                             } catch {}
                         }
@@ -452,6 +471,58 @@
             const m = Math.floor(seconds / 60);
             const s = Math.floor(seconds % 60);
             return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // Remix functionality
+        let currentCheckId = null;
+
+        async function startRemix() {
+            if (!currentCheckId) return;
+
+            document.getElementById('remixYesBtn').disabled = true;
+            document.getElementById('remixNoBtn').style.display = 'none';
+            const progress = document.getElementById('remixProgress');
+            progress.style.display = 'block';
+            progress.innerHTML = '';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/compliance/${currentCheckId}/remix`, { method: 'POST' });
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const event = JSON.parse(line.slice(6));
+                                if (event.type === 'node_status') {
+                                    const icons = { running: '⏳', completed: '✅', error: '❌' };
+                                    const colors = { running: '#f59e0b', completed: '#22c55e', error: '#ef4444' };
+                                    const el = document.createElement('div');
+                                    el.style.cssText = `display:flex;align-items:center;gap:0.75rem;padding:0.5rem;margin-bottom:0.4rem;`;
+                                    el.innerHTML = `<span>${icons[event.status]}</span><span style="color:${colors[event.status]};font-size:0.85rem;">${event.description}</span>`;
+                                    progress.appendChild(el);
+                                } else if (event.type === 'remix_result') {
+                                    const el = document.createElement('div');
+                                    el.style.cssText = 'margin-top:1rem;padding:1rem;background:#14532d;border-radius:8px;color:#86efac;font-weight:600;text-align:center;';
+                                    el.textContent = '✅ Remix complete! Compliant version generated.';
+                                    progress.appendChild(el);
+                                }
+                            } catch {}
+                        }
+                    }
+                }
+            } catch (err) {
+                progress.innerHTML += `<div style="color:#ef4444;">❌ Remix failed: ${err.message}</div>`;
+            }
         }
     </script>
 </body>

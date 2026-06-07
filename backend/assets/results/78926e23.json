@@ -1,0 +1,80 @@
+{
+  "check_id": "78926e23",
+  "media_type": "image",
+  "filename": "idea.jpg",
+  "market": "malaysia",
+  "ethnicity": "chinese",
+  "age_group": "adults",
+  "score": 45,
+  "risk_level": "High",
+  "explanation": "The advertisement contains highly suggestive and sexually explicit innuendo in the Malay language ('sendat' and 'ketat' used in this context refer to sexual tightness). This violates the 'No explicit sexual content' regulatory guideline, which prohibits imagery or language that violates Malaysian decency standards. While the target audience is Chinese, Malaysian society across all ethnic groups maintains conservative cultural values regarding public advertising. The use of such crude, double-entendre-based marketing is considered unprofessional, offensive, and disrespectful to the dignity of the individuals depicted, contradicting the core values of respect and social standing ('face') held by the Malaysian Chinese community.",
+  "suggestion": "The advertisement should be completely overhauled. Remove the sexually suggestive text immediately, as it damages brand reputation and violates advertising standards. Replace the copy with professional, benefit-oriented messaging that highlights the actual health or beauty properties of the product without resorting to sexual innuendo. Ensure that all marketing materials maintain a tone of respect and modesty, which is essential for maintaining credibility and consumer trust in the Malaysian market.",
+  "localization": {},
+  "persona": {
+    "demographics": {
+      "ethnicity": "Chinese",
+      "location": "Malaysia",
+      "primary_language": "Mandarin, English, Cantonese (in KL/Selangor), Hokkien (in Penang/Northern states), Hakka",
+      "key_traits": "Pragmatic, education-driven, business-oriented, strong community bonds, superstition-aware, multilingual, filial piety"
+    },
+    "historical_and_cultural_context": "Malaysian Chinese culture is shaped by traditional Chinese beliefs, including Confucian respect for elders, Taoist/Buddhist spiritual practices, and deep-seated beliefs in numerology and symbolism. Unlike Singaporean Chinese who are predominantly English-educated, Malaysian Chinese retain strong vernacular roots through Chinese-medium education (SRJKCs), giving them a distinct Mandarin/dialect-first identity.",
+    "core_values": [
+      "Respect for elders and ancestors (filial piety — xiao)",
+      "Auspicious symbolism, luck, and prosperity (fatt)",
+      "Education as the primary path to success",
+      "Superstitions surrounding gift-giving, death, and numbers",
+      "Face (mianzi) — reputation and social standing",
+      "Family business legacy and entrepreneurship"
+    ],
+    "strict_taboos": [
+      "NEVER use the number 4 (sounds like death) in pricing, quantities, or phone numbers. 14 and 44 are extremely inauspicious.",
+      "NEVER show clocks, broken mirrors, scissors, or shoes as gifts (associated with funerals, broken relationships, or bad luck).",
+      "NEVER show umbrellas opened indoors.",
+      "NEVER show chopsticks stuck vertically in rice (resembles funeral incense).",
+      "NEVER use ancestral tablets, altars, or Qing Ming (Tomb Sweeping) items (joss paper, incense) as commercial props.",
+      "NEVER use Buddhist monks or Taoist priests to endorse commercial products.",
+      "NEVER depict elderly Chinese in foolish, undignified, or helpless situations."
+    ],
+    "nuances_and_behavior": [
+      "White is associated with mourning — avoid all-white packaging or backgrounds for celebratory occasions.",
+      "Black combined with white evokes funeral imagery.",
+      "Red signifies prosperity and is highly encouraged for festive contexts (like Chinese New Year).",
+      "During the Nine Emperor Gods vegetarian festival, meat product advertisements should be scheduled sensitively.",
+      "The number 8 (sounds like 'prosper') and 6 (smooth/prosperous) are highly auspicious in pricing and branding.",
+      "CNY gifting culture is enormous — hampers, premium packaging, and gold imagery drive purchase decisions."
+    ]
+  },
+  "transcript": "",
+  "violations": [
+    {
+      "index": 0,
+      "type": "visual",
+      "component": "Overtly sexual innuendo in text ('sendat', 'ketat')",
+      "severity": "error",
+      "location_description": "",
+      "edit_prompt": ""
+    },
+    {
+      "index": 1,
+      "type": "visual",
+      "component": "Vulgar tone inappropriate for public advertising",
+      "severity": "error",
+      "location_description": "",
+      "edit_prompt": ""
+    },
+    {
+      "index": 2,
+      "type": "visual",
+      "component": "Violation of Malaysian decency standards",
+      "severity": "error",
+      "location_description": "",
+      "edit_prompt": ""
+    }
+  ],
+  "high_risk_indicators": [
+    "Overtly sexual innuendo in text ('sendat', 'ketat')",
+    "Vulgar tone inappropriate for public advertising",
+    "Violation of Malaysian decency standards"
+  ],
+  "processing_time_seconds": 19.144
+}

@@ -25,6 +25,11 @@ import uuid
 from pathlib import Path
 from typing import Literal, TypedDict
 
+from dotenv import load_dotenv
+
+# Load .env from backend/ directory (picks up LangSmith + all other keys)
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
+
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -39,6 +44,7 @@ from jusads_image_compliance.image_checker import ImageComplianceChecker
 from jusads_video_compliance.step1_compliance_check import check_compliance as video_check_compliance
 from jusads_video_compliance.step2_parse_violations import parse_violations
 from jusads_transcription.transcriber import Transcriber
+from jusads_remix_pipeline.api import remix_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,6 +57,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register remix pipeline router
+app.include_router(remix_router, prefix="/remix", tags=["remix"])
 
 # Directories
 UPLOAD_DIR = Path("assets/uploads")
@@ -362,8 +371,54 @@ async def check_compliance(
             "processing_time_seconds": result.get("processing_time_ms", 0) / 1000,
         }
 
+        # Convert high_risk_indicators to violations format for image/text/audio
+        # Each media type has its own violation structure
+        if not response["violations"] and response.get("high_risk_indicators"):
+            if media_type == "text":
+                response["violations"] = [
+                    {
+                        "index": i,
+                        "type": "text",
+                        "phrase": indicator,
+                        "severity": "error" if response.get("risk_level") == "High" else "warning",
+                        "reason": "",
+                        "suggested_replacement": "",
+                    }
+                    for i, indicator in enumerate(response["high_risk_indicators"])
+                ]
+            elif media_type == "image":
+                response["violations"] = [
+                    {
+                        "index": i,
+                        "type": "visual",
+                        "component": indicator,
+                        "severity": "error" if response.get("risk_level") == "High" else "warning",
+                        "location_description": "",
+                        "edit_prompt": "",
+                    }
+                    for i, indicator in enumerate(response["high_risk_indicators"])
+                ]
+            elif media_type == "audio":
+                response["violations"] = [
+                    {
+                        "index": i,
+                        "type": "audio",
+                        "spoken_phrase": indicator,
+                        "severity": "error" if response.get("risk_level") == "High" else "warning",
+                        "reason": "",
+                        "suggested_replacement": "",
+                        "voice_gender": "",
+                    }
+                    for i, indicator in enumerate(response["high_risk_indicators"])
+                ]
+
         _save_result(check_id, response)
         yield f"data: {json.dumps({'type': 'result', 'data': response})}\n\n"
+
+        # If score < 75, ask user if they want to remix
+        score = response.get("score", 0)
+        if score < 75 and media_type in ("video", "image", "audio"):
+            yield f"data: {json.dumps({'type': 'ask_user', 'action': 'remix', 'message': 'Your content has compliance issues. Would you like to auto-remix it to make it compliant?', 'check_id': check_id})}\n\n"
 
     return StreamingResponse(
         generate_events(),
@@ -380,6 +435,157 @@ async def get_results(check_id: str):
         return JSONResponse(status_code=404, content={"error": "Not found"})
     with open(result_path, "r", encoding="utf-8") as f:
         return JSONResponse(content=json.load(f))
+
+
+@app.post("/api/compliance/{check_id}/remix")
+async def remix_content(check_id: str):
+    """
+    Trigger remediation for a previously checked asset.
+    Called when user confirms "Yes, remix it".
+    Streams SSE with remediation node status updates.
+    """
+    # Load previous result
+    result_path = RESULTS_DIR / f"{check_id}.json"
+    if not result_path.exists():
+        return JSONResponse(status_code=404, content={"error": "Check not found"})
+
+    with open(result_path, "r", encoding="utf-8") as f:
+        prev_result = json.load(f)
+
+    media_type = prev_result.get("media_type", "")
+    file_path = str(UPLOAD_DIR / f"{check_id}_{prev_result.get('filename', '')}")
+
+    if not os.path.exists(file_path):
+        return JSONResponse(status_code=404, content={"error": "Original file not found"})
+
+    logger.info(f"[Remix] Starting remediation for {check_id} ({media_type})")
+
+    def generate_remix_events():
+        # Step 1: Signal start
+        yield f"data: {json.dumps({'type': 'node_status', 'node': 'remix_start', 'status': 'completed', 'description': 'Starting content remediation...'})}\n\n"
+
+        if media_type == "video":
+            # Import video remediation steps
+            import asyncio
+            from jusads_video_compliance.step3_visual_remediation import remediate_visual
+            from jusads_video_compliance.step4_audio_remediation import remediate_audio
+            from jusads_video_compliance.step5_compose_final import compose_final
+
+            violations = prev_result.get("violations", [])
+            visual_violations = [v for v in violations if v.get("type") == "visual"]
+            audio_violations = [v for v in violations if v.get("type") == "audio"]
+            market = prev_result.get("market", "malaysia")
+            ethnicity = prev_result.get("ethnicity", "malay")
+
+            output_dir = str(RESULTS_DIR / check_id)
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Visual remediation
+            if visual_violations:
+                yield f"data: {json.dumps({'type': 'node_status', 'node': 'visual_remediation', 'status': 'running', 'description': f'Remediating {len(visual_violations)} visual violations (Gemini + Veo)...'})}\n\n"
+                try:
+                    visual_results = asyncio.run(remediate_visual(file_path, visual_violations, output_dir))
+                    fixed = sum(1 for r in visual_results if r["success"])
+                    yield f"data: {json.dumps({'type': 'node_status', 'node': 'visual_remediation', 'status': 'completed', 'description': f'Visual: {fixed}/{len(visual_violations)} fixed'})}\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'node_status', 'node': 'visual_remediation', 'status': 'error', 'description': str(e)})}\n\n"
+                    visual_results = []
+            else:
+                visual_results = []
+
+            # Audio remediation
+            if audio_violations:
+                yield f"data: {json.dumps({'type': 'node_status', 'node': 'audio_remediation', 'status': 'running', 'description': f'Remediating {len(audio_violations)} audio violations (ElevenLabs)...'})}\n\n"
+                try:
+                    audio_results = asyncio.run(remediate_audio(file_path, audio_violations, output_dir, market, ethnicity, "ms"))
+                    fixed = sum(1 for r in audio_results if r["success"])
+                    yield f"data: {json.dumps({'type': 'node_status', 'node': 'audio_remediation', 'status': 'completed', 'description': f'Audio: {fixed}/{len(audio_violations)} fixed'})}\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'node_status', 'node': 'audio_remediation', 'status': 'error', 'description': str(e)})}\n\n"
+                    audio_results = []
+            else:
+                audio_results = []
+
+            # Compose final
+            yield f"data: {json.dumps({'type': 'node_status', 'node': 'compose_final', 'status': 'running', 'description': 'Composing final video...'})}\n\n"
+            final_path = compose_final(file_path, visual_results, audio_results, output_dir)
+            yield f"data: {json.dumps({'type': 'node_status', 'node': 'compose_final', 'status': 'completed', 'description': f'Final video: {final_path}'})}\n\n"
+
+            remix_result = {
+                "check_id": check_id,
+                "status": "remixed",
+                "final_video": final_path,
+                "visual_fixed": sum(1 for r in visual_results if r["success"]),
+                "audio_fixed": sum(1 for r in audio_results if r["success"]),
+            }
+
+        elif media_type == "image":
+            # Image remediation
+            yield f"data: {json.dumps({'type': 'node_status', 'node': 'image_remediation', 'status': 'running', 'description': 'Regenerating compliant image (Gemini Flash Image)...'})}\n\n"
+            try:
+                from jusads_image_compliance.image_remediator import ImageRemediator
+                remediator = ImageRemediator()
+                remed_result = remediator.remediate(
+                    image_path=file_path,
+                    compliance_result=prev_result,
+                    market=prev_result.get("market", "malaysia"),
+                    ethnicity=prev_result.get("ethnicity", "malay"),
+                )
+                yield f"data: {json.dumps({'type': 'node_status', 'node': 'image_remediation', 'status': 'completed', 'description': 'Image remediated successfully'})}\n\n"
+                remix_result = {"check_id": check_id, "status": "remixed", **remed_result}
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'node_status', 'node': 'image_remediation', 'status': 'error', 'description': str(e)})}\n\n"
+                remix_result = {"check_id": check_id, "status": "error", "error": str(e)}
+
+        elif media_type == "audio":
+            # Audio: re-generate compliant script via text remediator
+            yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'running', 'description': 'Generating compliant script...'})}\n\n"
+            try:
+                from jusads_text_compliance.text_remediator import TextRemediator
+                remediator = TextRemediator()
+                transcript = prev_result.get("transcript", "")
+                remed_result = remediator.remediate(
+                    ad_text=transcript,
+                    compliance_result=prev_result,
+                    market=prev_result.get("market", "malaysia"),
+                    ethnicity=prev_result.get("ethnicity", "malay"),
+                )
+                yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'completed', 'description': 'Compliant script generated'})}\n\n"
+                remix_result = {"check_id": check_id, "status": "remixed", **remed_result}
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'error', 'description': str(e)})}\n\n"
+                remix_result = {"check_id": check_id, "status": "error", "error": str(e)}
+
+        else:
+            # Text: re-generate compliant copy
+            yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'running', 'description': 'Rewriting compliant copy...'})}\n\n"
+            try:
+                from jusads_text_compliance.text_remediator import TextRemediator
+                remediator = TextRemediator()
+                remed_result = remediator.remediate(
+                    ad_text=prev_result.get("transcript", ""),
+                    compliance_result=prev_result,
+                    market=prev_result.get("market", "malaysia"),
+                    ethnicity=prev_result.get("ethnicity", "malay"),
+                )
+                yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'completed', 'description': 'Compliant copy generated'})}\n\n"
+                remix_result = {"check_id": check_id, "status": "remixed", **remed_result}
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'error', 'description': str(e)})}\n\n"
+                remix_result = {"check_id": check_id, "status": "error", "error": str(e)}
+
+        # Save remix result
+        remix_path = RESULTS_DIR / f"{check_id}_remix.json"
+        with open(remix_path, "w", encoding="utf-8") as f_out:
+            json.dump(remix_result, f_out, indent=2, ensure_ascii=False)
+
+        yield f"data: {json.dumps({'type': 'remix_result', 'data': remix_result})}\n\n"
+
+    return StreamingResponse(
+        generate_remix_events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

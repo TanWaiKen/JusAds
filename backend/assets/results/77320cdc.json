@@ -1,0 +1,80 @@
+{
+  "check_id": "77320cdc",
+  "media_type": "image",
+  "filename": "imageresultadapted.jpg",
+  "market": "malaysia",
+  "ethnicity": "chinese",
+  "age_group": "teens",
+  "score": 55,
+  "risk_level": "Medium",
+  "explanation": "The advertisement contains two significant issues for the Malaysian Chinese market. First, the use of the number '4' in the discount '42%' is a major cultural taboo. In Chinese culture, the number 4 is phonetically similar to the word for 'death' and is considered highly inauspicious, especially in commercial contexts. Second, the product promotes 'skin lightening,' which conflicts with Malaysian regulatory guidelines that discourage the promotion of skin whitening as a superior beauty standard or the implication that darker skin tones are undesirable. Furthermore, focusing on 'patchy' skin can be perceived as body shaming, which is sensitive in a culture that places high value on 'face' (mianzi) and physical appearance.",
+  "suggestion": "To improve cultural appropriateness, change the discount percentage to an auspicious number, such as 38% or 48% (as 8 signifies prosperity). Rebrand the product focus from 'lightening' to 'brightening,' 'even-tone,' or 'skin nourishment' to move away from the skin-whitening stigma. Additionally, adjust the copy to focus on 'skin health' or 'hydration' rather than highlighting 'patchy' or 'dark' areas, which can be perceived as negative body-shaming.",
+  "localization": {},
+  "persona": {
+    "demographics": {
+      "ethnicity": "Chinese",
+      "location": "Malaysia",
+      "primary_language": "Mandarin, English, Cantonese (in KL/Selangor), Hokkien (in Penang/Northern states), Hakka",
+      "key_traits": "Pragmatic, education-driven, business-oriented, strong community bonds, superstition-aware, multilingual, filial piety"
+    },
+    "historical_and_cultural_context": "Malaysian Chinese culture is shaped by traditional Chinese beliefs, including Confucian respect for elders, Taoist/Buddhist spiritual practices, and deep-seated beliefs in numerology and symbolism. Unlike Singaporean Chinese who are predominantly English-educated, Malaysian Chinese retain strong vernacular roots through Chinese-medium education (SRJKCs), giving them a distinct Mandarin/dialect-first identity.",
+    "core_values": [
+      "Respect for elders and ancestors (filial piety — xiao)",
+      "Auspicious symbolism, luck, and prosperity (fatt)",
+      "Education as the primary path to success",
+      "Superstitions surrounding gift-giving, death, and numbers",
+      "Face (mianzi) — reputation and social standing",
+      "Family business legacy and entrepreneurship"
+    ],
+    "strict_taboos": [
+      "NEVER use the number 4 (sounds like death) in pricing, quantities, or phone numbers. 14 and 44 are extremely inauspicious.",
+      "NEVER show clocks, broken mirrors, scissors, or shoes as gifts (associated with funerals, broken relationships, or bad luck).",
+      "NEVER show umbrellas opened indoors.",
+      "NEVER show chopsticks stuck vertically in rice (resembles funeral incense).",
+      "NEVER use ancestral tablets, altars, or Qing Ming (Tomb Sweeping) items (joss paper, incense) as commercial props.",
+      "NEVER use Buddhist monks or Taoist priests to endorse commercial products.",
+      "NEVER depict elderly Chinese in foolish, undignified, or helpless situations."
+    ],
+    "nuances_and_behavior": [
+      "White is associated with mourning — avoid all-white packaging or backgrounds for celebratory occasions.",
+      "Black combined with white evokes funeral imagery.",
+      "Red signifies prosperity and is highly encouraged for festive contexts (like Chinese New Year).",
+      "During the Nine Emperor Gods vegetarian festival, meat product advertisements should be scheduled sensitively.",
+      "The number 8 (sounds like 'prosper') and 6 (smooth/prosperous) are highly auspicious in pricing and branding.",
+      "CNY gifting culture is enormous — hampers, premium packaging, and gold imagery drive purchase decisions."
+    ]
+  },
+  "transcript": "",
+  "violations": [
+    {
+      "index": 0,
+      "type": "visual",
+      "component": "FLAT 42% (Contains the number 4, which is culturally taboo/unlucky)",
+      "severity": "warning",
+      "location_description": "",
+      "edit_prompt": ""
+    },
+    {
+      "index": 1,
+      "type": "visual",
+      "component": "Intimate Lightening Serum (Promotes skin whitening/lightening)",
+      "severity": "warning",
+      "location_description": "",
+      "edit_prompt": ""
+    },
+    {
+      "index": 2,
+      "type": "visual",
+      "component": "Focus on 'Patchy' skin (Body shaming/insecurity-based marketing)",
+      "severity": "warning",
+      "location_description": "",
+      "edit_prompt": ""
+    }
+  ],
+  "high_risk_indicators": [
+    "FLAT 42% (Contains the number 4, which is culturally taboo/unlucky)",
+    "Intimate Lightening Serum (Promotes skin whitening/lightening)",
+    "Focus on 'Patchy' skin (Body shaming/insecurity-based marketing)"
+  ],
+  "processing_time_seconds": 16.993
+}

@@ -1,0 +1,73 @@
+{
+  "check_id": "c096ea88",
+  "media_type": "image",
+  "filename": "idea.jpg",
+  "market": "malaysia",
+  "ethnicity": "malay",
+  "age_group": "all_ages",
+  "score": 35,
+  "risk_level": "High",
+  "explanation": "The advertisement uses highly suggestive language ('sendat', 'ketat', 'melekat') which carries strong sexual connotations. In the context of Malaysian Malay-Muslim culture, such public displays of sexual innuendo are considered highly inappropriate and violate decency standards. While the woman is wearing a hijab, the overall tone of the ad undermines the core values of modesty (kesopanan) and religious sanctity. The physical intimacy depicted (hugging from behind) is also generally discouraged in public advertising for this demographic, as it contradicts the cultural expectation of maintaining public decorum and avoiding suggestive behavior.",
+  "suggestion": "Remove the suggestive text entirely and replace it with a focus on the product's actual health or beauty benefits using professional, respectful language. If a couple must be featured, ensure the interaction is respectful and maintains a distance that adheres to cultural norms of public modesty. Avoid any double entendres that could be interpreted as sexual, as these are highly offensive to the target audience and damage brand reputation.",
+  "localization": {},
+  "persona": {
+    "demographics": {
+      "ethnicity": "Malay",
+      "religion": "Islam",
+      "location": "Malaysia",
+      "primary_language": "Bahasa Melayu, English (educated urban), mix of both",
+      "key_traits": "Community-oriented, deeply Islamic, respectful of hierarchy, warm hospitality (mesra), values family and gotong-royong (communal cooperation)"
+    },
+    "historical_and_cultural_context": "Malay culture in Malaysia is deeply intertwined with Islamic principles. Advertising must respect both traditional Malay cultural norms (kesopanan/politeness) and strict Islamic jurisprudence (Shariah). The community is united by shared faith, language, and a strong sense of national identity tied to the concept of 'Ketuanan Melayu' and Rukun Negara values.",
+    "core_values": [
+      "Modesty (Aurat) in dress and behavior",
+      "Halal compliance in all consumption",
+      "Respect for religious sanctity and Islamic principles",
+      "Filial piety and respect for elders (menghormati ibu bapa)",
+      "Community solidarity (gotong-royong)",
+      "Face-saving (maruah) — avoiding public embarrassment"
+    ],
+    "strict_taboos": [
+      "NEVER show or mention pork, alcohol, or non-halal ingredients (e.g., pig-derived collagen).",
+      "NEVER show women's hair uncovered (without hijab).",
+      "NEVER show arms above the elbow or legs above the knee.",
+      "NEVER show bare armpits (even for deodorant ads) or bare male torsos.",
+      "NEVER use Islamic symbols (Mosques, Quran verses, Arabic calligraphy) as commercial props or placed disrespectfully (e.g., on floors/footwear).",
+      "NEVER show people eating or drinking during daylight in Ramadan-themed ads.",
+      "NEVER mock or diminish the Malay language, royalty, or national identity.",
+      "NEVER show non-mahram physical contact between opposite genders."
+    ],
+    "nuances_and_behavior": [
+      "Physical contact (hugging, hand-holding) between non-related males and females (non-mahram) is highly inappropriate.",
+      "Romantic scenes must remain strictly within publicly acceptable limits and ideally depict married couples.",
+      "Sensual dancing, hip movements, provocative poses, and suggestive body movements are offensive regardless of product category.",
+      "Applying products to intimate body areas (underarms, thighs) must not be shown directly.",
+      "Ramadan and Hari Raya are peak emotional and commercial periods — authenticity and sincerity are paramount.",
+      "Local Malay slang (e.g., 'lah', 'kan', 'wehh') builds rapport but must be age-appropriate."
+    ]
+  },
+  "transcript": "",
+  "violations": [
+    {
+      "index": 0,
+      "type": "visual",
+      "component": "Suggestive sexual innuendo in text ('sendat', 'ketat', 'melekat')",
+      "severity": "error",
+      "location_description": "",
+      "edit_prompt": ""
+    },
+    {
+      "index": 1,
+      "type": "visual",
+      "component": "Inappropriate public physical contact (hugging from behind)",
+      "severity": "error",
+      "location_description": "",
+      "edit_prompt": ""
+    }
+  ],
+  "high_risk_indicators": [
+    "Suggestive sexual innuendo in text ('sendat', 'ketat', 'melekat')",
+    "Inappropriate public physical contact (hugging from behind)"
+  ],
+  "processing_time_seconds": 15.087
+}
