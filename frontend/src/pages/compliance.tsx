@@ -1,253 +1,286 @@
-import { useState } from "react";
-import { 
-  ShieldCheck, 
-  AlertTriangle, 
-  CheckCircle, 
-  Video, 
-  Image as ImageIcon,
-  Sparkles,
-  Loader2,
-  CheckCircle2
-} from "lucide-react";
-import { complianceService } from "../services/complianceService";
-import type { ComplianceQueueItem } from "../services/complianceService";
+import { useReducer, useRef, useCallback } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
+import { useComplianceCheck } from "@/hooks/useComplianceCheck";
+import { useComplianceRemix } from "@/hooks/useComplianceRemix";
+import { projectReducer, initialProjectStore } from "@/reducers/projectReducer";
+import { ProjectSidebar } from "@/components/compliance/ProjectSidebar";
+import { StepNavigator } from "@/components/compliance/StepNavigator";
+import { UploadStep } from "@/components/compliance/UploadStep";
+import { CheckStep } from "@/components/compliance/CheckStep";
+import { ReviewStep } from "@/components/compliance/ReviewStep";
+import { RemixStep } from "@/components/compliance/RemixStep";
+import { ComparisonView } from "@/components/compliance/ComparisonView";
+import type { UploadParams, Project } from "@/types/compliance";
+import { WORKFLOW_STEPS } from "@/types/compliance";
+import type { ComplianceResult } from "@/services/complianceApi";
 
+gsap.registerPlugin(useGSAP);
+
+/**
+ * Derives media type from UploadParams (file MIME type or defaults to "text").
+ */
+function deriveMediaType(params: UploadParams): Project["mediaType"] {
+  if (!params.file) return "text";
+  if (params.file.type.startsWith("video/")) return "video";
+  if (params.file.type.startsWith("image/")) return "image";
+  if (params.file.type.startsWith("audio/")) return "audio";
+  return "text";
+}
+
+/**
+ * Generates a unique project ID.
+ */
+function generateId(): string {
+  return crypto.randomUUID?.() ?? `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * ComplianceWorkspace — the top-level orchestrator for the project-based
+ * compliance workflow. Replaces the old queue-based layout with a step-driven
+ * flow: Upload → Check → Review → Remix → Compare.
+ *
+ * Requirements: 1.1, 1.2, 1.3, 2.5, 2.6, 3.2, 4.5, 6.3, 8.1, 9.2, 9.4,
+ *              11.1, 11.2, 11.3, 12.3, 12.5
+ */
 export default function DashboardCompliance() {
-  const [queue, setQueue] = useState<ComplianceQueueItem[]>(() => complianceService.getDefaultQueue());
-  const [selectedId, setSelectedId] = useState<string>("ramadan_promo");
-  const [fixingId, setFixingId] = useState<string | null>(null);
-  const [fixedItems, setFixedItems] = useState<Record<string, boolean>>({});
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [state, dispatch] = useReducer(projectReducer, initialProjectStore);
+  const complianceCheck = useComplianceCheck();
+  const remix = useComplianceRemix();
 
-  const selectedItem = queue.find(q => q.id === selectedId) || queue[0];
-  const isItemFixed = fixedItems[selectedItem.id];
+  // Derive active project from state
+  const activeProject: Project | null = state.activeProjectId
+    ? state.projects.get(state.activeProjectId) ?? null
+    : null;
 
-  const handleApplyFix = async () => {
-    setFixingId(selectedItem.id);
+  // Convert Map to sorted array for sidebar (newest first)
+  const projectList = Array.from(state.projects.values());
+
+  // Sidebar visibility: show when projects exist OR active project is past upload step
+  const showSidebar = projectList.length > 0;
+
+  // ─── Step transition animation ──────────────────────────────────────────────
+  useGSAP(
+    () => {
+      const tl = gsap.timeline();
+      tl.to(".step-content-outgoing", { opacity: 0, y: -10, duration: 0.2 })
+        .from(".step-content-incoming", {
+          opacity: 0,
+          y: 20,
+          duration: 0.4,
+          ease: "power2.out",
+        });
+    },
+    { scope: containerRef, dependencies: [activeProject?.currentStep] }
+  );
+
+  // ─── Submit flow ────────────────────────────────────────────────────────────
+  const handleSubmit = useCallback(
+    async (params: UploadParams) => {
+      const id = generateId();
+      const newProject: Project = {
+        id,
+        campaignName: params.file?.name?.replace(/\.[^/.]+$/, "") ?? "Text Ad",
+        mediaType: deriveMediaType(params),
+        currentStep: "check",
+        completedSteps: [],
+        uploadParams: params,
+        result: null,
+        remixResult: null,
+        error: null,
+        createdAt: Date.now(),
+      };
+
+      dispatch({ type: "CREATE_PROJECT", payload: newProject });
+
+      try {
+        const result: ComplianceResult = await complianceCheck.submit(params);
+        dispatch({ type: "SET_RESULT", projectId: id, result });
+      } catch (err) {
+        dispatch({
+          type: "SET_ERROR",
+          projectId: id,
+          error: {
+            step: "check",
+            message: (err as Error).message || "Compliance check failed",
+            retryable: true,
+          },
+        });
+      }
+    },
+    [complianceCheck]
+  );
+
+  // ─── Remix flow ─────────────────────────────────────────────────────────────
+  const handleStartRemix = useCallback(async () => {
+    if (!activeProject?.result) return;
+
+    dispatch({
+      type: "ADVANCE_STEP",
+      projectId: activeProject.id,
+      to: "remix",
+    });
+
     try {
-      await complianceService.applyAutoFix(selectedItem.id);
-      setFixedItems(prev => ({
-        ...prev,
-        [selectedItem.id]: true
-      }));
-      // Update item status in queue
-      setQueue(prev => 
-        prev.map(item => 
-          item.id === selectedItem.id 
-            ? { ...item, status: "Ready to Publish" } 
-            : item
-        )
-      );
-    } catch {
-      // Mock error handling
-    } finally {
-      setFixingId(null);
+      await remix.startRemix(activeProject.result.check_id);
+      dispatch({
+        type: "SET_REMIX_RESULT",
+        projectId: activeProject.id,
+        remixResult: remix,
+      });
+    } catch (err) {
+      dispatch({
+        type: "SET_ERROR",
+        projectId: activeProject.id,
+        error: {
+          step: "remix",
+          message: (err as Error).message || "Remix failed",
+          retryable: true,
+        },
+      });
     }
-  };
+  }, [activeProject, remix]);
 
+  // ─── Retry flow ─────────────────────────────────────────────────────────────
+  const handleRetry = useCallback(() => {
+    if (!activeProject?.error) return;
+
+    dispatch({ type: "CLEAR_ERROR", projectId: activeProject.id });
+
+    if (activeProject.error.step === "check") {
+      handleSubmit(activeProject.uploadParams);
+    } else if (activeProject.error.step === "remix") {
+      handleStartRemix();
+    }
+  }, [activeProject, handleSubmit, handleStartRemix]);
+
+  // ─── Step content rendering ─────────────────────────────────────────────────
+  function renderStepContent() {
+    if (!activeProject) {
+      return (
+        <div className="step-content-incoming">
+          <UploadStep
+            onSubmit={handleSubmit}
+            isSubmitting={complianceCheck.isStreaming}
+            error={null}
+            onRetry={handleRetry}
+          />
+        </div>
+      );
+    }
+
+    switch (activeProject.currentStep) {
+      case "upload":
+        return (
+          <div className="step-content-incoming">
+            <UploadStep
+              onSubmit={handleSubmit}
+              isSubmitting={complianceCheck.isStreaming}
+              error={
+                activeProject.error
+                  ? {
+                      message: activeProject.error.message,
+                      retryable: activeProject.error.retryable,
+                    }
+                  : null
+              }
+              onRetry={handleRetry}
+            />
+          </div>
+        );
+
+      case "check":
+        return (
+          <div className="step-content-incoming">
+            <CheckStep
+              nodeStatuses={complianceCheck.nodeStatuses}
+              currentNode={complianceCheck.currentNode}
+              isStreaming={complianceCheck.isStreaming}
+              mediaType={activeProject.mediaType}
+              error={
+                activeProject.error
+                  ? {
+                      message: activeProject.error.message,
+                      retryable: activeProject.error.retryable,
+                    }
+                  : null
+              }
+              onRetry={handleRetry}
+            />
+          </div>
+        );
+
+      case "review":
+        return activeProject.result ? (
+          <div className="step-content-incoming">
+            <ReviewStep
+              result={activeProject.result}
+              onStartRemix={handleStartRemix}
+              isRemixAvailable={true}
+            />
+          </div>
+        ) : null;
+
+      case "remix":
+        return (
+          <div className="step-content-incoming">
+            <RemixStep
+              remixNodes={remix.remixNodes}
+              isRemixing={remix.isRemixing}
+              remixComplete={remix.remixComplete}
+              remixError={activeProject.error?.message ?? null}
+              onRetry={handleRetry}
+            />
+          </div>
+        );
+
+      case "compare":
+        return activeProject.result ? (
+          <div className="step-content-incoming">
+            <ComparisonView
+              originalResult={activeProject.result}
+              remixResult={activeProject.remixResult}
+            />
+          </div>
+        ) : null;
+    }
+  }
+
+  // ─── Layout ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-68px)] overflow-hidden animate-in fade-in duration-300">
-      
-      {/* Left Column: Active Queue Listing */}
-      <div className="w-full lg:w-[320px] bg-[#fafafa] dark:bg-[#111116] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-white/10 flex flex-col h-1/2 lg:h-full shrink-0">
-        <div className="p-5 border-b border-gray-200 dark:border-white/10">
-          <h2 className="text-[16px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <ShieldCheck size={16} className="text-[#0080FF]" /> Compliance Queue
-          </h2>
-          <p className="text-[12px] text-gray-500 mt-1">
-            Review cultural & legal risks in Malaysia.
-          </p>
-        </div>
+    <div ref={containerRef} className="flex h-full gap-4">
+      {/* Sidebar — visible when projects exist */}
+      {showSidebar && (
+        <ProjectSidebar
+          projects={projectList}
+          activeProjectId={state.activeProjectId}
+          onSelectProject={(id) =>
+            dispatch({ type: "SET_ACTIVE_PROJECT", projectId: id })
+          }
+        />
+      )}
 
-        {/* Stats Panel summary */}
-        <div className="grid grid-cols-3 gap-2 px-5 py-4 border-b border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-black/10 text-center">
-          <div className="space-y-0.5">
-            <span className="text-[10px] font-bold text-gray-400 block uppercase">Ready</span>
-            <span className="text-[14px] font-extrabold text-emerald-500">
-              {queue.filter(q => q.status === "Ready to Publish").length}
-            </span>
-          </div>
-          <div className="space-y-0.5 border-l border-r border-gray-200 dark:border-white/5">
-            <span className="text-[10px] font-bold text-gray-400 block uppercase">Attention</span>
-            <span className="text-[14px] font-extrabold text-amber-500">
-              {queue.filter(q => q.status === "Needing Attention").length}
-            </span>
-          </div>
-          <div className="space-y-0.5">
-            <span className="text-[10px] font-bold text-gray-400 block uppercase">Pending</span>
-            <span className="text-[14px] font-extrabold text-blue-500">
-              {queue.filter(q => q.status === "Checks Pending").length}
-            </span>
-          </div>
-        </div>
+      <div className="flex-1 flex flex-col gap-4">
+        {/* Step Navigator — visible when a project is active */}
+        {activeProject && (
+          <StepNavigator
+            steps={WORKFLOW_STEPS}
+            currentStep={activeProject.currentStep}
+            completedSteps={activeProject.completedSteps}
+            onStepClick={(step) =>
+              dispatch({
+                type: "NAVIGATE_TO_STEP",
+                projectId: activeProject.id,
+                step,
+              })
+            }
+          />
+        )}
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {queue.map(item => {
-            const isSelected = selectedId === item.id;
-            const isItemFixedLocal = fixedItems[item.id];
-            return (
-              <button
-                key={item.id}
-                onClick={() => setSelectedId(item.id)}
-                className={`w-full text-left p-4 rounded-xl border transition-all cursor-pointer ${
-                  isSelected
-                    ? "bg-white dark:bg-[#181822] border-[#0080FF] shadow-sm"
-                    : "bg-transparent border-transparent hover:border-gray-200 dark:hover:border-white/5"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1.5">
-                  {item.file.endsWith(".mp4") ? (
-                    <Video size={14} className="text-gray-400 shrink-0" />
-                  ) : (
-                    <ImageIcon size={14} className="text-gray-400 shrink-0" />
-                  )}
-                  <h3 className="text-[14px] font-bold text-gray-900 dark:text-white truncate">
-                    {item.title}
-                  </h3>
-                </div>
-                
-                <div className="flex justify-between items-center text-[12px] mt-2">
-                  <span className="text-gray-400 font-mono text-[11px] truncate max-w-[140px]">{item.file}</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    isItemFixedLocal || item.status === "Ready to Publish"
-                      ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600"
-                      : item.status === "Checks Pending"
-                      ? "bg-blue-50 dark:bg-blue-950/20 text-blue-500"
-                      : "bg-amber-50 dark:bg-amber-950/20 text-amber-600 animate-pulse"
-                  }`}>
-                    {isItemFixedLocal ? "Ready to Publish" : item.status}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        {/* Main content area with step transition animations */}
+        <div className="step-content flex-1">{renderStepContent()}</div>
       </div>
-
-      {/* Center Column: Issues Queue Detail */}
-      <div className="flex-1 min-w-0 overflow-y-auto p-8 bg-white dark:bg-[#0a0a0f] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-white/10 h-1/2 lg:h-full">
-        <div className="max-w-2xl space-y-8">
-          
-          <div className="border-b border-gray-100 dark:border-white/5 pb-5">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#0080FF]">Active Compliance Report</span>
-            <div className="flex items-center justify-between gap-4 mt-1">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedItem.title}</h1>
-                <p className="text-xs text-gray-400 font-mono">{selectedItem.file}</p>
-              </div>
-
-              {isItemFixed || selectedItem.issues.length === 0 ? (
-                <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 px-3 py-1 rounded-full shrink-0">
-                  <CheckCircle size={14} /> Approved for Ship
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 px-3 py-1 rounded-full shrink-0">
-                  <AlertTriangle size={14} /> Attention Needed
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Issues List */}
-          {selectedItem.issues.length === 0 || isItemFixed ? (
-            <div className="bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/10 rounded-2xl p-8 text-center flex flex-col items-center justify-center space-y-3">
-              <CheckCircle2 size={42} className="text-emerald-500" />
-              <h3 className="text-[16px] font-bold text-emerald-700 dark:text-emerald-400">All checks pass!</h3>
-              <p className="text-[13px] text-emerald-600/80 dark:text-emerald-500 max-w-sm leading-relaxed">
-                {isItemFixed 
-                  ? "AI Auto-Fix successfully modified background symbols and increased typography contrast indexes to align with Malaysia's MCMC standards."
-                  : "Creative meets all brand safety requirements. Low text ratio and ideal color contrasts verified successfully."
-                }
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {selectedItem.issues.map((issue, idx) => (
-                <div key={idx} className="p-5 rounded-2xl bg-white dark:bg-[#111116] border border-gray-200 dark:border-white/10 shadow-xs space-y-4">
-                  <div className="flex gap-3 items-start">
-                    <span className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-amber-600 mt-0.5 shrink-0">
-                      <AlertTriangle size={16} />
-                    </span>
-                    <div className="space-y-1">
-                      <h4 className="text-[14px] font-bold text-gray-900 dark:text-white">{issue.type}</h4>
-                      <p className="text-[13px] text-gray-500 dark:text-gray-400 leading-relaxed font-semibold">
-                        {issue.description}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-gray-50 dark:border-white/5 text-[12px]">
-                    <div className="space-y-1 p-3 bg-red-50/40 dark:bg-red-950/10 border border-red-100/50 dark:border-red-900/10 rounded-xl">
-                      <span className="font-bold text-red-500 block">Original Hook</span>
-                      <p className="text-gray-600 dark:text-gray-400 font-semibold">{issue.original}</p>
-                    </div>
-                    <div className="space-y-1 p-3 bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-100/50 dark:border-emerald-900/10 rounded-xl">
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400 block">AI Suggestion</span>
-                      <p className="text-gray-600 dark:text-gray-400 font-semibold">{issue.suggested}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-        </div>
-      </div>
-
-      {/* Right Column: Fix Panel */}
-      <div className="w-full lg:w-[320px] bg-[#fafafa] dark:bg-[#111116] flex flex-col h-1/2 lg:h-full shrink-0">
-        <div className="p-5 border-b border-gray-200 dark:border-white/10">
-          <h2 className="text-[16px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Sparkles size={16} className="text-amber-500" /> Compliance Remediation
-          </h2>
-          <p className="text-[12px] text-gray-500 mt-1">
-            Resolve MCMC and contrast issues in 1-click.
-          </p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="p-4 bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl space-y-3">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Current Action</span>
-              {selectedItem.issues.length === 0 || isItemFixed ? (
-                <div className="text-[13px] font-semibold text-emerald-600 flex items-center gap-1.5">
-                  <CheckCircle size={15} /> Asset is completely ready
-                </div>
-              ) : (
-                <div className="text-[13px] font-semibold text-amber-500 flex items-center gap-1.5 animate-pulse">
-                  <AlertTriangle size={15} /> {selectedItem.issues.length} flagged regulations
-                </div>
-              )}
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                {selectedItem.issues.length === 0 || isItemFixed
-                  ? "This asset meets all necessary guidelines. You can deploy it into your active global campaigns."
-                  : "Using generative AI, we can automatically adjust visual artwork layers and text overlays to resolve MCMC Content Code Violations."
-                }
-              </p>
-            </div>
-          </div>
-
-          {selectedItem.issues.length > 0 && !isItemFixed && (
-            <div className="pt-6">
-              <button
-                onClick={handleApplyFix}
-                disabled={fixingId !== null}
-                className="w-full flex items-center justify-center gap-2 bg-[#171717] dark:bg-white text-white dark:text-[#171717] font-semibold text-[13px] py-2.5 rounded-lg hover:bg-black/90 dark:hover:bg-white/90 active:scale-[0.98] transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {fixingId !== null ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" /> Remediating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={14} /> Apply AI Auto-Fix
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
     </div>
   );
 }

@@ -43,13 +43,13 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div
-        className="bg-white dark:bg-surface-container-low w-full max-w-md rounded-[16px] shadow-2xl overflow-hidden relative"
+        className="bg-white dark:bg-surface-card w-full max-w-md rounded-[16px] shadow-2xl overflow-hidden relative border border-transparent dark:border-border-default"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-surface-container-highest rounded-full transition-colors"
+          className="absolute top-4 right-4 p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-surface-inset rounded-full transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
@@ -61,17 +61,17 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
             <img src="/logo-white.png" alt="JusAds Logo" className="h-10 w-auto hidden dark:block" />
           </div>
 
-          <h2 className="text-[24px] font-bold text-gray-900 dark:text-on-surface mb-2">
+          <h2 className="text-[24px] font-bold text-gray-900 dark:text-text-heading mb-2">
             Welcome to JusAds
           </h2>
-          <p className="text-[15px] text-gray-600 dark:text-on-surface-variant mb-6">
+          <p className="text-[15px] text-gray-600 dark:text-text-body mb-6">
             Sign in to start localizing your ad campaigns instantly.
           </p>
 
           {/* Google Sign In Button */}
           <button
             onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-3 bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-outline/10 text-gray-900 dark:text-on-surface font-semibold py-3 px-4 rounded-[8px] hover:bg-gray-50 dark:hover:bg-[#222] hover:shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+            className="w-full flex items-center justify-center gap-3 bg-white dark:bg-surface-elevated border border-gray-200 dark:border-border-default text-gray-900 dark:text-text-heading font-semibold py-3 px-4 rounded-[8px] hover:bg-gray-50 dark:hover:bg-surface-inset hover:shadow-sm transition-all active:scale-[0.98] cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -98,7 +98,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               placeholder="developer@jusads.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full text-sm bg-transparent border border-gray-200 dark:border-white/10 rounded-[8px] px-3.5 py-2.5 outline-hidden text-gray-900 dark:text-white focus:border-[#0080FF] transition-all"
+              className="w-full text-sm bg-transparent border border-gray-200 dark:border-border-default rounded-[8px] px-3.5 py-2.5 outline-hidden text-gray-900 dark:text-text-heading placeholder:text-gray-400 dark:placeholder:text-text-caption focus:border-[#0080FF] transition-all"
             />
             <button
               type="submit"
@@ -116,7 +116,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
             </p>
           )}
 
-          <p className="mt-6 text-[12px] text-gray-500 dark:text-on-surface-variant">
+          <p className="mt-6 text-[12px] text-gray-500 dark:text-text-caption">
             By continuing, you agree to our Terms of Service and Privacy Policy.
           </p>
         </div>

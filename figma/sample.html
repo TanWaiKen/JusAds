@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relume Animated Timeline Replica</title>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS for utility classes -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        paper: '#e3e3e2',
+                        offblack: '#0a0a0a',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #e3e3e2;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Hand-drawn underline SVG applied as a background */
+        .hand-drawn-underline {
+            position: relative;
+            display: inline-block;
+        }
+        .hand-drawn-underline::after {
+            content: "";
+            position: absolute;
+            left: -2%;
+            bottom: -2px;
+            width: 104%;
+            height: 10px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 270 8' fill='none'%3E%3Cpath d='M2 5.5C40 2 120 1.5 268 5.5' stroke='%230e0e0e' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-size: 100% 100%;
+        }
+
+        /* Neo-brutalist buttons */
+        .btn-shadow {
+            box-shadow: 0px 1px 2px rgba(0,0,0,0.05);
+            transition: all 0.2s ease;
+        }
+        .btn-shadow:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="w-full flex flex-col min-h-screen">
+
+    <!-- HERO SECTION WRAPPER 
+         We use overflow-hidden here to ensure the massive blur from the neon curve 
+         never bleeds down into the black section below. -->
+    <div class="relative w-full overflow-hidden flex flex-col justify-between bg-paper min-h-[90vh]">
+        
+        <!-- Texture Layer (Paper Grain) - Confined to Hero -->
+        <svg class="absolute inset-0 w-full h-full pointer-events-none z-30 opacity-[0.06] mix-blend-overlay" xmlns="http://www.w3.org/2000/svg">
+            <filter id="paperEmboss">
+                <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise" />
+                <feDiffuseLighting in="noise" lighting-color="#ffffff" surfaceScale="2">
+                    <feDistantLight azimuth="45" elevation="60" />
+                </feDiffuseLighting>
+                <feBlend mode="multiply" in="SourceGraphic" in2="noise" />
+            </filter>
+            <rect width="100%" height="100%" filter="url(#paperEmboss)" />
+        </svg>
+
+        <!-- Curved Neon Gradient Area (Mathematical Falloff) -->
+        <div class="absolute bottom-0 left-0 w-full h-[60vh] md:h-[75vh] pointer-events-none z-0">
+            <svg viewBox="0 0 1000 500" preserveAspectRatio="none" class="absolute bottom-[-10%] left-[-10%] w-[120%] h-[120%]" style="filter: blur(85px);">
+                <defs>
+                    <linearGradient id="curveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#ff7043" />   <!-- Orange Left -->
+                        <stop offset="40%" stop-color="#ff7043" />  <!-- Orange Center-Left -->
+                        <stop offset="70%" stop-color="#a06ef3" />  <!-- Purple Center-Right -->
+                        <stop offset="100%" stop-color="#a06ef3" /> <!-- Purple Right -->
+                    </linearGradient>
+                </defs>
+                <!-- Mathematical Bezier Curve (Q). Dips in the middle at 500,750 -->
+                <!-- Outer dispersion (Lesser color) -->
+                <path d="M-100,150 Q500,750 1100,150" fill="none" stroke="url(#curveGradient)" stroke-width="250" opacity="0.6" />
+                <!-- Core focal line (More color intensity on the exact line) -->
+                <path d="M-100,150 Q500,750 1100,150" fill="none" stroke="url(#curveGradient)" stroke-width="90" opacity="1" />
+            </svg>
+        </div>
+
+        <!-- Header Navigation -->
+        <header class="relative z-40 w-full flex items-center justify-between px-6 md:px-14 py-6 md:py-8">
+            <!-- Relume Logo -->
+            <div class="flex items-center gap-2.5 font-bold text-xl tracking-tight text-neutral-900">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                Relume
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-3">
+                <a href="#" class="btn-shadow hidden sm:flex items-center gap-2 px-5 py-3 bg-white text-black border border-black rounded-md text-[13px] font-bold uppercase tracking-wide">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2px"></polygon>
+                        <polyline points="2 17 12 22 22 17"></polyline>
+                        <polyline points="2 12 12 17 22 12"></polyline>
+                    </svg>
+                    Visit Relume Library
+                </a>
+                <a href="#" class="btn-shadow flex items-center gap-2 px-5 py-3 bg-neutral-900 hover:bg-black text-white border border-black rounded-md text-[13px] font-bold uppercase tracking-wide">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    Clone
+                </a>
+            </div>
+        </header>
+
+        <!-- Core Hero Content -->
+        <main class="relative z-40 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 max-w-4xl mx-auto pb-24 md:pb-32 mt-10 md:mt-16">
+            
+            <!-- Heading: Light + Bold contrast exactly matching the image -->
+            <h1 class="text-neutral-900 tracking-tight leading-[1.08] mb-6 text-[44px] sm:text-[60px] md:text-[76px] lg:text-[84px]">
+                <span class="font-normal">Animated</span> 
+                <span class="font-bold hand-drawn-underline">Timeline</span>
+            </h1>
+            
+            <!-- Subtitle -->
+            <h2 class="font-medium text-neutral-800 text-[22px] sm:text-[28px] md:text-[32px] tracking-tight mb-8">
+                Made for the Webflow community
+            </h2>
+            
+            <!-- Descriptive Paragraph -->
+            <p class="text-neutral-700 text-sm sm:text-base md:text-[18px] leading-[1.65] max-w-[620px] font-normal mx-auto">
+                We use this timeline component to tell the Relume story, but we think it can be used to communicate a process, a product roadmap, a company's history or a story.
+            </p>
+        </main>
+    </div>
+
+    <!-- Solid Black Section Below Hero -->
+    <!-- Because the div above has overflow-hidden, the blur will perfectly cut off exactly where this black section begins. -->
+    <section class="relative z-50 w-full bg-offblack min-h-[50vh] flex items-center justify-center border-t border-black/20">
+        <div class="text-neutral-500 font-sans text-sm tracking-widest uppercase">
+            <!-- Empty placeholder for future content -->
+        </div>
+    </section>
+
+</body>
+</html>

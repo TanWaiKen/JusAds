@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Account Settings | JusAds</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-error-container": "#93000a",
+                    "surface-tint": "#5f5e5e",
+                    "surface-dim": "#dadada",
+                    "text-muted": "#666666",
+                    "surface": "#f9f9f9",
+                    "surface-container": "#eeeeee",
+                    "on-tertiary-container": "#ef3982",
+                    "on-error": "#ffffff",
+                    "text-primary": "#171717",
+                    "on-primary-container": "#858383",
+                    "primary-container": "#1c1b1b",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed": "#ffd9e1",
+                    "outline-variant": "#c4c7c7",
+                    "on-tertiary-fixed": "#3f001b",
+                    "tertiary-fixed-dim": "#ffb1c5",
+                    "surface-bright": "#f9f9f9",
+                    "text-secondary": "#4d4d4d",
+                    "on-secondary-container": "#fefcff",
+                    "on-primary": "#ffffff",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-fixed": "#1c1b1b",
+                    "aurora-purple": "#7928ca",
+                    "tertiary-container": "#3f001b",
+                    "background": "#f9f9f9",
+                    "on-secondary": "#ffffff",
+                    "outline": "#747878",
+                    "error": "#ba1a1a",
+                    "primary-fixed": "#e5e2e1",
+                    "secondary-fixed": "#d8e2ff",
+                    "surface-container-highest": "#e2e2e2",
+                    "secondary": "#0057c0",
+                    "surface-container-high": "#e8e8e8",
+                    "tertiary": "#000000",
+                    "on-surface-variant": "#444748",
+                    "inverse-surface": "#2f3131",
+                    "ship-red": "#ee0000",
+                    "emerald-glow": "#50e3c2",
+                    "cosmic-pink": "#ff0080",
+                    "secondary-container": "#006ff0",
+                    "inverse-primary": "#c8c6c5",
+                    "surface-variant": "#e2e2e2",
+                    "inverse-on-surface": "#f0f1f1",
+                    "bg-dark": "#0a0a0f",
+                    "on-secondary-fixed-variant": "#004397",
+                    "on-primary-fixed-variant": "#474746",
+                    "on-tertiary": "#ffffff",
+                    "surface-container-low": "#f3f3f4",
+                    "primary": "#000000",
+                    "primary-fixed-dim": "#c8c6c5",
+                    "secondary-fixed-dim": "#aec6ff",
+                    "on-background": "#1a1c1c",
+                    "on-surface": "#1a1c1c",
+                    "on-secondary-fixed": "#001a43",
+                    "on-tertiary-fixed-variant": "#8f0045"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "stack-sm": "8px",
+                    "margin-page": "40px",
+                    "sidebar-width": "240px",
+                    "stack-md": "16px",
+                    "max-content-width": "1200px",
+                    "stack-lg": "32px",
+                    "gutter": "24px"
+            },
+            "fontFamily": {
+                    "headline-lg": ["Hanken Grotesk"],
+                    "code-sm": ["JetBrains Mono"],
+                    "headline-sm": ["Hanken Grotesk"],
+                    "body-lg": ["Hanken Grotesk"],
+                    "headline-md": ["Hanken Grotesk"],
+                    "label-ui": ["Hanken Grotesk"],
+                    "body-md": ["Hanken Grotesk"],
+                    "code-xs": ["JetBrains Mono"]
+            },
+            "fontSize": {
+                    "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "600"}],
+                    "code-sm": ["13px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                    "headline-sm": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                    "label-ui": ["14px", {"lineHeight": "1.1", "fontWeight": "500"}],
+                    "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "code-xs": ["11px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .shadow-as-border {
+            box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+        }
+        .card-hover:hover {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.04), 0px 0px 0px 1px rgba(0,0,0,0.08);
+        }
+        .aurora-border-active {
+            box-shadow: 0px 0px 0px 1px #0070f3;
+        }
+    </style>
+</head>
+<body class="bg-background font-body-md text-text-primary">
+<!-- SideNavBar Shell -->
+<aside class="fixed left-0 top-0 h-full w-[240px] bg-surface-container-low dark:bg-bg-dark flex flex-col py-6 z-50">
+<div class="px-6 mb-8">
+<h1 class="font-headline-sm text-headline-sm font-black text-primary dark:text-on-primary">JusAds</h1>
+<p class="font-label-ui text-[11px] uppercase tracking-widest text-on-primary-container">Marketing Engine</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary dark:text-on-surface-variant hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="home">home</span>
+<span class="font-label-ui text-label-ui">Home</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-primary dark:text-on-primary bg-surface-container-highest dark:bg-surface-container font-semibold border-l-2 border-primary dark:border-on-primary" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="person">person</span>
+<span class="font-label-ui text-label-ui">Profile</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary dark:text-on-surface-variant hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="ads_click">ads_click</span>
+<span class="font-label-ui text-label-ui">Campaigns</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary dark:text-on-surface-variant hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="trending_up">trending_up</span>
+<span class="font-label-ui text-label-ui">Trends</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary dark:text-on-surface-variant hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="inventory_2">inventory_2</span>
+<span class="font-label-ui text-label-ui">Assets</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary dark:text-on-surface-variant hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="gavel">gavel</span>
+<span class="font-label-ui text-label-ui">Compliance</span>
+</a>
+</nav>
+<div class="px-6 pt-6 mt-auto">
+<div class="p-4 rounded-xl bg-surface-container-high shadow-as-border">
+<p class="font-label-ui text-[12px] text-text-secondary mb-2">Usage Limits</p>
+<div class="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-3/4"></div>
+</div>
+<p class="font-code-xs text-code-xs mt-2 text-on-surface-variant">75% OF 100K API CALLS</p>
+</div>
+</div>
+</aside>
+<!-- TopNavBar Shell -->
+<header class="sticky top-0 right-0 z-40 bg-surface/80 backdrop-blur-md flex justify-end items-center h-16 px-8 ml-[240px] shadow-sm">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-container-low shadow-as-border cursor-pointer hover:opacity-70 transition-opacity">
+<span class="material-symbols-outlined text-[18px]" data-icon="search">search</span>
+<span class="font-label-ui text-label-ui text-text-muted">Quick Search...</span>
+<span class="font-code-xs text-code-xs bg-surface-container-highest px-1.5 py-0.5 rounded ml-2">⌘K</span>
+</div>
+<button class="flex items-center gap-2 font-label-ui text-label-ui text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+</button>
+<div class="h-8 w-8 rounded-full overflow-hidden shadow-as-border">
+<img alt="User Avatar" data-alt="A clean, professional close-up portrait of a modern tech professional with a neutral background. The lighting is soft and high-key, matching a bright minimalist UI aesthetic. The individual has a friendly yet focused expression, embodying the spirit of a high-velocity developer or marketing engineer. The image is crisp, high-resolution, and perfectly centered." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAUearWStgGh0qAc5Ef1DIxq7W3aFe1pwbyZDqCapbVXqE1OnB_zkmXt0RwyTeASiGN4Y3RvDG9t2k2GkaOcyQzB_Mejt6f2659MhGXdJPMbe5jOXGpzpWLKWFoh14XFmZbfhdyrV0tE_zOHk6eHCRP1MWHoRan_N-5GvDv268Thjr9qijXZFrTxaH3ixVD33SVkBb_vtjt13CuUS8yUARE4LdcsI_QjOFDQj91ychuOsnHizgkhKIM1dBOUjouf8y65Y1LzmwA9bU"/>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="ml-[240px] p-10 min-h-screen bg-background">
+<div class="max-w-[960px] mx-auto">
+<!-- Heading Section -->
+<div class="mb-10">
+<div class="flex items-center gap-2 mb-2">
+<span class="font-label-ui text-label-ui text-secondary px-2 py-0.5 rounded bg-secondary-container/10">Profile Settings</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-text-primary tracking-tight">Account Settings</h2>
+<p class="font-body-md text-text-muted mt-2">Manage your JusAds account information, security credentials, and platform preferences.</p>
+</div>
+<!-- Bento Grid Content -->
+<div class="grid grid-cols-12 gap-gutter">
+<!-- Account Info Card -->
+<div class="col-span-12 md:col-span-8 bg-surface-container-lowest p-stack-lg rounded-xl shadow-as-border card-hover transition-all duration-300">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h3 class="font-headline-sm text-headline-sm mb-1">General Information</h3>
+<p class="font-body-md text-text-muted">Visible across all ad network integrations.</p>
+</div>
+<button class="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-ui text-label-ui hover:bg-opacity-90 transition-all">Save Changes</button>
+</div>
+<div class="grid grid-cols-2 gap-stack-lg">
+<div class="space-y-1">
+<label class="font-label-ui text-[12px] uppercase text-text-muted">Full Name</label>
+<input class="w-full bg-transparent border-none p-0 font-body-md text-text-primary focus:ring-0 placeholder-surface-dim" type="text" value="Alexander Vance"/>
+<div class="h-[1px] bg-surface-container-highest w-full"></div>
+</div>
+<div class="space-y-1">
+<label class="font-label-ui text-[12px] uppercase text-text-muted">Email Address</label>
+<input class="w-full bg-transparent border-none p-0 font-body-md text-text-primary focus:ring-0" type="email" value="alex@vance.io"/>
+<div class="h-[1px] bg-surface-container-highest w-full"></div>
+</div>
+<div class="col-span-2 space-y-1">
+<label class="font-label-ui text-[12px] uppercase text-text-muted">Organization</label>
+<input class="w-full bg-transparent border-none p-0 font-body-md text-text-primary focus:ring-0" type="text" value="Vance Marketing Systems"/>
+<div class="h-[1px] bg-surface-container-highest w-full"></div>
+</div>
+</div>
+</div>
+<!-- Profile Picture Mini-Card -->
+<div class="col-span-12 md:col-span-4 bg-surface-container-lowest p-stack-lg rounded-xl shadow-as-border flex flex-col items-center justify-center text-center">
+<div class="relative group cursor-pointer mb-4">
+<div class="h-24 w-24 rounded-full overflow-hidden shadow-as-border border-2 border-white">
+<img alt="Profile Large" data-alt="A close-up studio portrait of a technology professional in a high-key lighting environment. The subject is centered against a clean, neutral gray background. The overall style is monochromatic and professional, aligning with a sleek corporate design system. The image conveys trust and modern efficiency." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAM1x_mE8iUoED_3TJ1tGjKH1RAdoybuwf5s0qwXdKNik_0yoxjgb3NrFQq4SAjO93HRc3W2-Sc6eenTQzsZD7Js-LzijM-9BZ4OWw2W-dNiNXqU2iS-zpyMrCSm2WPSFz-2ZoldJmlIiXNrRBreVESVnqQHTCRj3jvxk415fGJNp6oOgHoTVZqYz2iP9NmbnQPHD-AcR316S3UgdhmD4Zs27GTtkpGb_NCwRV6HGjheLnq8nM77obbJLQS4Hp0MrnsWP5fwwdsrqE"/>
+</div>
+<div class="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-white" data-icon="photo_camera">photo_camera</span>
+</div>
+</div>
+<h4 class="font-label-ui text-label-ui font-bold">Profile Picture</h4>
+<p class="font-code-xs text-code-xs text-text-muted mt-1 uppercase tracking-tighter">MAX 2MB • JPG, PNG</p>
+</div>
+<!-- Security Section -->
+<div class="col-span-12 md:col-span-5 bg-surface-container-lowest p-stack-lg rounded-xl shadow-as-border card-hover transition-all">
+<div class="flex items-center gap-3 mb-6">
+<div class="p-2 rounded-lg bg-emerald-glow/10 text-emerald-glow">
+<span class="material-symbols-outlined" data-icon="verified_user">verified_user</span>
+</div>
+<h3 class="font-label-ui text-label-ui font-bold text-lg">Security Settings</h3>
+</div>
+<div class="space-y-6">
+<div class="flex justify-between items-center">
+<div>
+<p class="font-label-ui text-label-ui font-semibold">Two-Factor Auth</p>
+<p class="font-body-md text-text-muted text-sm">Secured via Authenticator</p>
+</div>
+<div class="w-10 h-5 bg-emerald-glow rounded-full flex items-center px-1">
+<div class="h-3 w-3 bg-white rounded-full ml-auto"></div>
+</div>
+</div>
+<div class="h-[1px] bg-surface-container"></div>
+<div class="flex justify-between items-center">
+<div>
+<p class="font-label-ui text-label-ui font-semibold">API Access Tokens</p>
+<p class="font-body-md text-text-muted text-sm">4 Active keys</p>
+</div>
+<button class="font-label-ui text-[12px] text-secondary hover:underline">Manage</button>
+</div>
+</div>
+</div>
+<!-- Preferences Section -->
+<div class="col-span-12 md:col-span-7 bg-surface-container-lowest p-stack-lg rounded-xl shadow-as-border card-hover transition-all">
+<h3 class="font-label-ui text-label-ui font-bold text-lg mb-6">Regional &amp; Localization</h3>
+<div class="grid grid-cols-2 gap-stack-md">
+<div class="p-4 rounded-lg bg-surface-container-low shadow-as-border">
+<label class="font-label-ui text-[11px] uppercase text-text-muted mb-1 block">Default Language</label>
+<div class="flex justify-between items-center">
+<span class="font-body-md">English (US)</span>
+<span class="material-symbols-outlined text-text-muted text-[16px]" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+</div>
+</div>
+<div class="p-4 rounded-lg bg-surface-container-low shadow-as-border">
+<label class="font-label-ui text-[11px] uppercase text-text-muted mb-1 block">Timezone</label>
+<div class="flex justify-between items-center">
+<span class="font-body-md">UTC-05:00</span>
+<span class="material-symbols-outlined text-text-muted text-[16px]" data-icon="schedule">schedule</span>
+</div>
+</div>
+<div class="p-4 rounded-lg bg-surface-container-low shadow-as-border">
+<label class="font-label-ui text-[11px] uppercase text-text-muted mb-1 block">Currency</label>
+<div class="flex justify-between items-center">
+<span class="font-body-md">USD ($)</span>
+<span class="material-symbols-outlined text-text-muted text-[16px]" data-icon="monetization_on">monetization_on</span>
+</div>
+</div>
+<div class="p-4 rounded-lg bg-surface-container-low shadow-as-border">
+<label class="font-label-ui text-[11px] uppercase text-text-muted mb-1 block">Ad Preview Mode</label>
+<div class="flex justify-between items-center">
+<span class="font-body-md">High Fidelity</span>
+<span class="material-symbols-outlined text-text-muted text-[16px]" data-icon="preview">preview</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Action -->
+<div class="col-span-12 mt-4 flex justify-end gap-stack-md">
+<button class="bg-white text-text-primary px-6 py-2 rounded-lg font-label-ui text-label-ui shadow-as-border hover:bg-surface-container transition-colors">Deactivate Account</button>
+<button class="bg-primary text-on-primary px-8 py-2 rounded-lg font-label-ui text-label-ui hover:bg-opacity-90 transition-all">Save All Changes</button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

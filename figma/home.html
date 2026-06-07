@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-error-container": "#93000a",
+                    "surface-tint": "#5f5e5e",
+                    "surface-dim": "#dadada",
+                    "text-muted": "#666666",
+                    "surface": "#f9f9f9",
+                    "surface-container": "#eeeeee",
+                    "on-tertiary-container": "#ef3982",
+                    "on-error": "#ffffff",
+                    "text-primary": "#171717",
+                    "on-primary-container": "#858383",
+                    "primary-container": "#1c1b1b",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed": "#ffd9e1",
+                    "outline-variant": "#c4c7c7",
+                    "on-tertiary-fixed": "#3f001b",
+                    "tertiary-fixed-dim": "#ffb1c5",
+                    "surface-bright": "#f9f9f9",
+                    "text-secondary": "#4d4d4d",
+                    "on-secondary-container": "#fefcff",
+                    "on-primary": "#ffffff",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-fixed": "#1c1b1b",
+                    "aurora-purple": "#7928ca",
+                    "tertiary-container": "#3f001b",
+                    "background": "#f9f9f9",
+                    "on-secondary": "#ffffff",
+                    "outline": "#747878",
+                    "error": "#ba1a1a",
+                    "primary-fixed": "#e5e2e1",
+                    "secondary-fixed": "#d8e2ff",
+                    "surface-container-highest": "#e2e2e2",
+                    "secondary": "#0057c0",
+                    "surface-container-high": "#e8e8e8",
+                    "tertiary": "#000000",
+                    "on-surface-variant": "#444748",
+                    "inverse-surface": "#2f3131",
+                    "ship-red": "#ee0000",
+                    "emerald-glow": "#50e3c2",
+                    "cosmic-pink": "#ff0080",
+                    "secondary-container": "#006ff0",
+                    "inverse-primary": "#c8c6c5",
+                    "surface-variant": "#e2e2e2",
+                    "inverse-on-surface": "#f0f1f1",
+                    "bg-dark": "#0a0a0f",
+                    "on-secondary-fixed-variant": "#004397",
+                    "on-primary-fixed-variant": "#474746",
+                    "on-tertiary": "#ffffff",
+                    "surface-container-low": "#f3f3f4",
+                    "primary": "#000000",
+                    "primary-fixed-dim": "#c8c6c5",
+                    "secondary-fixed-dim": "#aec6ff",
+                    "on-background": "#1a1c1c",
+                    "on-surface": "#1a1c1c",
+                    "on-secondary-fixed": "#001a43",
+                    "on-tertiary-fixed-variant": "#8f0045"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "stack-sm": "8px",
+                    "margin-page": "40px",
+                    "sidebar-width": "240px",
+                    "stack-md": "16px",
+                    "max-content-width": "1200px",
+                    "stack-lg": "32px",
+                    "gutter": "24px"
+            },
+            "fontFamily": {
+                    "headline-lg": ["Hanken Grotesk"],
+                    "code-sm": ["JetBrains Mono"],
+                    "headline-sm": ["Hanken Grotesk"],
+                    "body-lg": ["Hanken Grotesk"],
+                    "headline-md": ["Hanken Grotesk"],
+                    "label-ui": ["Hanken Grotesk"],
+                    "body-md": ["Hanken Grotesk"],
+                    "code-xs": ["JetBrains Mono"]
+            },
+            "fontSize": {
+                    "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "600"}],
+                    "code-sm": ["13px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                    "headline-sm": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                    "label-ui": ["14px", {"lineHeight": "1", "fontWeight": "500"}],
+                    "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "code-xs": ["11px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .aurora-gradient-border {
+            background: linear-gradient(to right, #7928ca, #ff0080, #50e3c2);
+            padding: 1px;
+        }
+        .aurora-text {
+            background: linear-gradient(to right, #7928ca, #ff0080, #50e3c2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .retina-border {
+            box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+        }
+        .card-shadow {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.04);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body-md text-on-surface antialiased">
+<!-- SideNavBar Shell -->
+<aside class="fixed left-0 top-0 h-full w-[240px] bg-surface-container-low flex flex-col py-6 z-50">
+<div class="px-6 mb-8">
+<h1 class="font-headline-sm text-headline-sm font-black text-primary">JusAds</h1>
+<p class="font-label-ui text-label-ui text-text-muted mt-1">Marketing Engine</p>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Active Tab: Home -->
+<a class="flex items-center gap-3 px-4 py-2 text-primary bg-surface-container-highest font-semibold border-l-2 border-primary transition-all opacity-90" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-ui text-label-ui">Home</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-ui text-label-ui">Profile</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="ads_click">ads_click</span>
+<span class="font-label-ui text-label-ui">Campaigns</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="trending_up">trending_up</span>
+<span class="font-label-ui text-label-ui">Trends</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-label-ui text-label-ui">Assets</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="gavel">gavel</span>
+<span class="font-label-ui text-label-ui">Compliance</span>
+</a>
+</nav>
+<div class="px-6 pt-6 mt-auto border-t border-outline-variant/20">
+<div class="flex items-center gap-3">
+<img alt="JusAds Logo" class="w-8 h-8 rounded-full border border-outline-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCbzoccfeaBsBEfJ2Hxe3oUk_bGgrj1ggtA73AdrpAnnxb_Zmacu1HhvY79Yp3tijhNFo7mtdQpZNS65es5dUvA_5w8FngI-S8DVxAQR7qxyoc1aQ7JIFujkZtOIMWYnoQfvOOaC_8FxNGCF0YFDg0x3yAMXHdgPcILRGMpSYRipncgI-UB6BUfn30KVD-731ZVU3oyVSouGbD1p21fq0lbrjbQwQoznkxhn5npTlpJwdZDLlqtFu0acdGCm67zbCgUFCUc5gYgC78"/>
+<div class="overflow-hidden">
+<p class="text-xs font-bold truncate">Enterprise Workspace</p>
+<p class="text-[10px] text-text-muted">Pro Plan</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-[240px] flex flex-col min-h-screen">
+<!-- TopNavBar Shell -->
+<header class="sticky top-0 right-0 z-40 bg-surface/80 backdrop-blur-md shadow-sm flex justify-end items-center h-16 px-8">
+<div class="flex items-center gap-6">
+<button class="text-text-muted hover:opacity-70 transition-opacity">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</button>
+<button class="text-text-muted hover:opacity-70 transition-opacity">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<div class="flex items-center gap-3 pl-4 border-l border-outline-variant/20">
+<img alt="User Avatar" class="w-8 h-8 rounded-full retina-border" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7RT1UMsmOoHbEnPQoObzWstjY3zWVKMTA-06i1rUvnPs05oJo8kFbCdTMz0L_Yskkb85XR-BINRzVKLIj1MwiKyxHTvPEWGTnRHugeoBf3L4wVh-6sfIk-gkl6blXzZ_sgoTehKiInzqf6dLi94GnqDwKtTjd6shjiukYZaX0TEj44vBd_bIgSB2VdHvr_Z9ry7sNaVyWpVnGIcsnPFZIblIbby-SccV_J1aEaEUxoMQMAnNOp86IDDZ0XiAgSwPnZTIrw0MlrXY"/>
+<button class="text-text-muted hover:opacity-70 transition-opacity active:scale-95 duration-100">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Page Content Canvas -->
+<div class="px-margin-page py-stack-lg max-w-max-content-width w-full mx-auto">
+<!-- Hero Heading -->
+<section class="mb-stack-lg">
+<h2 class="font-headline-lg text-headline-lg tracking-[-0.04em] text-primary">
+                    Welcome, <span class="text-text-muted">Creative Lead</span>
+</h2>
+<p class="font-body-lg text-body-lg text-text-secondary mt-2 max-w-2xl">
+                    Your global advertising engine is ready. Accelerate your campaign localization across South East Asia with precision AI.
+                </p>
+</section>
+<!-- Dashboard Initialization Card (Gradient Border) -->
+<div class="aurora-gradient-border rounded-xl mb-stack-lg transition-all duration-300 hover:scale-[1.005]">
+<div class="bg-surface-container-lowest rounded-[calc(0.75rem-1px)] p-stack-lg">
+<div class="flex flex-col md:flex-row gap-stack-lg">
+<div class="flex-1">
+<div class="flex items-center gap-2 mb-4">
+<span class="font-code-xs text-code-xs px-2 py-1 bg-aurora-purple/10 text-aurora-purple rounded uppercase tracking-wider">AI Active</span>
+<h3 class="font-headline-sm text-headline-sm text-primary">Dashboard Initialization</h3>
+</div>
+<p class="font-body-md text-body-md text-text-secondary mb-6 leading-relaxed">
+                                JusAds leverages state-of-the-art LLMs specifically tuned for linguistic nuances and cultural context in SEA markets. Our platform automates the transformation of master creatives into hyper-localized assets for Meta, Google, and TikTok. 
+                            </p>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-stack-md mb-8">
+<div class="p-4 bg-surface rounded-lg retina-border">
+<p class="text-xs text-text-muted uppercase font-bold tracking-widest mb-1">Develop</p>
+<p class="font-headline-sm text-headline-sm">124</p>
+<p class="text-[11px] text-text-muted">Draft Assets</p>
+</div>
+<div class="p-4 bg-surface rounded-lg retina-border">
+<p class="text-xs text-text-muted uppercase font-bold tracking-widest mb-1">Preview</p>
+<p class="font-headline-sm text-headline-sm">42</p>
+<p class="text-[11px] text-text-muted">In Review</p>
+</div>
+<div class="p-4 bg-surface rounded-lg retina-border">
+<p class="text-xs text-text-muted uppercase font-bold tracking-widest mb-1">Ship</p>
+<p class="font-headline-sm text-headline-sm">89</p>
+<p class="text-[11px] text-text-muted">Active Global</p>
+</div>
+</div>
+<div class="flex gap-4">
+<button class="bg-primary text-on-primary px-6 py-2 rounded font-label-ui text-label-ui hover:bg-primary/90 transition-colors">
+                                    New Campaign
+                                </button>
+<button class="bg-surface-container-lowest text-primary px-6 py-2 rounded font-label-ui text-label-ui retina-border hover:bg-surface-container transition-colors">
+                                    View Documentation
+                                </button>
+</div>
+</div>
+<!-- Placeholder Area for Future Content -->
+<div class="md:w-1/3 flex flex-col gap-4">
+<div class="relative h-full rounded-lg bg-surface border border-dashed border-outline-variant flex items-center justify-center group overflow-hidden">
+<div class="absolute inset-0 opacity-10 bg-gradient-to-br from-aurora-purple via-cosmic-pink to-emerald-glow"></div>
+<div class="relative z-10 text-center px-6">
+<span class="material-symbols-outlined text-outline text-4xl mb-2" data-icon="auto_awesome">auto_awesome</span>
+<p class="font-code-sm text-code-sm text-text-muted">Initialize engine to populate analytics data</p>
+</div>
+<img class="absolute inset-0 w-full h-full object-cover opacity-5 transition-opacity group-hover:opacity-20 pointer-events-none" data-alt="A sophisticated abstract digital background with soft flowing gradients of purple, pink, and cyan, representing an advanced AI data visualization. The lighting is ethereal and high-key, maintaining a clean and professional corporate aesthetic. The composition is minimalist with ample negative space to fit into a modern UI dashboard context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJzInMasjzmKXgJHru1VLbViLTCHb0deZlItM075XaH8XRRCf_K4Ke9YzHqJ9T6shu1Zqigno04dZL1VCab1T-EfZqMRsdDGgLkExJFUh7f66X_Bg1W1f6fbV6ASMrdNo0PkGPoIfym91NCmt2324FgUkePhyI7XjKMIHGQXJWhZGYlUxMlAndt10HMZconguWl9e1wByBJCzu4sQm6glvO49jkVQfE_3DDCl64q2uhoK9Fc7jq7wx96N3FBNeERNa825a6Y7I6W4"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bento Grid Section -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Trend Analysis -->
+<div class="md:col-span-2 bg-surface-container-lowest rounded-xl p-6 retina-border card-shadow flex flex-col">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h4 class="font-label-ui text-label-ui font-bold uppercase tracking-widest text-text-muted mb-1">Market Sentiment</h4>
+<p class="font-headline-sm text-headline-sm text-primary">SEA Creative Trends</p>
+</div>
+<span class="material-symbols-outlined text-text-muted" data-icon="trending_up">trending_up</span>
+</div>
+<div class="flex-1 min-h-[200px] bg-surface-container-low rounded-lg p-4 relative overflow-hidden">
+<!-- Simulated Chart Grid -->
+<div class="absolute inset-0 grid grid-cols-6 gap-4 p-4 opacity-10">
+<div class="border-r border-outline"></div>
+<div class="border-r border-outline"></div>
+<div class="border-r border-outline"></div>
+<div class="border-r border-outline"></div>
+<div class="border-r border-outline"></div>
+</div>
+<div class="relative z-10 h-full flex flex-col justify-end">
+<div class="flex items-end gap-2 h-32">
+<div class="flex-1 bg-aurora-purple/40 rounded-t h-[40%]"></div>
+<div class="flex-1 bg-cosmic-pink/40 rounded-t h-[65%]"></div>
+<div class="flex-1 bg-emerald-glow/40 rounded-t h-[50%]"></div>
+<div class="flex-1 bg-aurora-purple/40 rounded-t h-[85%]"></div>
+<div class="flex-1 bg-cosmic-pink/40 rounded-t h-[45%]"></div>
+<div class="flex-1 bg-emerald-glow/40 rounded-t h-[95%]"></div>
+</div>
+<div class="flex justify-between mt-4 font-code-xs text-code-xs text-text-muted">
+<span>TH</span><span>VN</span><span>ID</span><span>PH</span><span>MY</span><span>SG</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Recent Activity -->
+<div class="bg-surface-container-lowest rounded-xl p-6 retina-border card-shadow">
+<h4 class="font-label-ui text-label-ui font-bold uppercase tracking-widest text-text-muted mb-6">Recent Activity</h4>
+<div class="space-y-6">
+<div class="flex gap-4">
+<div class="w-2 h-2 rounded-full bg-emerald-glow mt-2"></div>
+<div>
+<p class="font-label-ui text-label-ui text-primary font-bold">Bangkok Launch Ready</p>
+<p class="text-xs text-text-muted">Campaign localized to Thai</p>
+<p class="font-code-xs text-code-xs text-text-muted mt-1">2m ago</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="w-2 h-2 rounded-full bg-cosmic-pink mt-2"></div>
+<div>
+<p class="font-label-ui text-label-ui text-primary font-bold">New Asset Draft</p>
+<p class="text-xs text-text-muted">Video variant #14 generated</p>
+<p class="font-code-xs text-code-xs text-text-muted mt-1">14m ago</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="w-2 h-2 rounded-full bg-aurora-purple mt-2"></div>
+<div>
+<p class="font-label-ui text-label-ui text-primary font-bold">Policy Audit Passed</p>
+<p class="text-xs text-text-muted">Meta compliance verified</p>
+<p class="font-code-xs text-code-xs text-text-muted mt-1">1h ago</p>
+</div>
+</div>
+</div>
+<button class="w-full mt-8 py-2 text-xs font-bold border-t border-outline-variant/20 text-text-muted hover:text-primary transition-colors">
+                        View All History
+                    </button>
+</div>
+</div>
+<!-- Footer Details -->
+<footer class="mt-stack-lg pt-8 border-t border-outline-variant/20 flex flex-col md:flex-row justify-between gap-4">
+<div class="flex gap-8">
+<div>
+<p class="font-code-xs text-code-xs text-text-muted uppercase mb-1">Status</p>
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-emerald-glow shadow-[0_0_8px_rgba(80,227,194,0.6)]"></div>
+<span class="font-label-ui text-label-ui font-bold">All Engines Operational</span>
+</div>
+</div>
+<div>
+<p class="font-code-xs text-code-xs text-text-muted uppercase mb-1">Credits</p>
+<p class="font-label-ui text-label-ui font-bold">14,240 / 50k</p>
+</div>
+</div>
+<div class="flex gap-4 text-text-muted font-label-ui text-label-ui">
+<a class="hover:text-primary transition-colors" href="#">Terms</a>
+<a class="hover:text-primary transition-colors" href="#">Privacy</a>
+<a class="hover:text-primary transition-colors" href="#">API Docs</a>
+</div>
+</footer>
+</div>
+</main>
+</body></html>

@@ -31,7 +31,7 @@ export async function signOutRedirect(): Promise<void> {
   const clientId = "41rfef3ni43sfr2v9lnjk0prj5";
   const logoutUri = encodeURIComponent(window.location.origin);
   const cognitoDomain =
-    "https://cognito-idp.ap-southeast-1.amazonaws.com/ap-southeast-1_8hAosB1se";
+    "https://ap-southeast-18haosb1se.auth.ap-southeast-1.amazoncognito.com";
   window.location.href = `${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${logoutUri}`;
 }
 

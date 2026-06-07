@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Campaigns | JusAds Marketing Engine</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-container": "#3f001b",
+                        "on-primary-fixed-variant": "#474746",
+                        "aurora-purple": "#7928ca",
+                        "on-secondary-fixed": "#001a43",
+                        "on-secondary": "#ffffff",
+                        "surface-variant": "#e2e2e2",
+                        "primary-fixed": "#e5e2e1",
+                        "inverse-surface": "#2f3131",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#3f001b",
+                        "secondary-fixed-dim": "#aec6ff",
+                        "background": "#f9f9f9",
+                        "on-error-container": "#93000a",
+                        "on-tertiary": "#ffffff",
+                        "secondary-container": "#006ff0",
+                        "primary-fixed-dim": "#c8c6c5",
+                        "text-muted": "#666666",
+                        "on-secondary-fixed-variant": "#004397",
+                        "text-primary": "#171717",
+                        "primary": "#000000",
+                        "tertiary": "#000000",
+                        "bg-dark": "#0a0a0f",
+                        "surface-container-low": "#f3f3f4",
+                        "emerald-glow": "#50e3c2",
+                        "outline-variant": "#c4c7c7",
+                        "ship-red": "#ee0000",
+                        "primary-container": "#1c1b1b",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed-variant": "#8f0045",
+                        "on-primary-fixed": "#1c1b1b",
+                        "inverse-on-surface": "#f0f1f1",
+                        "secondary": "#0057c0",
+                        "surface-container": "#eeeeee",
+                        "on-secondary-container": "#fefcff",
+                        "surface-bright": "#f9f9f9",
+                        "on-surface": "#1a1c1c",
+                        "tertiary-fixed-dim": "#ffb1c5",
+                        "on-error": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-primary": "#c8c6c5",
+                        "on-background": "#1a1c1c",
+                        "surface-tint": "#5f5e5e",
+                        "tertiary-fixed": "#ffd9e1",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-surface-variant": "#444748",
+                        "on-tertiary-container": "#ef3982",
+                        "surface": "#f9f9f9",
+                        "outline": "#747878",
+                        "surface-container-highest": "#e2e2e2",
+                        "text-secondary": "#4d4d4d",
+                        "on-primary-container": "#858383",
+                        "surface-container-high": "#e8e8e8",
+                        "on-primary": "#ffffff",
+                        "cosmic-pink": "#ff0080",
+                        "surface-dim": "#dadada"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "max-content-width": "1200px",
+                        "sidebar-width": "240px",
+                        "gutter": "24px",
+                        "stack-lg": "32px",
+                        "margin-page": "40px",
+                        "stack-sm": "8px",
+                        "stack-md": "16px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Hanken Grotesk"],
+                        "code-sm": ["JetBrains Mono"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "label-ui": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-sm": ["Hanken Grotesk"],
+                        "code-xs": ["JetBrains Mono"],
+                        "headline-md": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "600"}],
+                        "code-sm": ["13px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "label-ui": ["14px", {"lineHeight": "1", "fontWeight": "500"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "headline-sm": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "code-xs": ["11px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .shadow-as-border {
+            box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+        }
+        .card-hover:hover {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.04);
+        }
+        .aurora-border-active {
+            box-shadow: 0px 0px 0px 1px transparent;
+            position: relative;
+        }
+        .aurora-border-active::after {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            background: linear-gradient(to right, #0070f3, #7928ca, #ff0080);
+            z-index: -1;
+            border-radius: inherit;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body class="bg-background text-text-primary font-body-md overflow-x-hidden">
+<!-- Sidebar Shell -->
+<aside class="fixed left-0 top-0 h-full w-[240px] bg-surface-container-low flex flex-col py-6 z-50">
+<div class="px-6 mb-10 flex items-center gap-3">
+<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-[20px]" style="font-variation-settings: 'FILL' 1;">ads_click</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-black text-primary leading-tight">JusAds</h1>
+<p class="font-code-xs text-code-xs text-text-muted uppercase tracking-widest">Marketing Engine</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">home</span>
+<span class="font-label-ui text-label-ui">Home</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">person</span>
+<span class="font-label-ui text-label-ui">Profile</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-primary bg-surface-container-highest font-semibold border-l-2 border-primary" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">ads_click</span>
+<span class="font-label-ui text-label-ui">Campaigns</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">trending_up</span>
+<span class="font-label-ui text-label-ui">Trends</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">inventory_2</span>
+<span class="font-label-ui text-label-ui">Assets</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-text-secondary hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">gavel</span>
+<span class="font-label-ui text-label-ui">Compliance</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<div class="p-4 bg-surface-container rounded-xl shadow-as-border">
+<p class="font-label-ui text-xs text-text-muted mb-2">Usage</p>
+<div class="h-1 w-full bg-outline-variant rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-2/3"></div>
+</div>
+<p class="font-label-ui text-[11px] mt-2 font-bold">14 / 20 Workspaces</p>
+</div>
+</div>
+</aside>
+<!-- Header Shell -->
+<header class="sticky top-0 right-0 z-40 bg-surface/80 backdrop-blur-md flex justify-end items-center h-16 px-8 ml-[240px] shadow-sm">
+<div class="flex items-center gap-4">
+<button class="p-2 text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant bg-surface-container">
+<img alt="User Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAmoY3yNlBtNOIrkOg1OLaLZYJ7_VxLORpiWPCuF2yjfVo4upT2FtQ9BArJpRcl2kHVvH76detI-5Z74-WiBp6gVzV2BUH6y2WRwnMCoj7utgX3ZGJKNRPe5uuRcohTWpV9ARDQuXj7I7dAkzug9pPEffbC7uhwsF6k985VsMds94m56IdGvfIzkTQXD4RcFc1FxzRQPNnPxJq1arsvvwHWFhPookCdNxb7NXGIJucZtzyBjNyfxFR_XHjyEagP-NrKmdMCL2AqXOw"/>
+</div>
+<button class="flex items-center gap-2 text-text-muted hover:text-primary transition-opacity group">
+<span class="material-symbols-outlined group-active:scale-95 duration-100">logout</span>
+</button>
+</div>
+</header>
+<!-- Main Content -->
+<main class="ml-[240px] p-10 max-w-[1400px]">
+<!-- Dashboard Header Section -->
+<div class="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary mb-2">Campaigns</h2>
+<p class="text-text-muted font-body-md max-w-xl">
+                    Turn your trend insights into structured campaigns you can localise and review across multiple global markets.
+                </p>
+</div>
+<button class="bg-primary text-on-primary px-6 py-3 rounded-lg font-label-ui text-label-ui flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[20px]">add</span>
+                Create campaign workspace
+            </button>
+</div>
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-10 items-start">
+<!-- Left Column: Filterable List -->
+<div class="xl:col-span-5 space-y-6">
+<!-- Filters -->
+<div class="flex items-center gap-2 pb-2 overflow-x-auto no-scrollbar">
+<button class="px-4 py-1.5 rounded-full bg-primary text-on-primary font-label-ui text-xs">All</button>
+<button class="px-4 py-1.5 rounded-full bg-surface-container-high text-text-secondary hover:bg-surface-container-highest transition-colors font-label-ui text-xs">Draft</button>
+<button class="px-4 py-1.5 rounded-full bg-surface-container-high text-text-secondary hover:bg-surface-container-highest transition-colors font-label-ui text-xs">Active</button>
+<button class="px-4 py-1.5 rounded-full bg-surface-container-high text-text-secondary hover:bg-surface-container-highest transition-colors font-label-ui text-xs">Completed</button>
+</div>
+<!-- Campaign Cards List -->
+<div class="space-y-4">
+<!-- Card 1: Active -->
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-as-border card-hover transition-all cursor-pointer border-l-4 border-secondary">
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-headline-sm text-[18px] text-primary">Lunar New Year 2024</h3>
+<span class="px-2 py-0.5 bg-secondary/10 text-secondary font-code-xs text-code-xs rounded uppercase">Active</span>
+</div>
+<div class="space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-text-muted text-[18px]">target</span>
+<p class="text-xs font-label-ui text-text-secondary">Objective: <span class="text-primary font-bold">Festival launch</span></p>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-text-muted text-[18px]">inventory_2</span>
+<p class="text-xs font-label-ui text-text-secondary">Product: <span class="text-primary font-bold">Ultra-Light Espresso Machine</span></p>
+</div>
+</div>
+<div class="mt-4 pt-4 border-t border-surface-container flex items-center justify-between">
+<div class="flex items-center gap-1.5 text-text-muted">
+<span class="material-symbols-outlined text-[16px]">video_library</span>
+<span class="text-xs font-label-ui">3 reference videos</span>
+</div>
+<span class="text-xs font-code-xs text-error bg-error-container/30 px-2 py-0.5 rounded">Compliance: Not run yet</span>
+</div>
+</div>
+<!-- Card 2: Selected State -->
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-as-border border-2 border-primary transition-all cursor-pointer relative overflow-hidden">
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-headline-sm text-[18px] text-primary">European Summer Vibe</h3>
+<span class="px-2 py-0.5 bg-secondary-container/10 text-secondary-container font-code-xs text-code-xs rounded uppercase">In localization</span>
+</div>
+<div class="space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-text-muted text-[18px]">target</span>
+<p class="text-xs font-label-ui text-text-secondary">Objective: <span class="text-primary font-bold">Seasonal Promotion</span></p>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-text-muted text-[18px]">inventory_2</span>
+<p class="text-xs font-label-ui text-text-secondary">Product: <span class="text-primary font-bold">Solar-Powered Chillers</span></p>
+</div>
+</div>
+<div class="mt-4 pt-4 border-t border-surface-container flex items-center justify-between">
+<div class="flex items-center gap-1.5 text-text-muted">
+<span class="material-symbols-outlined text-[16px]">video_library</span>
+<span class="text-xs font-label-ui">5 reference videos</span>
+</div>
+<span class="text-xs font-code-xs text-emerald-glow bg-emerald-glow/10 px-2 py-0.5 rounded">Compliance: Pass (85%)</span>
+</div>
+</div>
+<!-- Card 3: Draft -->
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-as-border card-hover transition-all cursor-pointer opacity-80">
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-headline-sm text-[18px] text-primary">Tech Core Rebrand</h3>
+<span class="px-2 py-0.5 bg-text-muted/10 text-text-muted font-code-xs text-code-xs rounded uppercase">Draft</span>
+</div>
+<div class="space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-text-muted text-[18px]">target</span>
+<p class="text-xs font-label-ui text-text-secondary">Objective: <span class="text-primary font-bold">Brand Awareness</span></p>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-text-muted text-[18px]">inventory_2</span>
+<p class="text-xs font-label-ui text-text-secondary">Product: <span class="text-primary font-bold">JusAds API 2.0</span></p>
+</div>
+</div>
+<div class="mt-4 pt-4 border-t border-surface-container flex items-center justify-between">
+<div class="flex items-center gap-1.5 text-text-muted">
+<span class="material-symbols-outlined text-[16px]">video_library</span>
+<span class="text-xs font-label-ui">0 reference videos</span>
+</div>
+<span class="text-xs font-code-xs text-text-muted bg-surface-container-high px-2 py-0.5 rounded">Compliance: Not run yet</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Detail Panel -->
+<div class="xl:col-span-7 space-y-8">
+<!-- Selected Campaign Header Summary -->
+<div class="bg-surface-container-lowest p-8 rounded-xl shadow-as-border relative">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h3 class="font-headline-md text-[28px] text-primary mb-2">European Summer Vibe</h3>
+<div class="flex flex-wrap gap-3">
+<span class="px-3 py-1 bg-surface-container text-text-primary rounded-full text-xs font-label-ui border border-outline-variant">Product: Solar Chillers</span>
+<span class="px-3 py-1 bg-surface-container text-text-primary rounded-full text-xs font-label-ui border border-outline-variant">Market: EU &amp; DACH</span>
+</div>
+</div>
+<div class="flex gap-2">
+<div class="w-10 h-10 bg-surface-container rounded-lg flex items-center justify-center text-text-muted" title="TikTok">
+<span class="material-symbols-outlined text-[20px]">movie</span>
+</div>
+<div class="w-10 h-10 bg-surface-container rounded-lg flex items-center justify-center text-text-muted" title="Instagram">
+<span class="material-symbols-outlined text-[20px]">camera</span>
+</div>
+<div class="w-10 h-10 bg-surface-container rounded-lg flex items-center justify-center text-text-muted" title="Facebook">
+<span class="material-symbols-outlined text-[20px]">groups</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-8 mt-6">
+<div class="space-y-1">
+<p class="font-code-xs text-code-xs text-text-muted uppercase tracking-wider">Objective</p>
+<p class="font-label-ui text-label-ui font-bold">Seasonal Promotion - Summer 2024</p>
+</div>
+<div class="space-y-1">
+<p class="font-code-xs text-code-xs text-text-muted uppercase tracking-wider">Audience Snapshot</p>
+<p class="font-label-ui text-label-ui font-bold">Gen Z / Outdoor Enthusiasts / Sustainably Conscious</p>
+</div>
+</div>
+</div>
+<!-- Reference Videos -->
+<div>
+<div class="flex items-center justify-between mb-4">
+<h4 class="font-headline-sm text-headline-sm text-primary">Reference Videos</h4>
+<button class="text-secondary font-label-ui text-xs flex items-center gap-1 hover:underline">
+                            View Trend Dashboard
+                            <span class="material-symbols-outlined text-xs">open_in_new</span>
+</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Video Card 1 -->
+<div class="bg-surface-container-lowest p-4 rounded-xl shadow-as-border card-hover transition-all flex gap-4">
+<div class="w-24 h-32 bg-surface-container rounded-lg overflow-hidden flex-shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="A high-quality cinematic thumbnail of a bright outdoor setting with golden hour sunlight streaming through green trees. The composition is professional and modern, following the JusAds minimalist aesthetic with crisp edges and a clean focus on a refreshing beverage on a wooden table. The lighting is warm and inviting, suggesting a premium lifestyle theme." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDNIKaiJnuLT-cHGiXaLIOFTia3M6RS5aN4IenSyUmX-J6DioKDihU_LJKAzJI3UjL71Zw51kfP0hvMyEIimyqfFEwJ2JRWchDnVbkm8ulhVhXAQyqJFHp_zEGRVu22sGrL2b1BlOVA8O0SmT3MbZ-HSwJmPcFp7dBsMSsaN7kLyEoj2rZA8vQkwu307rT6i8R8dpptadGvo84D_Bk6XcsaGqDPKDI7o8aZAoHxBFCI4g6vnsuSLuMmYQD-VH17cRA5YjsfSEIqAVA"/>
+<div class="absolute inset-0 flex items-center justify-center bg-black/20">
+<span class="material-symbols-outlined text-white text-3xl">play_circle</span>
+</div>
+</div>
+<div class="flex flex-col justify-between">
+<div>
+<h5 class="font-label-ui font-bold text-sm mb-1">Golden Hour Aesthetics</h5>
+<p class="text-[11px] text-text-muted font-label-ui mb-2 uppercase tracking-wide">TikTok Trend</p>
+<p class="text-xs text-text-secondary line-clamp-2">High engagement on minimalist outdoor transitions.</p>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-code-xs text-emerald-glow bg-emerald-glow/10 px-1.5 py-0.5 rounded text-[10px]">98% Relevance</span>
+<span class="font-code-xs text-text-muted text-[10px]">2.4M Views</span>
+</div>
+</div>
+</div>
+<!-- Video Card 2 -->
+<div class="bg-surface-container-lowest p-4 rounded-xl shadow-as-border card-hover transition-all flex gap-4">
+<div class="w-24 h-32 bg-surface-container rounded-lg overflow-hidden flex-shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="A detailed, macro photography shot of an artisanal tea ceremony from the JusAds reference image library. A steady hand pours pale green tea into a white ceramic cup on a dark wood tray. The background is a soft, deep green, creating a focused and serene atmosphere. The lighting is focused, highlighting the stream of liquid and the delicate textures of the ceramic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8536Abujhs0tUIcXkEdsly4JthabO-iDCNQFA7tK2iLJAt0Uh1tOvmlZAVx8F1V8K6pZtiLJVuXjcX-eKInm4-hrM8u_BcE6Nys6jDWONaNuyPsFzhBWurAd6YxtB1K_hwiqUbbOtv6rmri0-5qG2hvdprKcWCHdMhgcGPMGI9NjW5T9TlSimt-nDmd3E7drvUmEsGtu1UaWu5Oisrt62ux_LlA1abw_bMyyfBA0CgrGlYUunerX4S76onNDHMCTE4KRWzhgXCsM"/>
+<div class="absolute inset-0 flex items-center justify-center bg-black/20">
+<span class="material-symbols-outlined text-white text-3xl">play_circle</span>
+</div>
+</div>
+<div class="flex flex-col justify-between">
+<div>
+<h5 class="font-label-ui font-bold text-sm mb-1">ASMR Pour Rituals</h5>
+<p class="text-[11px] text-text-muted font-label-ui mb-2 uppercase tracking-wide">Instagram Reels</p>
+<p class="text-xs text-text-secondary line-clamp-2">Sensory-led product interactions for high retention.</p>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-code-xs text-emerald-glow bg-emerald-glow/10 px-1.5 py-0.5 rounded text-[10px]">82% Relevance</span>
+<span class="font-code-xs text-text-muted text-[10px]">1.1M Views</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Localized Variants Placeholder (Coming Soon) -->
+<div class="border-2 border-dashed border-outline-variant rounded-xl p-10 flex flex-col items-center justify-center text-center bg-surface-container/20">
+<div class="w-16 h-16 bg-surface-container-high rounded-full flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-primary text-3xl" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+<h4 class="font-headline-sm text-primary mb-2">AI Localization Engine</h4>
+<p class="text-text-muted font-body-md max-w-sm mb-6">
+                        Generating localized variants and RAG-based compliance checks for the DACH and EU markets.
+                    </p>
+<div class="flex items-center gap-3">
+<span class="font-code-sm text-code-sm px-4 py-1.5 rounded-full bg-surface-container-highest text-text-secondary">Coming Soon</span>
+<div class="flex items-center gap-1.5 text-secondary animate-pulse">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="font-label-ui text-xs font-bold uppercase tracking-widest">Training Model</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- FAB (Suppressed based on screen context, but present for campaign-focused screens) -->
+<div class="fixed bottom-10 right-10">
+<button class="w-14 h-14 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center hover:scale-110 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-2xl">chat_bubble</span>
+</button>
+</div>
+</body></html>

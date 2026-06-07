@@ -1,9 +1,15 @@
+import { useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { Mail, User as UserIcon, Shield, Globe, Calendar } from "lucide-react";
+import { Mail, User as UserIcon, Shield, Globe, Calendar, LogOut } from "lucide-react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
+
+gsap.registerPlugin(useGSAP);
 
 export default function DashboardProfile() {
-  const { user, picture } = useAuth();
+  const { user, picture, logout } = useAuth();
   const profile = user?.profile;
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const displayName = profile?.name ?? "—";
   const email = profile?.email as string | undefined;
@@ -17,12 +23,38 @@ export default function DashboardProfile() {
     ? new Date(user.expires_at * 1000).toLocaleString()
     : null;
 
+  // GSAP animation for profile elements
+  useGSAP(() => {
+    const tl = gsap.timeline({ defaults: { duration: 0.5, ease: "power3.out" } });
+
+    // Profile header reveal
+    tl.from(".profile-header", {
+      y: -15,
+      autoAlpha: 0,
+      duration: 0.6
+    });
+
+    // Account label reveal
+    tl.from(".account-label", {
+      autoAlpha: 0,
+      duration: 0.4
+    }, "-=0.2");
+
+    // Profile rows staggered slide in
+    tl.from(".info-row-item", {
+      x: -20,
+      autoAlpha: 0,
+      stagger: 0.06,
+      duration: 0.5
+    }, "-=0.3");
+  }, { scope: containerRef });
+
   return (
-    <div className="flex-1 overflow-y-auto flex flex-col gap-10 p-10 max-w-3xl mx-auto w-full">
+    <div ref={containerRef} className="flex flex-col gap-10 p-10 max-w-3xl mx-auto w-full font-hanken">
       {/* ── Profile Header ────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-6">
+      <div className="profile-header flex items-center gap-6">
         <div className="relative shrink-0">
-          <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-gray-200 dark:ring-white/10 shadow-md">
+          <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-border-default shadow-md retina-border">
             {picture ? (
               <img
                 src={picture}
@@ -31,19 +63,18 @@ export default function DashboardProfile() {
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-linear-to-br from-[#7B2FBE] to-[#FF6B9D] text-white text-2xl font-bold">
+              <div className="w-full h-full flex items-center justify-center bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-300 text-2xl font-bold">
                 {initials}
               </div>
             )}
           </div>
-          <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-[#00D4AA] border-2 border-white dark:border-[#0a0a0f]" />
         </div>
 
         <div className="flex flex-col gap-1">
-          <h1 className="text-[28px] font-bold tracking-[-0.03em] text-[#171717] dark:text-white">
+          <h2 className="text-[24px] font-bold tracking-[-0.03em] text-text-heading">
             {displayName}
-          </h1>
-          <p className="text-[15px] text-gray-500 dark:text-gray-400 font-medium">
+          </h2>
+          <p className="text-[15px] text-text-caption font-medium">
             {email ?? "No email available"}
           </p>
         </div>
@@ -51,11 +82,11 @@ export default function DashboardProfile() {
 
       {/* ── Account Details ───────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4">
-        <h2 className="text-[13px] uppercase font-bold tracking-wider text-gray-400 dark:text-gray-500">
+        <h3 className="account-label text-code-sm uppercase font-bold tracking-wider text-text-caption">
           Account Details
-        </h2>
+        </h3>
 
-        <div className="rounded-[12px] border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111116] divide-y divide-gray-100 dark:divide-white/5 overflow-hidden shadow-sm">
+        <div className="rounded-[12px] border border-border-default bg-surface-card divide-y divide-gray-100 dark:divide-white/5 overflow-hidden card-shadow retina-border">
           <InfoRow icon={<UserIcon size={16} />} label="Full Name"  value={displayName} />
           <InfoRow icon={<Mail size={16} />}     label="Email"      value={email ?? "—"} />
           <InfoRow icon={<Shield size={16} />}   label="User ID"    value={sub ?? "—"} mono />
@@ -63,6 +94,17 @@ export default function DashboardProfile() {
           {authTime   && <InfoRow icon={<Calendar size={16} />} label="Last Authenticated" value={authTime} />}
           {tokenExpiry && <InfoRow icon={<Calendar size={16} />} label="Session Expires"   value={tokenExpiry} />}
         </div>
+      </div>
+
+      {/* ── Log Out ───────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-4">
+        <button
+          onClick={() => void logout()}
+          className="flex items-center justify-center gap-2 w-full rounded-xl border border-border-default px-4 py-3 text-label-ui font-bold text-error hover:bg-error/5 active:scale-[0.98] transition-all cursor-pointer"
+        >
+          <LogOut size={18} />
+          Log Out
+        </button>
       </div>
     </div>
   );
@@ -79,12 +121,12 @@ interface InfoRowProps {
 
 function InfoRow({ icon, label, value, mono }: InfoRowProps) {
   return (
-    <div className="flex items-center gap-4 px-5 py-4">
-      <span className="text-gray-400 dark:text-gray-500 shrink-0">{icon}</span>
-      <span className="text-[13px] font-medium text-gray-500 dark:text-gray-400 w-36 shrink-0">
+    <div className="info-row-item flex items-center gap-4 px-5 py-4 hover:bg-surface-inset transition-colors duration-150">
+      <span className="text-text-caption shrink-0">{icon}</span>
+      <span className="text-code-sm font-medium text-text-caption w-36 shrink-0">
         {label}
       </span>
-      <span className={`text-[14px] text-[#171717] dark:text-white flex-1 truncate ${mono ? "font-mono text-[12px]" : "font-medium"}`}>
+      <span className={`text-label-ui text-text-heading flex-1 truncate ${mono ? "font-mono text-[12px]" : "font-medium"}`}>
         {value}
       </span>
     </div>

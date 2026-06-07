@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>JusAds - Trends Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "text-muted": "#666666",
+            "on-secondary-container": "#fefcff",
+            "on-primary-fixed-variant": "#474746",
+            "error-container": "#ffdad6",
+            "secondary": "#0057c0",
+            "primary-fixed": "#e5e2e1",
+            "on-secondary": "#ffffff",
+            "aurora-purple": "#7928ca",
+            "on-primary": "#ffffff",
+            "primary": "#000000",
+            "on-primary-fixed": "#1c1b1b",
+            "on-primary-container": "#858383",
+            "surface-bright": "#f9f9f9",
+            "surface-variant": "#e2e2e2",
+            "on-surface": "#1a1c1c",
+            "secondary-fixed-dim": "#aec6ff",
+            "inverse-on-surface": "#f0f1f1",
+            "on-secondary-fixed-variant": "#004397",
+            "error": "#ba1a1a",
+            "surface-container-high": "#e8e8e8",
+            "on-error-container": "#93000a",
+            "ship-red": "#ee0000",
+            "primary-container": "#1c1b1b",
+            "tertiary-fixed-dim": "#ffb1c5",
+            "on-tertiary-fixed-variant": "#8f0045",
+            "surface-container-highest": "#e2e2e2",
+            "inverse-surface": "#2f3131",
+            "text-secondary": "#4d4d4d",
+            "on-background": "#1a1c1c",
+            "outline": "#747878",
+            "cosmic-pink": "#ff0080",
+            "tertiary-fixed": "#ffd9e1",
+            "on-secondary-fixed": "#001a43",
+            "primary-fixed-dim": "#c8c6c5",
+            "on-tertiary": "#ffffff",
+            "tertiary": "#000000",
+            "outline-variant": "#c4c7c7",
+            "on-error": "#ffffff",
+            "surface-container-lowest": "#ffffff",
+            "emerald-glow": "#50e3c2",
+            "on-tertiary-container": "#ef3982",
+            "surface": "#f9f9f9",
+            "secondary-container": "#006ff0",
+            "background": "#f9f9f9",
+            "surface-dim": "#dadada",
+            "bg-dark": "#0a0a0f",
+            "on-tertiary-fixed": "#3f001b",
+            "secondary-fixed": "#d8e2ff",
+            "tertiary-container": "#3f001b",
+            "surface-tint": "#5f5e5e",
+            "text-primary": "#171717",
+            "surface-container": "#eeeeee",
+            "surface-container-low": "#f3f3f4",
+            "on-surface-variant": "#444748",
+            "inverse-primary": "#c8c6c5"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "stack-md": "16px",
+            "stack-sm": "8px",
+            "stack-lg": "32px",
+            "max-content-width": "1200px",
+            "margin-page": "40px",
+            "sidebar-width": "240px",
+            "gutter": "24px"
+          },
+          "fontFamily": {
+            "headline-sm": ["Hanken Grotesk"],
+            "code-xs": ["JetBrains Mono"],
+            "body-lg": ["Hanken Grotesk"],
+            "headline-md": ["Hanken Grotesk"],
+            "body-md": ["Hanken Grotesk"],
+            "label-ui": ["Hanken Grotesk"],
+            "headline-lg": ["Hanken Grotesk"],
+            "code-sm": ["JetBrains Mono"]
+          },
+          "fontSize": {
+            "headline-sm": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+            "code-xs": ["11px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}],
+            "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+            "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+            "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+            "label-ui": ["14px", {"lineHeight": "1", "fontWeight": "500"}],
+            "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "600"}],
+            "code-sm": ["13px", {"lineHeight": "1.4", "fontWeight": "400"}]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .shadow-retina {
+      box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+    }
+    .card-shadow {
+      box-shadow: 0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.04);
+    }
+    .aurora-border-active {
+      position: relative;
+    }
+    .aurora-border-active::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(to right, #0070f3, #7928ca, #ff0080);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="bg-background font-body-md text-text-primary">
+<!-- Side Navigation -->
+<aside class="fixed left-0 top-0 h-full w-[240px] bg-surface-container-low flex flex-col py-6 z-50">
+<div class="px-6 mb-8">
+<h1 class="font-headline-sm text-headline-sm font-black text-primary">JusAds</h1>
+<p class="font-label-ui text-label-ui text-text-muted">Marketing Engine</p>
+</div>
+<nav class="flex-1 flex flex-col">
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-ui text-label-ui">Home</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-ui text-label-ui">Profile</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">ads_click</span>
+<span class="font-label-ui text-label-ui">Campaigns</span>
+</a>
+<!-- Active Link: Trends -->
+<a class="flex items-center gap-3 px-4 py-2 text-primary bg-surface-container-highest font-semibold border-l-2 border-primary" href="#">
+<span class="material-symbols-outlined">trending_up</span>
+<span class="font-label-ui text-label-ui">Trends</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-label-ui text-label-ui">Assets</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">gavel</span>
+<span class="font-label-ui text-label-ui">Compliance</span>
+</a>
+</nav>
+</aside>
+<!-- Main Content Wrapper -->
+<main class="ml-[240px] min-h-screen flex flex-col">
+<!-- Top Navigation -->
+<header class="sticky top-0 right-0 z-40 bg-surface/80 backdrop-blur-md flex justify-end items-center h-16 px-8 shadow-[0px_1px_0px_0px_rgba(0,0,0,0.08)]">
+<div class="flex items-center gap-4">
+<button class="text-text-muted hover:opacity-70 transition-opacity p-2 rounded-full">
+<span class="material-symbols-outlined">logout</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden shadow-retina bg-surface-variant">
+<img alt="User Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBF_3ZmGyg293HFw_px2FjzhE0jo20y5FVJONopKA5N4rH863YtZVFBNbZWzWx93aLa-TOfuy6TuDwgtQwbA0A4rcVeeN0tPqtX9u2nOfHQJEaFWYn3MZTtnad3M624-mLn7-72BtoeF72xyi3ZQUvnfXIFx-_8wqJ4qHYtFh4ayHyfeqnzI4fb9A89ne8_NKmMDsYQTieS4IzY8OkXqJU-PY4JJXR5D56CAUDsyV_jY56WtqPf85prIBxhxUe1idF0ynT63UvSA7Y"/>
+</div>
+</div>
+</header>
+<div class="p-margin-page max-w-max-content-width mx-auto w-full">
+<!-- Section 1: Onboarding State (Always present as top banner in this view for demonstration) -->
+<section class="mb-stack-lg p-8 bg-surface shadow-retina rounded-xl flex items-center justify-between gap-8 border-l-4 border-secondary">
+<div class="flex-1">
+<h2 class="font-headline-sm text-headline-sm text-primary mb-2">Personalize Your Trends</h2>
+<p class="font-body-md text-text-muted max-w-2xl">
+            Global social patterns move fast. Tell us about your brand architecture, target demographics, and product vertical to filter for high-conversion video trends that actually matter to your business.
+          </p>
+</div>
+<button class="bg-primary text-on-primary font-label-ui text-label-ui px-6 py-3 rounded-lg hover:opacity-90 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
+          Describe My Business
+        </button>
+</section>
+<!-- Section 2: Main Trends View Header -->
+<div class="mb-stack-lg">
+<h2 class="font-headline-md text-headline-md text-primary tracking-tight">Trending Videos for Your Brand</h2>
+<p class="font-body-md text-text-muted mt-2">Real-time engagement signals from TikTok &amp; Reels tailored to your F&amp;B and Retail profile.</p>
+</div>
+<!-- Section 3: Filter Bar -->
+<div class="flex flex-wrap items-center gap-4 mb-stack-lg p-4 bg-surface shadow-retina rounded-lg">
+<div class="flex items-center gap-2 px-3 py-2 border border-outline-variant rounded-md min-w-[200px] cursor-pointer hover:border-primary transition-colors">
+<span class="material-symbols-outlined text-text-muted">category</span>
+<div class="flex-1">
+<p class="text-[10px] uppercase font-bold text-text-muted leading-none">Product Category</p>
+<p class="font-label-ui text-label-ui">Cold brew</p>
+</div>
+<span class="material-symbols-outlined text-text-muted">expand_more</span>
+</div>
+<div class="flex items-center gap-2 px-3 py-2 border border-outline-variant rounded-md min-w-[200px] cursor-pointer hover:border-primary transition-colors">
+<span class="material-symbols-outlined text-text-muted">target</span>
+<div class="flex-1">
+<p class="text-[10px] uppercase font-bold text-text-muted leading-none">Campaign Goal</p>
+<p class="font-label-ui text-label-ui">Festival promo</p>
+</div>
+<span class="material-symbols-outlined text-text-muted">expand_more</span>
+</div>
+<div class="ml-auto flex items-center gap-2">
+<span class="font-label-ui text-label-ui text-text-muted">Auto-refreshed 2m ago</span>
+<button class="p-2 text-primary hover:bg-surface-container-high rounded-full transition-colors">
+<span class="material-symbols-outlined">refresh</span>
+</button>
+</div>
+</div>
+<!-- Section 4: Video Card Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+<!-- Video Card 1 -->
+<article class="bg-surface rounded-xl overflow-hidden shadow-retina card-shadow flex flex-col group transition-all hover:-translate-y-1">
+<div class="relative aspect-[9/16] bg-surface-container-highest overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A cinematic, vertical mobile video frame showing a high-speed preparation of a specialty cold brew coffee in a minimalist modern kitchen. The lighting is soft and bright, highlighting the rich textures of the coffee beans and the creamy swirl of milk. The overall aesthetic is clean, professional, and commercial-grade, aligning with a high-end marketing design system." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRQLEbU7RWrEaJNZ8cOIzI9qS3HQfvVmmP4opDczlaXSn34rHEZhj8Hk0O92poq45YCjicN2eO19cGthkhADLA7I58IA0-p-CH1sdmkYfXP1zBzdIw0NPZQtaMT-qI34yxe5vmhGp6njNNMqHTFfkYfx6Urz8Gcnx89aFFacazv8ncLB5tNiGflSGPyHLl0vkwKnT9EIxzzjgCE0ORlf-b8KdkmO7znvTvfKVtLdwFicyk0jZVvk7DaKBvNRo8HLJCMA56P7K0bqE"/>
+<div class="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
+<span class="material-symbols-outlined text-white text-[48px] drop-shadow-lg" style="font-variation-settings: 'FILL' 1;">play_circle</span>
+</div>
+<div class="absolute top-4 left-4 flex gap-2">
+<span class="bg-white/90 backdrop-blur-sm px-2 py-1 rounded font-code-xs text-code-xs text-primary shadow-sm">TIKTOK</span>
+<span class="bg-emerald-glow/20 backdrop-blur-sm text-primary px-2 py-1 rounded font-code-xs text-code-xs font-bold border border-emerald-glow/30">98% MATCH</span>
+</div>
+</div>
+<div class="p-6 flex flex-col flex-1">
+<div class="mb-4">
+<h3 class="font-headline-sm text-label-ui font-bold mb-1 uppercase tracking-tight">Raya Preparation Skits</h3>
+<p class="text-text-muted font-body-md text-sm">A fast-paced "restock with me" style video featuring local ingredients.</p>
+</div>
+<div class="grid grid-cols-3 gap-2 mb-4 py-3 border-y border-outline-variant/30">
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Views</p>
+<p class="font-code-sm text-code-sm font-bold">1.2M</p>
+</div>
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Eng. Rate</p>
+<p class="font-code-sm text-code-sm font-bold">8.4%</p>
+</div>
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Momentum</p>
+<span class="material-symbols-outlined text-emerald-glow text-sm">trending_up</span>
+</div>
+</div>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">F&amp;B</span>
+<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">Family-friendly</span>
+<span class="ml-auto bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Low Risk</span>
+</div>
+<div class="mb-6 p-3 bg-primary-fixed/30 rounded-lg border-l-2 border-primary">
+<p class="text-xs font-body-md leading-relaxed italic text-text-primary">
+                "Short skits using code-mixed Malay-English drive engagement by feeling authentic to urban audiences."
+              </p>
+</div>
+<div class="mt-auto flex gap-2">
+<button class="flex-1 bg-primary text-on-primary font-label-ui text-[12px] py-2 rounded hover:opacity-90 transition-all uppercase tracking-wider">Use Reference</button>
+<button class="px-3 border border-outline-variant text-text-primary hover:bg-surface-container-low rounded transition-colors">
+<span class="material-symbols-outlined text-sm">bookmark</span>
+</button>
+</div>
+</div>
+</article>
+<!-- Video Card 2 -->
+<article class="bg-surface rounded-xl overflow-hidden shadow-retina card-shadow flex flex-col group transition-all hover:-translate-y-1">
+<div class="relative aspect-[9/16] bg-surface-container-highest overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A top-down stylized shot of a desk with gaming equipment and colorful LED lighting. A hand is reaching for a sleek cold brew bottle placed strategically near a high-end mechanical keyboard. The scene is lit with vibrant neon accents against a dark, tech-inspired background, suggesting a trendy lifestyle video for a digital-native audience." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAHPimGgqDWbisGVrTL5XW9TYiKkQwHvsaqfxG2Xhsi6sFV5l6xCVlllhZDN4NgQBSVrU4jOMNgpdVpgRKrbaMD-ecd4uc7-B-8AdHF3cp8808OYTmgNw_9EdpsYJ950OnHz86jLvvUGiqEFptFTIM0HeQj82hFjMvnh004FqJvYjc5ZIBHnSJES4TIBdhSB_zBnTKPnGMjolN6IWEY33pTS86bHTh0YF9OkdYKaceH4Z-9Rpci5Vq8r5Lj8B73tO-AzNFEGsW_OTI"/>
+<div class="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
+<span class="material-symbols-outlined text-white text-[48px] drop-shadow-lg" style="font-variation-settings: 'FILL' 1;">play_circle</span>
+</div>
+<div class="absolute top-4 left-4 flex gap-2">
+<span class="bg-white/90 backdrop-blur-sm px-2 py-1 rounded font-code-xs text-code-xs text-primary shadow-sm">REELS</span>
+<span class="bg-emerald-glow/20 backdrop-blur-sm text-primary px-2 py-1 rounded font-code-xs text-code-xs font-bold border border-emerald-glow/30">85% MATCH</span>
+</div>
+</div>
+<div class="p-6 flex flex-col flex-1">
+<div class="mb-4">
+<h3 class="font-headline-sm text-label-ui font-bold mb-1 uppercase tracking-tight">Focus State ASMR</h3>
+<p class="text-text-muted font-body-md text-sm">Satisfying audio of coffee pouring and ice clinking during deep work.</p>
+</div>
+<div class="grid grid-cols-3 gap-2 mb-4 py-3 border-y border-outline-variant/30">
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Views</p>
+<p class="font-code-sm text-code-sm font-bold">850K</p>
+</div>
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Eng. Rate</p>
+<p class="font-code-sm text-code-sm font-bold">12.1%</p>
+</div>
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Momentum</p>
+<span class="material-symbols-outlined text-emerald-glow text-sm">trending_up</span>
+</div>
+</div>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">Lifestyle</span>
+<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">ASMR</span>
+<span class="ml-auto bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Low Risk</span>
+</div>
+<div class="mb-6 p-3 bg-primary-fixed/30 rounded-lg border-l-2 border-primary">
+<p class="text-xs font-body-md leading-relaxed italic text-text-primary">
+                "High-quality audio cues (ASMR) significantly increase watch time for beverage brands in productivity niches."
+              </p>
+</div>
+<div class="mt-auto flex gap-2">
+<button class="flex-1 bg-primary text-on-primary font-label-ui text-[12px] py-2 rounded hover:opacity-90 transition-all uppercase tracking-wider">Use Reference</button>
+<button class="px-3 border border-outline-variant text-text-primary hover:bg-surface-container-low rounded transition-colors">
+<span class="material-symbols-outlined text-sm">bookmark</span>
+</button>
+</div>
+</div>
+</article>
+<!-- Video Card 3 -->
+<article class="bg-surface rounded-xl overflow-hidden shadow-retina card-shadow flex flex-col group transition-all hover:-translate-y-1">
+<div class="relative aspect-[9/16] bg-surface-container-highest overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A candid lifestyle shot of several diverse young adults laughing and interacting in a bright, sun-drenched outdoor patio. They are holding cold coffee drinks. The style is natural, high-resolution, and feels like a genuine social media capture. The lighting is warm and golden, creating a joyful, communal atmosphere." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDp3WvXEKUeyd7-NQvSA0qrpC-vJkgx7R_u02OJu_7mutVc7Ou5AwmwMBJeev1HPiwaZREJCyd3oIR2B0I4RLfzTjX6qX7n99Y5dpMIev3kyt-IX1ommczBOxS7IDN1JeKfHKkyv0XtfRo4JTAaqNa2tintoCj0GRfhCfK6a63pfifxcKghmwtPRGNRfrDgn8Ry3SAopYuqdDCE_sstkBRNoy4n9TjAxsQHan9TcYf6XvfMGBJocGdLt5QLFcD44Hfqhpoj3s-uu5U"/>
+<div class="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
+<span class="material-symbols-outlined text-white text-[48px] drop-shadow-lg" style="font-variation-settings: 'FILL' 1;">play_circle</span>
+</div>
+<div class="absolute top-4 left-4 flex gap-2">
+<span class="bg-white/90 backdrop-blur-sm px-2 py-1 rounded font-code-xs text-code-xs text-primary shadow-sm">TIKTOK</span>
+<span class="bg-yellow-100 text-primary px-2 py-1 rounded font-code-xs text-code-xs font-bold border border-yellow-200">72% MATCH</span>
+</div>
+</div>
+<div class="p-6 flex flex-col flex-1">
+<div class="mb-4">
+<h3 class="font-headline-sm text-label-ui font-bold mb-1 uppercase tracking-tight">Flash Sale Countdown</h3>
+<p class="text-text-muted font-body-md text-sm">High-energy transition video announcing a 24-hour festival clearance.</p>
+</div>
+<div class="grid grid-cols-3 gap-2 mb-4 py-3 border-y border-outline-variant/30">
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Views</p>
+<p class="font-code-sm text-code-sm font-bold">420K</p>
+</div>
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Eng. Rate</p>
+<p class="font-code-sm text-code-sm font-bold">5.2%</p>
+</div>
+<div class="text-center">
+<p class="text-text-muted text-[10px] uppercase font-bold">Momentum</p>
+<span class="material-symbols-outlined text-ship-red text-sm">trending_flat</span>
+</div>
+</div>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">Retail</span>
+<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">Flash Sale</span>
+<span class="ml-auto bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Medium Risk</span>
+</div>
+<div class="mb-6 p-3 bg-primary-fixed/30 rounded-lg border-l-2 border-primary">
+<p class="text-xs font-body-md leading-relaxed italic text-text-primary">
+                "UGC-style countdowns outperform polished graphics for urgency-driven clearance events."
+              </p>
+</div>
+<div class="mt-auto flex gap-2">
+<button class="flex-1 bg-primary text-on-primary font-label-ui text-[12px] py-2 rounded hover:opacity-90 transition-all uppercase tracking-wider">Use Reference</button>
+<button class="px-3 border border-outline-variant text-text-primary hover:bg-surface-container-low rounded transition-colors">
+<span class="material-symbols-outlined text-sm">bookmark</span>
+</button>
+</div>
+</div>
+</article>
+</div>
+</div>
+</main>
+<!-- FAB (Contextual for Trends: Research New Trend) -->
+<button class="fixed bottom-8 right-8 bg-primary text-on-primary w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform active:scale-95 z-50">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">search_spark</span>
+</button>
+</body></html>

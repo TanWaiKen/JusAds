@@ -28,9 +28,8 @@ export default function FloatingButton() {
   return (
     <button
       onClick={scrollToTop}
-      className={`fixed bottom-8 right-8 z-50 p-3 rounded-full bg-[#171717] dark:bg-white text-white dark:text-[#171717] shadow-lg hover:scale-110 active:scale-95 transition-all duration-300 ${
-        isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10 pointer-events-none"
-      }`}
+      className={`fixed bottom-8 right-8 z-50 p-3 rounded-full bg-[#171717] dark:bg-white text-white dark:text-[#171717] shadow-lg hover:scale-110 active:scale-95 transition-all duration-300 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10 pointer-events-none"
+        }`}
       aria-label="Scroll to top"
     >
       <ArrowUp className="w-5 h-5" />

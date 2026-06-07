@@ -37,13 +37,12 @@ function App() {
               <Route path="profile" element={<DashboardProfile />} />
               <Route path="campaigns" element={<DashboardCampaigns />} />
               <Route path="assets" element={<DashboardAssets />} />
+              <Route path="trends" element={<DashboardTrends />} />
               <Route path="compliance" element={<DashboardCompliance />} />
 
               {/* Redirect any other dashboard path to home */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
-
-            <Route path="/trends" element={<DashboardTrends />} />
 
             {/* Catch-all Redirect */}
             <Route path="*" element={<Navigate to="/" replace />} />

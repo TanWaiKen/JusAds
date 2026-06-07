@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Hanken Grotesk', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .shadow-retina {
+            box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+        }
+        .aurora-border-active {
+            box-shadow: 0 0 0 1px transparent, 0 0 0 2px #7928ca;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "ship-red": "#ee0000",
+                      "secondary-fixed-dim": "#aec6ff",
+                      "tertiary-fixed": "#ffd9e1",
+                      "inverse-on-surface": "#f0f1f1",
+                      "emerald-glow": "#50e3c2",
+                      "surface-dim": "#dadada",
+                      "secondary-fixed": "#d8e2ff",
+                      "on-secondary-fixed-variant": "#004397",
+                      "on-primary": "#ffffff",
+                      "on-surface": "#1a1c1c",
+                      "tertiary-fixed-dim": "#ffb1c5",
+                      "text-muted": "#666666",
+                      "surface": "#f9f9f9",
+                      "on-tertiary-fixed-variant": "#8f0045",
+                      "error-container": "#ffdad6",
+                      "inverse-surface": "#2f3131",
+                      "primary-fixed": "#e5e2e1",
+                      "outline-variant": "#c4c7c7",
+                      "primary-fixed-dim": "#c8c6c5",
+                      "on-error": "#ffffff",
+                      "outline": "#747878",
+                      "surface-bright": "#f9f9f9",
+                      "on-tertiary": "#ffffff",
+                      "on-primary-container": "#858383",
+                      "cosmic-pink": "#ff0080",
+                      "surface-container-highest": "#e2e2e2",
+                      "background": "#f9f9f9",
+                      "aurora-purple": "#7928ca",
+                      "surface-variant": "#e2e2e2",
+                      "on-secondary": "#ffffff",
+                      "on-secondary-fixed": "#001a43",
+                      "surface-tint": "#5f5e5e",
+                      "on-primary-fixed": "#1c1b1b",
+                      "inverse-primary": "#c8c6c5",
+                      "primary": "#000000",
+                      "on-background": "#1a1c1c",
+                      "on-surface-variant": "#444748",
+                      "on-tertiary-fixed": "#3f001b",
+                      "on-tertiary-container": "#ef3982",
+                      "secondary": "#0057c0",
+                      "surface-container-lowest": "#ffffff",
+                      "text-secondary": "#4d4d4d",
+                      "secondary-container": "#006ff0",
+                      "error": "#ba1a1a",
+                      "tertiary-container": "#3f001b",
+                      "surface-container-high": "#e8e8e8",
+                      "on-secondary-container": "#fefcff",
+                      "surface-container": "#eeeeee",
+                      "surface-container-low": "#f3f3f4",
+                      "tertiary": "#000000",
+                      "bg-dark": "#0a0a0f",
+                      "primary-container": "#1c1b1b",
+                      "on-error-container": "#93000a",
+                      "text-primary": "#171717",
+                      "on-primary-fixed-variant": "#474746"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "stack-md": "16px",
+                      "stack-lg": "32px",
+                      "max-content-width": "1200px",
+                      "margin-page": "40px",
+                      "sidebar-width": "240px",
+                      "gutter": "24px",
+                      "stack-sm": "8px"
+              },
+              "fontFamily": {
+                      "label-ui": ["Hanken Grotesk"],
+                      "body-md": ["Hanken Grotesk"],
+                      "headline-lg": ["Hanken Grotesk"],
+                      "headline-sm": ["Hanken Grotesk"],
+                      "headline-md": ["Hanken Grotesk"],
+                      "code-sm": ["JetBrains Mono"],
+                      "body-lg": ["Hanken Grotesk"],
+                      "code-xs": ["JetBrains Mono"]
+              },
+              "fontSize": {
+                      "label-ui": ["14px", {"lineHeight": "1", "fontWeight": "500"}],
+                      "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                      "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "600"}],
+                      "headline-sm": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                      "code-sm": ["13px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                      "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                      "code-xs": ["11px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}]
+              }
+            },
+          },
+        }
+      </script>
+</head>
+<body class="bg-surface-container-lowest text-text-primary selection:bg-secondary/10">
+<!-- TopAppBar -->
+<header class="bg-surface flex justify-between items-center h-16 px-margin-page w-full docked full-width top-0 sticky z-50 shadow-[0px_1px_0px_0px_rgba(0,0,0,0.08)]">
+<div class="flex items-center gap-stack-lg">
+<span class="font-headline-sm text-headline-sm font-black tracking-tighter text-text-primary">JusAds</span>
+<nav class="hidden md:flex gap-stack-md h-full items-center">
+<a class="text-text-muted font-medium hover:text-text-primary transition-colors py-5" href="#">Campaigns</a>
+<a class="text-text-muted font-medium hover:text-text-primary transition-colors py-5" href="#">Library</a>
+<a class="text-text-muted font-medium hover:text-text-primary transition-colors py-5" href="#">Analytics</a>
+</nav>
+</div>
+<div class="flex items-center gap-stack-md">
+<button class="hover:bg-surface-container-low transition-all duration-200 p-2 rounded-full">
+<span class="material-symbols-outlined text-text-muted">notifications</span>
+</button>
+<button class="hover:bg-surface-container-low transition-all duration-200 p-2 rounded-full">
+<span class="material-symbols-outlined text-text-muted">help</span>
+</button>
+<div class="flex gap-stack-sm items-center">
+<button class="px-4 py-2 border shadow-retina rounded-lg text-label-ui font-label-ui hover:bg-surface-container-low transition-all">Preview</button>
+<button class="px-4 py-2 bg-ship-red text-white rounded-lg text-label-ui font-label-ui hover:opacity-90 transition-all">Ship to Meta</button>
+</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="w-sidebar-width h-screen fixed left-0 top-0 flex flex-col bg-surface-bright pt-20 pb-8 space-y-2 shadow-[1px_0px_0px_0px_rgba(0,0,0,0.08)]">
+<div class="px-4 mb-6">
+<div class="flex items-center gap-stack-sm mb-1">
+<img alt="Campaign Status" class="w-8 h-8 rounded-lg shadow-retina" data-alt="A clean, professional 3D graphic of a launchpad and a rising rocket, set against a monochromatic light grey background with subtle depth and soft focus. The aesthetic is high-tech minimalist, using clean lines and a neutral professional color palette to convey growth and velocity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCk_xUgXgrDOGN4agSxEVoXaQf2Sm5QmoQ7OLieUVpxgK7mig_SSQKnDB4CSkEK-IEbqyZ0FwTuekYwSqxD7RWUq2oiuY1mb9b_Hc-ObQS1AjB3_EfXE6ans3IRSzczPdO518M84Mt0LihZyup92WO6F0IwnbDB8cQnSb8NqdCsSk-MBcMVg3TK3O0p_gqbwqMicgUfjFUX4SNP9ZxgZN2yamobx8TGYxyprh378VCbyiJiZdGvB0LJ6_VNle3TozQo2tgCDK8hAhM"/>
+<div>
+<h3 class="font-label-ui text-label-ui font-bold">Q4 Global Launch</h3>
+<p class="text-[10px] text-text-muted uppercase tracking-wider">High Velocity Ads</p>
+</div>
+</div>
+</div>
+<a class="flex items-center gap-stack-sm px-4 py-3 text-text-muted hover:bg-surface-container-lowest transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-text-primary">trending_up</span>
+<span class="font-label-ui text-label-ui">Trends</span>
+</a>
+<a class="flex items-center gap-stack-sm px-4 py-3 text-text-muted hover:bg-surface-container-lowest transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-text-primary">description</span>
+<span class="font-label-ui text-label-ui">Script</span>
+</a>
+<a class="flex items-center gap-stack-sm px-4 py-3 text-text-muted hover:bg-surface-container-lowest transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-text-primary">image</span>
+<span class="font-label-ui text-label-ui">Visuals</span>
+</a>
+<a class="flex items-center gap-stack-sm px-4 py-3 bg-surface-container-low text-text-primary border-l-2 border-aurora-purple translate-x-1 duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">verified_user</span>
+<span class="font-label-ui text-label-ui">Compliance</span>
+</a>
+<div class="mt-auto px-4">
+<button class="w-full py-2 bg-primary text-white rounded-lg text-label-ui font-label-ui mb-8 hover:opacity-90">Generate Draft</button>
+<a class="flex items-center gap-stack-sm px-0 py-3 text-text-muted hover:text-text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-label-ui text-label-ui">History</span>
+</a>
+<a class="flex items-center gap-stack-sm px-0 py-3 text-text-muted hover:text-text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-ui text-label-ui">Settings</span>
+</a>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="ml-sidebar-width min-h-screen p-margin-page">
+<div class="max-w-[1200px] mx-auto">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-stack-lg">
+<div>
+<h1 class="font-headline-md text-headline-md text-text-primary mb-2">Compliance &amp; Guardrails</h1>
+<p class="font-body-md text-body-md text-text-muted">Review cultural and legal risks before your ads go live in Malaysia.</p>
+</div>
+<button class="px-6 py-3 bg-primary text-white rounded-lg font-label-ui text-label-ui hover:opacity-90 flex items-center gap-2 shadow-lg shadow-black/5">
+<span class="material-symbols-outlined text-[18px]">play_circle</span>
+                    Run checks on all draft campaigns
+                </button>
+</div>
+<!-- Summary Cards Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-gutter mb-stack-lg">
+<div class="bg-white p-6 rounded-xl shadow-retina hover:translate-y-[-2px] transition-transform">
+<p class="text-text-muted font-label-ui text-[12px] uppercase tracking-widest mb-4">Ready to Publish</p>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-md text-headline-md">8</span>
+<span class="text-emerald-500 font-label-ui text-label-ui">+2 today</span>
+</div>
+</div>
+<div class="bg-white p-6 rounded-xl shadow-retina hover:translate-y-[-2px] transition-transform border-l-4 border-error">
+<p class="text-text-muted font-label-ui text-[12px] uppercase tracking-widest mb-4">Needing Attention</p>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-md text-headline-md text-error">3</span>
+<span class="bg-error/10 text-error px-2 py-0.5 rounded text-code-xs font-code-xs">HIGH RISK</span>
+</div>
+</div>
+<div class="bg-white p-6 rounded-xl shadow-retina hover:translate-y-[-2px] transition-transform">
+<p class="text-text-muted font-label-ui text-[12px] uppercase tracking-widest mb-4">Checks Pending</p>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-md text-headline-md">12</span>
+<span class="material-symbols-outlined text-text-muted text-[16px]">hourglass_empty</span>
+</div>
+</div>
+<div class="bg-white p-6 rounded-xl shadow-retina hover:translate-y-[-2px] transition-transform">
+<p class="text-text-muted font-label-ui text-[12px] uppercase tracking-widest mb-4">Top Risk Flags</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container-low rounded text-code-xs font-code-xs">RELIGIOUS SYMBOLS</span>
+<span class="px-2 py-1 bg-surface-container-low rounded text-code-xs font-code-xs">BODY IMAGE</span>
+<span class="px-2 py-1 bg-surface-container-low rounded text-code-xs font-code-xs">MCMC CODE</span>
+</div>
+</div>
+</div>
+<!-- Content Area Layout -->
+<div class="flex flex-col lg:flex-row gap-gutter items-start">
+<!-- Compliance Table -->
+<div class="flex-1 bg-white rounded-xl shadow-retina overflow-hidden">
+<div class="px-6 py-4 border-b border-surface-container flex justify-between items-center bg-surface-bright">
+<h2 class="font-headline-sm text-[18px]">Active Review Queue</h2>
+<div class="flex items-center gap-stack-sm">
+<span class="text-code-xs font-code-xs text-text-muted">FILTER BY:</span>
+<select class="bg-transparent border-none text-label-ui font-label-ui focus:ring-0">
+<option>All Risk Levels</option>
+<option>High Risk</option>
+<option>Medium Risk</option>
+</select>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-lowest border-b border-surface-container">
+<th class="px-6 py-4 font-label-ui text-label-ui text-text-muted">Campaign &amp; Asset</th>
+<th class="px-6 py-4 font-label-ui text-label-ui text-text-muted">Platform</th>
+<th class="px-6 py-4 font-label-ui text-label-ui text-text-muted">Risk Level</th>
+<th class="px-6 py-4 font-label-ui text-label-ui text-text-muted">Flags</th>
+<th class="px-6 py-4 font-label-ui text-label-ui text-text-muted">Status</th>
+<th class="px-6 py-4 font-label-ui text-label-ui text-text-muted">Last Checked</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container">
+<tr class="hover:bg-surface-container-lowest cursor-pointer group transition-colors aurora-border-active">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-surface-container flex items-center justify-center overflow-hidden">
+<img alt="Asset Preview" class="w-full h-full object-cover" data-alt="A macro photograph of vibrant, colorful Malaysian traditional street food, specifically Satay with peanut sauce, captured in bright, warm natural lighting. The image emphasizes textures and freshness, styled with a high-end commercial food photography aesthetic. The background is softly blurred to maintain focus on the foreground subjects." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_TrbPuwl9oUOWSldL9kS_7oQP3jDUL51Fsg107Fq2Y_fNRWlsmG4zDMI6buFnYLyNV97pD61pPlB5o4Nna-RbA7KzCkp3sTFJ-YVj_muPyFKLjzVmH1kKcB0Cait0w6iLzvsMUZvH3tkjjbysTQgJSibMl_7JBrqyufuPLs9uLYlK-3galj1GKygoBL23xGqBNgt2sTK2EJezTgNY2l2AFyzbq9fe4iqhFeg-ijgCGhjgNAdLkLvdHhsV193GHJiPj9VJeZw9HCY"/>
+</div>
+<div>
+<p class="font-label-ui text-label-ui text-text-primary">Ramadan Promo 2024</p>
+<p class="text-code-xs font-code-xs text-text-muted">hero_video_v2.mp4</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex gap-2 text-text-muted">
+<span class="material-symbols-outlined text-[18px]">video_library</span>
+<span class="material-symbols-outlined text-[18px]">camera_alt</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="bg-error-container text-on-error-container px-2 py-1 rounded-full text-code-xs font-code-xs border border-error/20">HIGH RISK</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex gap-1">
+<span class="w-2 h-2 rounded-full bg-error" title="MCMC Code"></span>
+<span class="w-2 h-2 rounded-full bg-ship-red" title="Religious Symbols"></span>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 text-error font-label-ui text-label-ui">
+<span class="material-symbols-outlined text-[16px]">warning</span>
+                                            Needs changes
+                                        </div>
+</td>
+<td class="px-6 py-4 font-code-xs text-code-xs text-text-muted">2m ago</td>
+</tr>
+<tr class="hover:bg-surface-container-lowest cursor-pointer transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-surface-container flex items-center justify-center overflow-hidden">
+<img alt="Asset Preview" class="w-full h-full object-cover" data-alt="A sleek, professional product shot of a luxury watch placed on a dark reflective surface. The lighting is sophisticated, with sharp highlights and deep shadows creating a premium, modern feel. The color palette is strictly monochromatic, emphasizing precision and high-end craftsmanship." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCP6FLR0tk-f_gEcX_P8RwZaNQFIkSOzm4Y0zjifX82GTzeIcL2sCQNLVmqbk_5xX4-4oZrekgiAd9usiXb213hN-XcsUKuqErWEM03NHLiSnhGtpgfRmqYx44iwZPaShRKt4zSz6SYr2hqUiXaqQabTpom8f4SjxJPzDZ8kXDCsS0xZuPO3ULxj_I6SEeNKh1GTED0IgY8Xc03UGgNyUPYziPwui_iB4CzWYQ1RlZKW3mzH_j8IB2xKtC_em77poYmRIgyda-wI6E"/>
+</div>
+<div>
+<p class="font-label-ui text-label-ui text-text-primary">KL Flagship Store Opening</p>
+<p class="text-code-xs font-code-xs text-text-muted">static_display_01.jpg</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex gap-2 text-text-muted">
+<span class="material-symbols-outlined text-[18px]">face_nod</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="bg-surface-container-highest text-text-muted px-2 py-1 rounded-full text-code-xs font-code-xs">LOW RISK</span>
+</td>
+<td class="px-6 py-4">
+<span class="text-text-muted text-code-xs font-code-xs">—</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 text-emerald-500 font-label-ui text-label-ui">
+<span class="material-symbols-outlined text-[16px]">check_circle</span>
+                                            Passed
+                                        </div>
+</td>
+<td class="px-6 py-4 font-code-xs text-code-xs text-text-muted">1h ago</td>
+</tr>
+<tr class="hover:bg-surface-container-lowest cursor-pointer transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-surface-container flex items-center justify-center overflow-hidden">
+<img alt="Asset Preview" class="w-full h-full object-cover" data-alt="An interior shot of a modern, minimalist kitchen in Malaysia, featuring clean white countertops and high-end appliances. Sunlight streams through a window, creating a bright, airy atmosphere. The composition is balanced and spacious, reflecting a high standard of living and contemporary design." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDuVeF8IOyVq3QJKi4XY0UhHjxHv6o6M89yzMc8C8V_XHh7jkH9Aw7UlNbUSyqVkxYbkjkcV_Pt-OogX4IKXxXKKMkqP8c1gIX9Fi10ETe1kShdts9IFbQ-89WZgHpQs0TS0ktXCY4ouEeiK-I-Ho0ubBDTSZO_YJKNPsHjzlOUpaUMJjBMYxTQzWZDxhGtUuIQCRg7q5EODO5tdW6uw3ze_EOuUARvONiVSM-dL3MIe4IxkyJGg4ZjpVaCwZPfWP_WUoLLuJ79tKY"/>
+</div>
+<div>
+<p class="font-label-ui text-label-ui text-text-primary">Eco-Living Range</p>
+<p class="text-code-xs font-code-xs text-text-muted">kitchen_vibe.jpg</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex gap-2 text-text-muted">
+<span class="material-symbols-outlined text-[18px]">camera_alt</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="bg-amber-100 text-amber-800 px-2 py-1 rounded-full text-code-xs font-code-xs border border-amber-200">MEDIUM RISK</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex gap-1">
+<span class="w-2 h-2 rounded-full bg-amber-500" title="Body Image"></span>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 text-text-muted font-label-ui text-label-ui">
+<span class="material-symbols-outlined text-[16px] animate-spin">sync</span>
+                                            In progress
+                                        </div>
+</td>
+<td class="px-6 py-4 font-code-xs text-code-xs text-text-muted">Just now</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Detail Panel (Fixed/Drawer style on Desktop) -->
+<div class="w-full lg:w-[380px] bg-white rounded-xl shadow-retina sticky top-24 overflow-hidden flex-col"><div class="flex flex-col h-full bg-white">
+<!-- Compact Fixed Header -->
+<div class="p-4 border-b border-surface-container shrink-0">
+<div class="flex justify-between items-center mb-4">
+<h3 class="font-headline-sm text-[16px]">Asset Details</h3>
+<button class="text-text-muted hover:text-text-primary"><span class="material-symbols-outlined text-[20px]">close</span></button>
+</div>
+<div class="flex gap-3">
+<div class="w-24 aspect-video rounded bg-black shrink-0 relative group overflow-hidden">
+<img alt="Selected Asset" class="w-full h-full object-cover opacity-80" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCHRZKTHmwwZ7E2Zd7vGyCKPncY5SDJpnvyIgsRVkYDvdAIX_dZ8ilJ9LS4btiawACNG1f-tPjrvEHK5XL_jAi2CZ2L5_odnonEYT2hOacQA31GqXvWVcHWDBgYbU3eaXKYLpgaYsT-uiWDYa2vjFXt-HfWLff_WcHW3wPhxeQOcX_pzJS8843viaJw1B0I11eaYHqTqKvFnOVjpG7I9CLuGVkEBDdmNEhXnqS9JojSWbCrn7pD94v3T7qTbsLW_s57NyGYxNE-Oao"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[24px] cursor-pointer">play_circle</span>
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-code-xs font-code-xs text-text-muted uppercase truncate">hero_video_v2.mp4</p>
+<p class="text-label-ui font-bold truncate text-[13px]">Ramadan Promo 2024</p>
+<div class="mt-1">
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-[10px] font-bold inline-block uppercase">Critical Risk</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Tabs Navigation -->
+<div class="flex border-b border-surface-container bg-surface-bright shrink-0">
+<button class="flex-1 py-3 text-label-ui font-label-ui border-b-2 border-primary text-text-primary" onclick="this.parentElement.nextElementSibling.children[0].classList.remove('hidden'); this.parentElement.nextElementSibling.children[1].classList.add('hidden'); this.classList.add('border-primary', 'text-text-primary'); this.nextElementSibling.classList.remove('border-primary', 'text-text-primary');">Issues (2)</button>
+<button class="flex-1 py-3 text-label-ui font-label-ui border-b-2 border-transparent text-text-muted hover:text-text-primary transition-colors" onclick="this.parentElement.nextElementSibling.children[1].classList.remove('hidden'); this.parentElement.nextElementSibling.children[0].classList.add('hidden'); this.classList.add('border-primary', 'text-text-primary'); this.previousElementSibling.classList.remove('border-primary', 'text-text-primary');">AI Suggestions</button>
+</div>
+<!-- Scrollable Content Area -->
+<div class="flex-1 overflow-y-auto max-h-[60vh] lg:max-h-[70vh]">
+<!-- Issues Tab -->
+<div class="p-4 space-y-3">
+<div class="p-3 bg-surface-container-low rounded border-l-4 border-error">
+<p class="font-label-ui text-[12px] font-bold text-text-primary mb-1">MCMC Content Code Violation</p>
+<p class="text-text-muted text-[12px] leading-relaxed line-clamp-3">Avoid using religious symbols or icons for commercial product promotions per Malaysia's MCMC guidelines.</p>
+</div>
+<div class="p-3 bg-surface-container-low rounded border-l-4 border-amber-500">
+<p class="font-label-ui text-[12px] font-bold text-text-primary mb-1">Body Image Representation</p>
+<p class="text-text-muted text-[12px] leading-relaxed line-clamp-3">The AI detected low-contrast text overlays on skin tones which may violate readability standards.</p>
+</div>
+<button class="w-full py-3 mt-4 bg-primary text-white rounded font-label-ui text-label-ui flex items-center justify-center gap-2 shadow-sm hover:opacity-90">
+<span class="material-symbols-outlined text-[18px]">magic_button</span>
+        Fix issues with AI
+      </button>
+</div>
+<!-- AI Suggestions Tab (Hidden by default) -->
+<div class="hidden p-4 space-y-4">
+<!-- Suggestion Card 1 -->
+<div class="bg-white rounded border border-surface-container shadow-sm overflow-hidden">
+<div class="p-2 px-3 border-b border-surface-container bg-surface-bright flex justify-between items-center">
+<p class="font-label-ui text-[11px] font-bold uppercase">MCMC Fix</p>
+<span class="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 rounded">RESOLVES RISK</span>
+</div>
+<div class="p-3 grid grid-cols-2 gap-3">
+<div>
+<p class="text-[9px] text-text-muted uppercase font-bold mb-1">Original</p>
+<p class="text-[11px] text-text-primary line-through opacity-50 line-clamp-3">Visual elements resembling protected iconography.</p>
+</div>
+<div class="border-l border-surface-container pl-3">
+<p class="text-[9px] text-emerald-700 uppercase font-bold mb-1">Suggested</p>
+<p class="text-[11px] text-text-primary line-clamp-3">Replace background artwork with neutral festive patterns.</p>
+</div>
+</div>
+<div class="p-2 bg-surface-bright flex gap-2">
+<button class="flex-1 py-1.5 bg-primary text-white rounded text-[11px] font-label-ui">Apply</button>
+<button class="flex-1 py-1.5 border border-surface-container rounded text-[11px] font-label-ui text-text-muted">Keep</button>
+</div>
+</div>
+<!-- Suggestion Card 2 -->
+<div class="bg-white rounded border border-surface-container shadow-sm overflow-hidden">
+<div class="p-2 px-3 border-b border-surface-container bg-surface-bright flex justify-between items-center">
+<p class="font-label-ui text-[11px] font-bold uppercase">Accessibility Fix</p>
+<span class="text-[9px] font-bold text-blue-700 bg-blue-100 px-1.5 rounded">MEETS STANDARD</span>
+</div>
+<div class="p-3 grid grid-cols-2 gap-3">
+<div>
+<p class="text-[9px] text-text-muted uppercase font-bold mb-1">Original</p>
+<p class="text-[11px] text-text-primary line-through opacity-50 line-clamp-3">Low-contrast text overlays on skin tones.</p>
+</div>
+<div class="border-l border-surface-container pl-3">
+<p class="text-[9px] text-blue-700 uppercase font-bold mb-1">Suggested</p>
+<p class="text-[11px] text-text-primary line-clamp-3">Increase text contrast ratio to 4.5:1 with backdrop.</p>
+</div>
+</div>
+<div class="p-2 bg-surface-bright flex gap-2">
+<button class="flex-1 py-1.5 bg-primary text-white rounded text-[11px] font-label-ui">Apply</button>
+<button class="flex-1 py-1.5 border border-surface-container rounded text-[11px] font-label-ui text-text-muted">Keep</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Pinned Actions -->
+<div class="p-4 border-t border-surface-container bg-white shrink-0">
+<button class="w-full py-3 bg-secondary text-white rounded-lg font-label-ui text-label-ui hover:bg-secondary/90 flex items-center justify-center gap-2 transition-all shadow-md">
+<span class="material-symbols-outlined text-[18px]">verified</span>
+      Mark as resolved &amp; re-run
+    </button>
+</div>
+</div></div>
+</div>
+</div>
+</main>
+<!-- Support Bubble -->
+<div class="fixed bottom-8 right-8 z-50">
+<button class="w-14 h-14 bg-white shadow-xl rounded-full flex items-center justify-center text-primary hover:scale-105 transition-transform border border-surface-container">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">chat</span>
+</button>
+</div>
+</body></html>
