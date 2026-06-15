@@ -11,14 +11,23 @@ node_modules
 dist
 dist-ssr
 *.local
+.langgraph_api
+.kiro
+*.drawio
 
 # Environment variables
 .env
 *.env
+.venv
+.pytest_cache
+.vscode
 
 # Python
 __pycache__/
 *.pyc
+
+# Model weights
+weights/
 
 # Editor directories and files
 .vscode/*
