@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "compliance": "./langgraph_api.py:compliance_graph"
+    "compliance": "./agent/pipeline.py:compliance_pipeline"
   },
   "env": ".env"
 }

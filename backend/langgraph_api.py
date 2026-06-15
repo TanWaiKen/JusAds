@@ -359,8 +359,11 @@ async def check_compliance(
             "market": market,
             "ethnicity": ethnicity,
             "age_group": age_group,
-            "score": result.get("score", result.get("SCORE", 0)),
-            "risk_level": result.get("risk_level", result.get("RISK", "Unknown")),
+            "risk_percentage": result.get("risk_percentage", result.get("RISK_PERCENTAGE", 50)),
+            "risk_band": result.get("risk_band", result.get("RISK_BAND", "Moderate")),
+            "confidence": result.get("confidence", result.get("CONFIDENCE", "low")),
+            "score": result.get("score", 100 - result.get("risk_percentage", result.get("RISK_PERCENTAGE", 50))),
+            "risk_level": result.get("risk_band", result.get("RISK_BAND", "Moderate")),
             "explanation": result.get("explanation", ""),
             "suggestion": result.get("suggestion", ""),
             "localization": result.get("localization", {}),
@@ -415,10 +418,10 @@ async def check_compliance(
         _save_result(check_id, response)
         yield f"data: {json.dumps({'type': 'result', 'data': response})}\n\n"
 
-        # If score < 75, ask user if they want to remix
-        score = response.get("score", 0)
-        if score < 75 and media_type in ("video", "image", "audio"):
-            yield f"data: {json.dumps({'type': 'ask_user', 'action': 'remix', 'message': 'Your content has compliance issues. Would you like to auto-remix it to make it compliant?', 'check_id': check_id})}\n\n"
+        # If risk > 30%, suggest remix
+        risk_pct = response.get("risk_percentage", 0)
+        if risk_pct > 30 and media_type in ("video", "image", "audio"):
+            yield f"data: {json.dumps({'type': 'ask_user', 'action': 'remix', 'message': f'Your content has {risk_pct}% risk of cultural backlash. Would you like to auto-remix it to reduce risk?', 'check_id': check_id})}\n\n"
 
     return StreamingResponse(
         generate_events(),

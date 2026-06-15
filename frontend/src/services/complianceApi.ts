@@ -113,8 +113,13 @@ export interface ComplianceResult {
   market: string;
   ethnicity: string;
   age_group: string;
-  score: number;
-  risk_level: "High" | "Medium" | "Low";
+  // New risk percentage fields
+  risk_percentage: number;    // 0-100, probability of cultural backlash
+  risk_band: "Low" | "Moderate" | "High" | "Critical";
+  confidence: "high" | "moderate" | "low";
+  // Backward compat fields
+  score: number;              // 100 - risk_percentage
+  risk_level: "High" | "Medium" | "Low" | "Moderate" | "Critical";
   explanation: string;
   suggestion: string;
   localization: Localization;

@@ -159,8 +159,11 @@ class TextComplianceChecker:
             "market": market,
             "ethnicity": ethnicity,
             "age_group": age_group,
-            "risk_level": evaluation.get("RISK", evaluation.get("risk_level", "Unknown")),
-            "score": evaluation.get("SCORE", evaluation.get("score", 0)),
+            "risk_percentage": evaluation.get("RISK_PERCENTAGE", 50),
+            "risk_band": evaluation.get("RISK_BAND", "Moderate"),
+            "confidence": evaluation.get("CONFIDENCE", "low"),
+            "risk_level": evaluation.get("RISK_BAND", "Moderate"),  # backward compat
+            "score": 100 - evaluation.get("RISK_PERCENTAGE", 50),   # backward compat
             "high_risk_indicators": evaluation.get("high_risk_indicator", evaluation.get("high_risk_indicators", [])),
             "explanation": evaluation.get("explanation", ""),
             "suggestion": evaluation.get("suggestion", ""),
@@ -171,10 +174,10 @@ class TextComplianceChecker:
         }
 
         logger.info(
-            "Compliance check completed in %dms: risk_level=%s, score=%d",
+            "Compliance check completed in %dms: risk_band=%s, risk_percentage=%d%%",
             duration_ms,
-            result["risk_level"],
-            result["score"],
+            result["risk_band"],
+            result["risk_percentage"],
         )
 
         return result
@@ -229,8 +232,9 @@ class TextComplianceChecker:
         except Exception as e:
             logger.error("LLM evaluation failed: %s", str(e))
             return {
-                "risk_level": "Unknown",
-                "score": 0,
+                "RISK_PERCENTAGE": 50,
+                "RISK_BAND": "Moderate",
+                "CONFIDENCE": "low",
                 "high_risk_indicators": [],
                 "explanation": f"LLM evaluation error: {str(e)}",
                 "suggestion": "Please retry or contact support.",
@@ -287,26 +291,29 @@ To inform your evaluation, consider the following chunks of documents, which pro
 PRIMARY TASK:
 1. Read the full transcript and detect phrases, sentences or themes that may be culturally sensitive, offensive, or inappropriate for audiences in {market.title()}, paying close attention to the regulatory guidelines and persona provided above.
 2. Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with the exact fields below:
-   - RISK: one of "High", "Medium", "Low"
-   - SCORE: integer 0–100 (Cultural Appropriateness Score; 100 = fully appropriate)
+   - RISK_PERCENTAGE: integer 0–100 (probability that this ad will cause cultural backlash; 0 = completely safe, 100 = certain backlash)
+   - RISK_BAND: one of "Low" (0-30%), "Moderate" (31-60%), "High" (61-80%), "Critical" (81-100%)
+   - CONFIDENCE: one of "high", "moderate", "low" (how confident you are in this risk assessment based on available evidence)
    - high_risk_indicator: array of strings (words/phrases or short snippets that were flagged). Include up to the top 10 flagged items, ranked by severity.
-   - explanation: concise reasoning (max ~300 words) describing why the content received that SCORE and RISK. Reference which categories drove the rating and, where applicable, cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "This violates the guideline on..."). Note any contextual factors (e.g., satire, educational intent).
-   - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the video/script to make it more culturally appropriate for a {market.title()} audience (e.g., remove or rephrase flagged terms, replace insensitive jokes with neutral humor, provide cultural context, or add disclaimers).
+   - explanation: concise reasoning (max ~300 words) describing why the content has that RISK_PERCENTAGE. Reference which categories drove the rating and, where applicable, cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "This violates the guideline on..."). Note any contextual factors (e.g., satire, educational intent).
+   - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the content to reduce the cultural backlash risk for a {market.title()} audience (e.g., remove or rephrase flagged terms, replace insensitive jokes with neutral humor, provide cultural context, or add disclaimers).
 
-**Scoring Logic:**
-- Start at 100
-- Deduct points for each violation:
-  - Severe regulatory: -30 points
-  - Moderate regulatory: -20 points
-  - Minor regulatory: -10 points
-  - Severe cultural: -25 points
-  - Moderate cultural: -15 points
-  - Minor cultural: -8 points
-- Risk Level: Low (75-100), Medium (40-74), High (0-39)
+**Risk Assessment Logic:**
+- Start at 0% risk (completely safe)
+- Add risk for each issue found:
+  - Severe regulatory violation: +30%
+  - Moderate regulatory violation: +20%
+  - Minor regulatory violation: +10%
+  - Severe cultural taboo: +25%
+  - Moderate cultural sensitivity: +15%
+  - Minor cultural concern: +8%
+- Cap at 100%. Multiple issues compound.
+- Risk Band: Low (0-30%), Moderate (31-60%), High (61-80%), Critical (81-100%)
+- Confidence: "high" if clear regulatory violations with strong evidence from provided rules, "moderate" if cultural nuances that could go either way, "low" if borderline/ambiguous cases
 
 **Important:**
 - Return ONLY valid JSON.
-- If no issues are found, return SCORE 100, RISK "Low", and empty high_risk_indicator array.
+- If no issues are found, return RISK_PERCENTAGE 0, RISK_BAND "Low", CONFIDENCE "high", and empty high_risk_indicator array.
 - Limit high_risk_indicator to maximum 10 items, ranked by severity (most severe first).
 
 CONTEXTUAL RULES (how to treat context & intent):
@@ -323,14 +330,15 @@ OUTPUT FORMAT (strict):
 Return exactly one JSON object and nothing else. Example structure:
 
 {{
-  "RISK": "Medium",
-  "SCORE": 63,
+  "RISK_PERCENTAGE": 63,
+  "RISK_BAND": "High",
+  "CONFIDENCE": "moderate",
   "high_risk_indicator": [
     "insulting phrase 1",
     "derogatory stereotype about ethnicity",
     "explicit sexual description"
   ],
-  "explanation": "Short, clear reasoning (max ~300 words)...",
+  "explanation": "63% probability of cultural backlash. Short, clear reasoning (max ~300 words)...",
   "suggestion": "Concrete advice (max ~200 words)..."
 }}
 
@@ -344,14 +352,15 @@ Finally, he uses mild profanity when complaining about traffic: "This damn traff
 **Expected Output (JSON only):**  
 ```json
 {{
-  "RISK": "Medium",
-  "SCORE": 58,
+  "RISK_PERCENTAGE": 58,
+  "RISK_BAND": "Moderate",
+  "CONFIDENCE": "moderate",
   "high_risk_indicator": [
     "Malaysians are lazy and always late",
     "fasting being pointless",
     "damn traffic jam"
   ],
-  "explanation": "The transcript includes an ethnic stereotype ('Malaysians are lazy'), a dismissive religious comment ('fasting being pointless'), and mild profanity ('damn'). These correspond to the Ethnic/Racial Stereotypes, Religious Sensitivity, and Profanity categories. The religious remark and stereotype received moderate penalties. Total penalties reduced the score to 58, mapping to Medium risk.",
+  "explanation": "58% risk of cultural backlash. The transcript includes an ethnic stereotype ('Malaysians are lazy' +20%), a dismissive religious comment ('fasting being pointless' +25%), and mild profanity ('damn' +8%). Contextual reduction of -5% applied for comedy context. Total risk: 58%, placing it in the Moderate band.",
   "suggestion": "Remove or rephrase the ethnic stereotype to avoid portraying Malaysians negatively, replace the dismissive joke about fasting with a neutral or positive cultural observation, and substitute profanity with lighter language."
 }}
 ```
@@ -384,19 +393,23 @@ Finally, he uses mild profanity when complaining about traffic: "This damn traff
         except json.JSONDecodeError as e:
             logger.error("Failed to parse JSON response: %s", str(e))
             return {
-                "risk_level": "Unknown",
-                "score": 0,
+                "RISK_PERCENTAGE": 50,
+                "RISK_BAND": "Moderate",
+                "CONFIDENCE": "low",
                 "high_risk_indicators": [],
-                "explanation": "Failed to parse JSON response from LLM.",
+                "explanation": "Failed to parse JSON response from LLM. Defaulting to moderate risk.",
                 "suggestion": "Try again."
             }
 
     def _error_result(self, error_message: str) -> dict[str, Any]:
         """Return a standardized error result."""
         return {
-            "risk_level": "Unknown",
-            "score": 0,
-            "violations": [],
+            "risk_percentage": 50,
+            "risk_band": "Moderate",
+            "confidence": "low",
+            "risk_level": "Moderate",
+            "score": 50,
+            "high_risk_indicators": [],
             "explanation": error_message,
             "suggestion": "Please check your configuration and try again.",
             "persona_used": None,

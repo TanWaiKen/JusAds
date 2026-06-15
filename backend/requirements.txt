@@ -1,0 +1,44 @@
+# ── JusAds Backend Dependencies ───────────────────────────────────────────────
+
+# API Framework
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+
+# Google AI / Vertex AI
+google-genai
+google-cloud-speech
+google-cloud-aiplatform
+
+# LangGraph / LangChain (agent pipeline orchestration)
+langgraph
+langchain-core
+
+# Vector Database (regulatory rules retrieval)
+qdrant-client
+
+# Segmentation (SAM 2 for violation region detection)
+torch
+torchvision
+transformers
+Pillow
+
+# TTS / Voice (audio remediation)
+elevenlabs
+
+# Image Editing (Flux Kontext Pro fallback)
+requests
+
+# Search / Verification
+tavily-python
+
+# AWS (transcription legacy fallback)
+boto3
+
+# Data validation
+pydantic
+
+# Testing
+pytest
+hypothesis

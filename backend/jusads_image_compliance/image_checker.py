@@ -149,8 +149,11 @@ class ImageComplianceChecker:
             "market": market,
             "ethnicity": ethnicity,
             "age_group": age_group,
-            "risk_level": evaluation.get("RISK", evaluation.get("risk_level", "Unknown")),
-            "score": evaluation.get("SCORE", evaluation.get("score", 0)),
+            "risk_percentage": evaluation.get("RISK_PERCENTAGE", 50),
+            "risk_band": evaluation.get("RISK_BAND", "Moderate"),
+            "confidence": evaluation.get("CONFIDENCE", "low"),
+            "risk_level": evaluation.get("RISK_BAND", "Moderate"),  # backward compat
+            "score": 100 - evaluation.get("RISK_PERCENTAGE", 50),   # backward compat
             "high_risk_indicators": evaluation.get("high_risk_indicator", evaluation.get("high_risk_indicators", [])),
             "explanation": evaluation.get("explanation", ""),
             "suggestion": evaluation.get("suggestion", ""),
@@ -208,26 +211,29 @@ class ImageComplianceChecker:
                         2. Read and analyze any text or copy present in the image.
                         3. Detect elements that may be culturally sensitive, offensive, taboo, or inappropriate for audiences in {market.title()}, paying close attention to the regulatory guidelines and persona provided above.
                         4. Produce ONLY a single JSON object (no extra text, no explanation outside the JSON) with the exact fields below:
-                        - RISK: one of "High", "Medium", "Low"
-                        - SCORE: integer 0–100 (Cultural Appropriateness Score; 100 = fully appropriate)
+                        - RISK_PERCENTAGE: integer 0–100 (probability that this ad will cause cultural backlash; 0 = completely safe, 100 = certain backlash)
+                        - RISK_BAND: one of "Low" (0-30%), "Moderate" (31-60%), "High" (61-80%), "Critical" (81-100%)
+                        - CONFIDENCE: one of "high", "moderate", "low" (how confident you are in this risk assessment)
                         - high_risk_indicator: array of strings (describe specific visual elements or text phrases that were flagged). Include up to the top 10 flagged items, ranked by severity.
-                        - explanation: concise reasoning (max ~300 words) describing why the image received that SCORE and RISK. Reference which visual/text elements and categories drove the rating and, where applicable, cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "The exposed clothing violates the guideline on modesty..."). Note any contextual factors.
-                        - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the image to make it more culturally appropriate for a {market.title()} audience (e.g., change clothing to be more modest, remove or rephrase flagged terms, change colors, etc.).
+                        - explanation: concise reasoning (max ~300 words) describing why the image has that RISK_PERCENTAGE. Reference which visual/text elements and categories drove the rating and, where applicable, cite the provided REGULATORY GUIDELINES or PERSONA to justify your assessment (e.g., "The exposed clothing violates the guideline on modesty..."). Note any contextual factors.
+                        - suggestion: clear, actionable advice (max ~200 words) for how to modify or adjust the image to reduce cultural backlash risk for a {market.title()} audience (e.g., change clothing to be more modest, remove or rephrase flagged terms, change colors, etc.).
 
-                        **Scoring Logic:**
-                        - Start at 100
-                        - Deduct points for each violation:
-                        - Severe regulatory: -30 points
-                        - Moderate regulatory: -20 points
-                        - Minor regulatory: -10 points
-                        - Severe cultural: -25 points
-                        - Moderate cultural: -15 points
-                        - Minor cultural: -8 points
-                        - Risk Level: Low (75-100), Medium (40-74), High (0-39)
+                        **Risk Assessment Logic:**
+                        - Start at 0% risk (completely safe)
+                        - Add risk for each issue found:
+                        - Severe regulatory violation: +30%
+                        - Moderate regulatory violation: +20%
+                        - Minor regulatory violation: +10%
+                        - Severe cultural taboo: +25%
+                        - Moderate cultural sensitivity: +15%
+                        - Minor cultural concern: +8%
+                        - Cap at 100%. Multiple issues compound.
+                        - Risk Band: Low (0-30%), Moderate (31-60%), High (61-80%), Critical (81-100%)
+                        - Confidence: "high" if clear regulatory violations with evidence, "moderate" if cultural nuances, "low" if borderline/ambiguous
 
                         **Important:**
                         - Return ONLY valid JSON.
-                        - If no issues are found, return SCORE 100, RISK "Low", and empty high_risk_indicator array.
+                        - If no issues are found, return RISK_PERCENTAGE 0, RISK_BAND "Low", CONFIDENCE "high", and empty high_risk_indicator array.
                         - Limit high_risk_indicator to maximum 10 items, ranked by severity (most severe first).
 
                         CONTEXTUAL RULES (how to treat context & intent):
@@ -243,13 +249,14 @@ class ImageComplianceChecker:
                         Return exactly one JSON object and nothing else. Example structure:
 
                         {{
-                        "RISK": "Medium",
-                        "SCORE": 63,
+                        "RISK_PERCENTAGE": 63,
+                        "RISK_BAND": "High",
+                        "CONFIDENCE": "moderate",
                         "high_risk_indicator": [
                             "Exposed armpits on model",
                             "Derogatory phrase in the background"
                         ],
-                        "explanation": "Short, clear reasoning (max ~300 words)...",
+                        "explanation": "63% risk of cultural backlash. Short, clear reasoning (max ~300 words)...",
                         "suggestion": "Concrete advice (max ~200 words)..."
                         }}
                     """

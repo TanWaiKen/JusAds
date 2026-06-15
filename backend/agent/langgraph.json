@@ -1,0 +1,6 @@
+{
+  "graphs": {
+    "compliance": "./pipeline.py:compliance_pipeline"
+  },
+  "env": "../.env"
+}
