@@ -6,11 +6,15 @@ import { ProtectedRoute } from "@/components/protected-route";
 import Home from "./pages/landing";
 import DashboardShell from "./pages/dashboard";
 import DashboardHome from "./pages/home";
+import NewProject from "./pages/new-project";
 import DashboardProfile from "./pages/profile";
-import DashboardCampaigns from "./pages/campaigns";
 import DashboardTrends from "./pages/trends";
 import DashboardAssets from "./pages/assets";
 import DashboardCompliance from "./pages/compliance";
+import Generate from "./pages/generate";
+import ProjectOverviewPage from "./pages/project-overview";
+import TaskDetailPage from "./pages/task-detail";
+import GenerateInitiator from "./pages/generate-initiator";
 
 function App() {
   return (
@@ -34,11 +38,19 @@ function App() {
               }
             >
               <Route index element={<DashboardHome />} />
+              <Route path="new" element={<NewProject />} />
               <Route path="profile" element={<DashboardProfile />} />
-              <Route path="campaigns" element={<DashboardCampaigns />} />
               <Route path="assets" element={<DashboardAssets />} />
               <Route path="trends" element={<DashboardTrends />} />
               <Route path="compliance" element={<DashboardCompliance />} />
+              <Route path="generate" element={<Generate />} />
+
+              {/* Project-scoped routes — static segments before dynamic :taskId */}
+              <Route path="project/:projectId" element={<ProjectOverviewPage />} />
+              <Route path="project/:projectId/compliance" element={<DashboardCompliance />} />
+              <Route path="project/:projectId/compliance/:taskId" element={<DashboardCompliance />} />
+              <Route path="project/:projectId/generate" element={<GenerateInitiator />} />
+              <Route path="project/:projectId/:taskId" element={<TaskDetailPage />} />
 
               {/* Redirect any other dashboard path to home */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -44,10 +44,12 @@ export function StepNavigator({
 
       const containerRect = containerRef.current!.getBoundingClientRect();
       const buttonRect = activeButton.getBoundingClientRect();
-      const targetX = buttonRect.left - containerRect.left;
+      const buttonCenter = buttonRect.left - containerRect.left + buttonRect.width / 2;
+      const indicatorWidth = buttonRect.width * 0.5;
 
       gsap.to(indicatorRef.current, {
-        x: targetX,
+        left: buttonCenter - indicatorWidth / 2,
+        width: indicatorWidth,
         opacity: 1,
         duration: 0.3,
         ease: "power2.out",
@@ -98,7 +100,8 @@ export function StepNavigator({
         {/* Active step indicator underline */}
         <div
           ref={indicatorRef}
-          className="absolute bottom-0 left-0 h-0.5 w-16 bg-primary rounded-full opacity-0"
+          className="absolute bottom-0 left-0 h-0.5 bg-primary rounded-full opacity-0"
+          style={{ width: 40 }}
           aria-hidden="true"
         />
 

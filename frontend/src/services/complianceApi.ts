@@ -123,9 +123,21 @@ export interface ComplianceResult {
   explanation: string;
   suggestion: string;
   localization: Localization;
+  localization_plan?: string;
   persona: Persona | null;
   violations: Violation[];
   high_risk_indicators?: string[];
+  high_risk_indicator?: string[];
+  verification?: {
+    verified: { violation: string; confirmed: boolean; sources: string[] }[];
+    confidence: string;
+    confirmed_ratio: string;
+  };
+  violations_timeline?: { start?: number; end?: number; description?: string; severity?: string }[];
+  segmentation?: { segmented_image_path?: string; detections?: unknown[]; num_masks?: number };
+  s3_upload_key?: string;
+  s3_remix_key?: string;
+  s3_segmented_key?: string;
   processing_time_seconds: number;
 }
 

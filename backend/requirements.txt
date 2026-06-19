@@ -39,6 +39,9 @@ boto3
 # Data validation
 pydantic
 
+# Supabase (structured data persistence)
+supabase
+
 # Testing
 pytest
 hypothesis

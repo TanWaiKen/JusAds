@@ -434,8 +434,10 @@ def segment_violations(image_path: str, high_risk_indicators: list):
         draw.text((10, 10 + i * 18), f"■ {det['label']}", fill=label_color)
 
     os.makedirs("assets/results", exist_ok=True)
-    output_path = f"assets/results/segmented_{os.path.basename(image_path)}"
-    overlay.save(output_path)
+    # Always save as PNG since the overlay is RGBA (JPEG doesn't support transparency)
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    output_path = f"assets/results/segmented_{base_name}.png"
+    overlay.save(output_path, format="PNG")
 
     logger.info(f"Segmentation saved to {output_path}")
     return {

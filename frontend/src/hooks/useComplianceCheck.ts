@@ -3,12 +3,11 @@ import type { UploadParams } from "@/types/compliance";
 import type {
   NodeStatus,
   ComplianceResult,
-  StreamEvent,
 } from "@/services/complianceApi";
 import { API_BASE } from "@/services/complianceApi";
 
 export interface UseComplianceCheckReturn {
-  submit: (params: UploadParams) => Promise<ComplianceResult>;
+  submit: (params: UploadParams & { projectId?: string }) => Promise<ComplianceResult>;
   isStreaming: boolean;
   nodeStatuses: NodeStatus[];
   currentNode: string | null;
@@ -17,9 +16,24 @@ export interface UseComplianceCheckReturn {
 }
 
 /**
- * Custom hook that encapsulates SSE streaming logic for compliance checks.
- * Submits multipart/form-data to POST /api/compliance/check, reads the SSE
- * stream via ReadableStream reader, and tracks node status updates in state.
+ * Derives the WebSocket base URL from the HTTP API_BASE.
+ * Converts http:// → ws:// and https:// → wss://
+ */
+function getWsBase(): string {
+  if (API_BASE.startsWith("https://")) {
+    return API_BASE.replace("https://", "wss://");
+  }
+  return API_BASE.replace("http://", "ws://");
+}
+
+/**
+ * Custom hook that encapsulates the WebSocket streaming logic for compliance checks.
+ *
+ * Flow:
+ * 1. POST multipart/form-data to /api/compliance/check → get { check_id }
+ * 2. Connect to WebSocket at /ws/{check_id}
+ * 3. Listen for node_status, result, interrupt, and error events
+ * 4. Resolve the promise when result arrives
  */
 export function useComplianceCheck(): UseComplianceCheckReturn {
   const [isStreaming, setIsStreaming] = useState(false);
@@ -30,12 +44,11 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
     retryable: boolean;
   } | null>(null);
 
-  const lastParamsRef = useRef<UploadParams | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const errorSetRef = useRef(false);
+  const lastParamsRef = useRef<(UploadParams & { projectId?: string }) | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   const submit = useCallback(
-    async (params: UploadParams): Promise<ComplianceResult> => {
+    async (params: UploadParams & { projectId?: string }): Promise<ComplianceResult> => {
       // Store params for retry
       lastParamsRef.current = params;
 
@@ -44,14 +57,13 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
       setNodeStatuses([]);
       setCurrentNode(null);
       setError(null);
-      errorSetRef.current = false;
 
-      // Abort any previous in-flight request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+      // Close any previous WebSocket
+      if (wsRef.current) {
+        console.log("[ComplianceCheck] Closing previous WebSocket connection");
+        wsRef.current.close();
+        wsRef.current = null;
       }
-      const abortController = new AbortController();
-      abortControllerRef.current = abortController;
 
       // Construct FormData
       const formData = new FormData();
@@ -63,13 +75,34 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
       formData.append("market", params.market);
       formData.append("ethnicity", params.ethnicity);
       formData.append("age_group", params.ageGroup);
+      if (params.projectId) {
+        formData.append("project_id", params.projectId);
+      }
+      // Pass username if available (for S3 bucket path)
+      const username = (params as Record<string, unknown>).username as string | undefined;
+      if (username) {
+        formData.append("username", username);
+      }
+
+      console.log("[ComplianceCheck] Submitting compliance check", {
+        hasFile: !!params.file,
+        hasText: !!params.text,
+        market: params.market,
+        ethnicity: params.ethnicity,
+        ageGroup: params.ageGroup,
+        projectId: params.projectId,
+        username,
+      });
 
       try {
+        // Step 1: POST to initiate the check — returns JSON with check_id
+        console.log("[ComplianceCheck] POST /api/compliance/check");
         const res = await fetch(`${API_BASE}/api/compliance/check`, {
           method: "POST",
           body: formData,
-          signal: abortController.signal,
         });
+
+        console.log("[ComplianceCheck] Response status:", res.status);
 
         if (!res.ok) {
           const retryable = res.status >= 500;
@@ -77,71 +110,174 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
             res.status === 400
               ? "Validation error: please provide a file or text"
               : `Server error (${res.status})`;
+          console.error("[ComplianceCheck] HTTP error:", message);
           setError({ message, retryable });
-          errorSetRef.current = true;
           setIsStreaming(false);
           throw new Error(message);
         }
 
-        // Read SSE stream via ReadableStream reader
-        const reader = res.body!.getReader();
-        const decoder = new TextDecoder();
-        let finalResult: ComplianceResult | null = null;
-        let buffer = "";
+        const initData = await res.json() as {
+          check_id: string;
+          media_type: string;
+          status: string;
+          ws_url: string;
+          s3_upload_key: string | null;
+        };
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        console.log("[ComplianceCheck] Check initiated:", initData);
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+        // Store the upload URL for inclusion in final result
+        const uploadUrl = initData.s3_upload_key;
 
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const event = JSON.parse(line.slice(6)) as StreamEvent;
+        // Step 2: Connect to WebSocket for real-time streaming
+        const wsBase = getWsBase();
+        const wsUrl = `${wsBase}/ws/${initData.check_id}`;
+        console.log("[ComplianceCheck] Connecting WebSocket:", wsUrl);
 
-                if (event.type === "node_status") {
-                  setNodeStatuses((prev) => [...prev, event]);
-                  setCurrentNode(event.node);
-                } else if (event.type === "result") {
-                  finalResult = event.data;
+        return new Promise<ComplianceResult>((resolve, reject) => {
+          const ws = new WebSocket(wsUrl);
+          wsRef.current = ws;
+
+          // Timeout — if no result after 5 minutes, give up
+          const timeout = setTimeout(() => {
+            console.warn("[ComplianceCheck] WebSocket timeout after 5 minutes");
+            ws.close();
+            const msg = "Pipeline timed out — no result received within 5 minutes";
+            setError({ message: msg, retryable: true });
+            setIsStreaming(false);
+            reject(new Error(msg));
+          }, 5 * 60 * 1000);
+
+          ws.onopen = () => {
+            console.log("[ComplianceCheck] WebSocket connected");
+            // Send a ping to confirm connection
+            ws.send(JSON.stringify({ action: "ping" }));
+          };
+
+          ws.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data) as Record<string, unknown>;
+              const eventType = data.type as string;
+              console.log("[ComplianceCheck] WS event:", eventType, data);
+
+              switch (eventType) {
+                case "node_status": {
+                  const nodeStatus: NodeStatus = {
+                    type: "node_status",
+                    node: data.node as string,
+                    status: data.status as "running" | "completed" | "error",
+                    description: data.description as string,
+                  };
+                  setNodeStatuses((prev) => [...prev, nodeStatus]);
+                  setCurrentNode(nodeStatus.node);
+                  console.log("[ComplianceCheck] Node status:", nodeStatus.node, "→", nodeStatus.status);
+                  break;
                 }
-              } catch {
-                // Skip malformed SSE lines
+
+                case "result": {
+                  clearTimeout(timeout);
+                  const payload = data.data as Record<string, unknown>;
+                  const innerResult = (payload.result ?? payload) as Record<string, unknown>;
+                  const result = {
+                    check_id: initData.check_id,
+                    market: (payload.market as string) || initData.media_type,
+                    s3_upload_key: uploadUrl || (payload.s3_upload_key as string) || undefined,
+                    s3_segmented_key: (payload.s3_segmented_key as string) || undefined,
+                    ...innerResult,
+                  } as ComplianceResult;
+                  console.log("[ComplianceCheck] ✅ Result received:", result);
+                  setIsStreaming(false);
+                  ws.close();
+                  resolve(result);
+                  break;
+                }
+
+                case "media_urls": {
+                  // Late-arriving media URLs — log but don't block
+                  console.log("[ComplianceCheck] 🖼️ Media URLs received (late):", data);
+                  break;
+                }
+
+                case "interrupt": {
+                  console.log("[ComplianceCheck] ⏸ Interrupt received — auto-resuming with 'ok'");
+                  // Human-in-the-loop: auto-approve for now (send "ok")
+                  ws.send(JSON.stringify({ action: "resume", decision: "ok" }));
+                  break;
+                }
+
+                case "error": {
+                  clearTimeout(timeout);
+                  const errorMsg = (data.message as string) || "Pipeline error";
+                  console.error("[ComplianceCheck] ❌ Error event:", errorMsg, data);
+                  setError({ message: errorMsg, retryable: true });
+                  setIsStreaming(false);
+                  ws.close();
+                  reject(new Error(errorMsg));
+                  break;
+                }
+
+                case "pong":
+                  console.log("[ComplianceCheck] Pong received — connection confirmed");
+                  break;
+
+                case "progress": {
+                  const progressMsg = data.message as string;
+                  console.log("[ComplianceCheck] 📌 Progress:", progressMsg);
+                  // Emit as a node_status-like event so the CheckStep shows it
+                  const progressStatus: NodeStatus = {
+                    type: "node_status",
+                    node: "progress",
+                    status: "running" as "running" | "completed" | "error",
+                    description: progressMsg,
+                  };
+                  setNodeStatuses((prev) => [...prev, progressStatus]);
+                  break;
+                }
+
+                default:
+                  console.log("[ComplianceCheck] Unknown event type:", eventType, data);
+              }
+            } catch (parseErr) {
+              console.warn("[ComplianceCheck] Failed to parse WS message:", event.data, parseErr);
+            }
+          };
+
+          ws.onerror = (err) => {
+            clearTimeout(timeout);
+            console.error("[ComplianceCheck] WebSocket error:", err);
+            const msg = "WebSocket connection error";
+            setError({ message: msg, retryable: true });
+            setIsStreaming(false);
+            reject(new Error(msg));
+          };
+
+          ws.onclose = (event) => {
+            clearTimeout(timeout);
+            console.log("[ComplianceCheck] WebSocket closed:", {
+              code: event.code,
+              reason: event.reason,
+              wasClean: event.wasClean,
+            });
+            // Only set error if we didn't already resolve/reject
+            if (isStreaming) {
+              if (!event.wasClean) {
+                setError({
+                  message: "Connection lost unexpectedly",
+                  retryable: true,
+                });
+                setIsStreaming(false);
               }
             }
-          }
-        }
-
-        if (!finalResult) {
-          setError({
-            message: "Stream ended without a result. The check may be incomplete.",
-            retryable: true,
-          });
-          errorSetRef.current = true;
-          setIsStreaming(false);
-          throw new Error("Stream ended without result");
-        }
-
-        setIsStreaming(false);
-        return finalResult;
+          };
+        });
       } catch (err: unknown) {
         setIsStreaming(false);
-
-        // Don't overwrite error state if already set (e.g. from HTTP status handling)
-        if (err instanceof DOMException && err.name === "AbortError") {
-          // Request was aborted, don't set error
-          throw err;
-        }
-
-        if (!errorSetRef.current) {
+        console.error("[ComplianceCheck] Submit error:", err);
+        if (!(err instanceof Error && error)) {
           const message =
             err instanceof Error ? err.message : "Connection failed";
           setError({ message, retryable: true });
         }
-
         throw err;
       }
     },
@@ -149,6 +285,7 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
   );
 
   const retry = useCallback(() => {
+    console.log("[ComplianceCheck] Retrying with previous params");
     if (lastParamsRef.current) {
       submit(lastParamsRef.current);
     }

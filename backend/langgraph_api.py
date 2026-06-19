@@ -1,55 +1,49 @@
 """
-JusAds Compliance LangGraph API
-=================================
-Single entry point: POST /api/compliance/check
-
-The graph auto-routes based on media type:
-  text  → text_check
-  image → image_check
-  audio → transcribe → text_check
-  video → video_check → parse_violations → extract_clips
+JusAds Compliance API
+======================
+Uses the agent/ pipeline for compliance checks with WebSocket streaming,
+S3 storage, Supabase persistence, and human-in-the-loop decision flow.
 
 Usage:
-  pip install fastapi uvicorn python-multipart langgraph
-  python -m uvicorn langgraph_api:app --reload --port 8000
+  uvicorn langgraph_api:app --reload --port 8000
 """
 
+import asyncio
 import json
 import logging
-import mimetypes
 import os
-import subprocess
 import sys
-import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Dict
 
 from dotenv import load_dotenv
 
-# Load .env from backend/ directory (picks up LangSmith + all other keys)
+# Load .env from backend/ directory
 load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ValidationError, field_validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from langgraph.graph import StateGraph, END
-
-from jusads_text_compliance.text_checker import TextComplianceChecker
-from jusads_image_compliance.image_checker import ImageComplianceChecker
-from jusads_video_compliance.step1_compliance_check import check_compliance as video_check_compliance
-from jusads_video_compliance.step2_parse_violations import parse_violations
-from jusads_transcription.transcriber import Transcriber
-from jusads_remix_pipeline.api import remix_router
+from agent.utils import detect_media_type_from_filename
+from agent.ws_manager import ConnectionManager
+from agent.supabase_client import SupabaseComplianceStore
+from agent.s3_client import S3MediaClient, build_s3_key
+from agent.validators import validate_file_size, validate_user_quota
+from agent.fallback_queue import FallbackQueue
+from agent.models import CheckRecord, CreateTaskRequest, UpdatePipelineRequest, UpdateProjectRequest
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="JusAds Compliance LangGraph API")
+app = FastAPI(title="JusAds Compliance API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,10 +52,105 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register remix pipeline router
-app.include_router(remix_router, prefix="/remix", tags=["remix"])
 
-# Directories
+@app.exception_handler(ValidationError)
+async def pydantic_validation_exception_handler(request, exc: ValidationError) -> JSONResponse:
+    """Return 400 for Pydantic validation errors."""
+    errors = exc.errors()
+    messages = [e.get("msg", "Validation error") for e in errors]
+    return JSONResponse(status_code=400, content={"error": "; ".join(messages)})
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return 400 for request validation errors (FastAPI body/query param validation)."""
+    errors = exc.errors()
+    messages = [e.get("msg", "Validation error") for e in errors]
+    return JSONResponse(status_code=400, content={"error": "; ".join(messages)})
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# S3 / SUPABASE / FALLBACK CLIENTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Initialize S3 client (graceful — logs warning if credentials missing)
+try:
+    s3_client = S3MediaClient()
+    logger.info("[Init] S3MediaClient initialized successfully.")
+except Exception as _s3_init_err:
+    logger.warning("S3MediaClient initialization failed: %s — S3 uploads will be skipped.", _s3_init_err)
+    s3_client = None  # type: ignore[assignment]
+
+# Initialize Supabase client (graceful — logs warning if credentials missing)
+try:
+    supabase_store = SupabaseComplianceStore()
+    logger.info("[Init] SupabaseComplianceStore initialized successfully.")
+except Exception as _supa_init_err:
+    logger.warning("SupabaseComplianceStore initialization failed: %s — persistence will fallback to local.", _supa_init_err)
+    supabase_store = None  # type: ignore[assignment]
+
+# Fallback queue for retrying failed S3/Supabase operations
+fallback_queue = FallbackQueue(
+    supabase_client=supabase_store,
+    s3_client=s3_client,
+)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# WEBSOCKET CONNECTION MANAGER & DECISION COORDINATION
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+manager = ConnectionManager()
+
+# Decision coordination for human-in-the-loop
+pending_decisions: Dict[str, asyncio.Event] = {}
+decision_store: Dict[str, str] = {}
+
+# Pipeline runner instance
+from agent.pipeline_runner import PipelineRunner  # noqa: E402
+
+pipeline_runner = PipelineRunner(
+    manager=manager,
+    pending_decisions=pending_decisions,
+    decision_store=decision_store,
+)
+
+
+async def handle_resume(check_id: str, decision: str) -> None:
+    """Store a human decision and signal the pipeline to continue."""
+    decision_store[check_id] = decision
+    event = pending_decisions.get(check_id)
+    if event:
+        event.set()
+    logger.info(f"[WS] Resume received for {check_id}: decision={decision}")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# WEBSOCKET ENDPOINT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+@app.websocket("/ws/{check_id}")
+async def websocket_endpoint(websocket: WebSocket, check_id: str):
+    """Bidirectional WebSocket for compliance check events and human decisions."""
+    await manager.connect(check_id, websocket)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action = data.get("action")
+            if action == "resume":
+                await handle_resume(check_id, data.get("decision", "ok"))
+            elif action == "ping":
+                await websocket.send_json({"type": "pong"})
+    except WebSocketDisconnect:
+        manager.disconnect(check_id)
+        pending_decisions.pop(check_id, None)
+        decision_store.pop(check_id, None)
+        logger.info(f"[WS] Client disconnected: {check_id}")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# DIRECTORIES
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 UPLOAD_DIR = Path("assets/uploads")
 CLIPS_DIR = Path("assets/clips")
 RESULTS_DIR = Path("assets/results")
@@ -71,190 +160,14 @@ CLIPS_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/clips", StaticFiles(directory=str(CLIPS_DIR)), name="clips")
+app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
-SIMPLE_FRONTEND = Path(__file__).parent / "frontend"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# UNIFIED STATE
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-class ComplianceState(TypedDict):
-    # Input
-    check_id: str
-    media_type: str  # "text" | "image" | "audio" | "video"
-    file_path: str
-    filename: str
-    text_input: str
-    market: str
-    ethnicity: str
-    age_group: str
-    # Intermediate
-    transcript: str
-    violations: list[dict]
-    violation_clips: list[dict]
-    # Output
-    result: dict
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# NODES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-def node_router(state: ComplianceState) -> dict:
-    """Detect media type — already set by the API endpoint."""
-    logger.info(f"[Router] Media type: {state['media_type']}")
-    return {}
-
-
-def node_transcribe(state: ComplianceState) -> dict:
-    """Transcribe audio/video to text using AWS Transcribe."""
-    logger.info(f"[Transcribe] Processing {state['file_path']}...")
-    transcriber = Transcriber()
-    transcript = transcriber.transcribe_media(state["file_path"])
-    logger.info(f"[Transcribe] Got {len(transcript)} chars")
-    return {"transcript": transcript}
-
-
-def node_text_check(state: ComplianceState) -> dict:
-    """Run text compliance check."""
-    text = state["text_input"] or state["transcript"]
-    logger.info(f"[TextCheck] Checking {len(text)} chars...")
-    checker = TextComplianceChecker()
-    result = checker.check_compliance(
-        ad_text=text,
-        market=state["market"],
-        ethnicity=state["ethnicity"],
-        age_group=state["age_group"],
-    )
-    if state["transcript"]:
-        result["transcript_used"] = state["transcript"]
-    return {"result": result}
-
-
-def node_image_check(state: ComplianceState) -> dict:
-    """Run image compliance check."""
-    logger.info(f"[ImageCheck] Checking {state['file_path']}...")
-    checker = ImageComplianceChecker()
-    result = checker.check_compliance(
-        image_path=state["file_path"],
-        market=state["market"],
-        ethnicity=state["ethnicity"],
-        age_group=state["age_group"],
-    )
-    return {"result": result}
-
-
-def node_video_check(state: ComplianceState) -> dict:
-    """Run video compliance check (multimodal: visual + audio)."""
-    logger.info(f"[VideoCheck] Checking {state['file_path']}...")
-    result = video_check_compliance(
-        state["file_path"], state["market"], state["ethnicity"], state["age_group"]
-    )
-    return {"result": result}
-
-
-def node_parse_violations(state: ComplianceState) -> dict:
-    """Parse violations from compliance result."""
-    logger.info("[ParseViolations] Extracting timestamps...")
-    violations = parse_violations(state["result"])
-    return {"violations": violations}
-
-
-def node_extract_clips(state: ComplianceState) -> dict:
-    """Extract video clips for each violation."""
-    logger.info(f"[ExtractClips] {len(state['violations'])} clips...")
-    check_id = state["check_id"]
-    clips = []
-
-    for i, v in enumerate(state["violations"]):
-        clip_filename = f"{check_id}_violation_{i}.mp4"
-        clip_path = str(CLIPS_DIR / clip_filename)
-        extracted = _extract_clip(state["file_path"], v["start"], v["end"], clip_path)
-        clips.append({
-            "index": i,
-            "start": v["start"],
-            "end": v["end"],
-            "type": v["type"],
-            "category": v["category"],
-            "severity": v["severity"],
-            "description": v["description"],
-            "clip_url": f"/clips/{clip_filename}" if extracted else None,
-        })
-
-    return {"violation_clips": clips}
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTING LOGIC
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-def route_by_media_type(state: ComplianceState) -> str:
-    """Conditional edge: route to the correct branch based on media_type."""
-    media = state["media_type"]
-    if media == "text":
-        return "text_check"
-    elif media == "image":
-        return "image_check"
-    elif media == "audio":
-        return "transcribe"
-    elif media == "video":
-        return "video_check"
-    return "text_check"
-
-
-def route_after_video_check(state: ComplianceState) -> str:
-    """After video check, always parse violations."""
-    return "parse_violations"
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# BUILD THE GRAPH
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-workflow = StateGraph(ComplianceState)
-
-# Add all nodes
-workflow.add_node("router", node_router)
-workflow.add_node("text_check", node_text_check)
-workflow.add_node("image_check", node_image_check)
-workflow.add_node("transcribe", node_transcribe)
-workflow.add_node("video_check", node_video_check)
-workflow.add_node("parse_violations", node_parse_violations)
-workflow.add_node("extract_clips", node_extract_clips)
-
-# Entry point
-workflow.set_entry_point("router")
-
-# Router → branch by media type
-workflow.add_conditional_edges("router", route_by_media_type, {
-    "text_check": "text_check",
-    "image_check": "image_check",
-    "transcribe": "transcribe",
-    "video_check": "video_check",
-})
-
-# Text/Image → END
-workflow.add_edge("text_check", END)
-workflow.add_edge("image_check", END)
-
-# Audio: transcribe → text_check → END
-workflow.add_edge("transcribe", "text_check")
-
-# Video: video_check → parse_violations → extract_clips → END
-workflow.add_edge("video_check", "parse_violations")
-workflow.add_edge("parse_violations", "extract_clips")
-workflow.add_edge("extract_clips", END)
-
-compliance_graph = workflow.compile()
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# SINGLE API ENDPOINT
+# COMPLIANCE CHECK ENDPOINT
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
@@ -265,169 +178,470 @@ async def check_compliance(
     market: str = Form("malaysia"),
     ethnicity: str = Form("malay"),
     age_group: str = Form("all_ages"),
+    username: str = Form("anonymous"),
+    project_id: str = Form(None),
 ):
     """
     Single entry point for all compliance checks.
-    The graph auto-routes based on input:
-      - text field provided → text compliance
-      - file is image → image compliance
-      - file is audio → transcribe → text compliance
-      - file is video → video compliance → parse → extract clips
+    Routes through the agent pipeline based on media type.
 
-    Returns SSE stream with node status updates + final result.
+    Returns:
+        JSON with check_id, media_type, and instructions to connect via WebSocket
+        for real-time streaming updates.
     """
     check_id = uuid.uuid4().hex[:8]
+    s3_upload_key: str | None = None
 
-    # Determine media type
+    if not project_id:
+        # No project_id provided — create an ad-hoc project for this check
+        if supabase_store:
+            try:
+                proj = supabase_store.create_project(
+                    user_id=username,
+                    name="Untitled",
+                    media_type="compliance",
+                )
+                project_id = proj["id"]
+            except Exception:
+                project_id = str(uuid.uuid4())
+        else:
+            project_id = str(uuid.uuid4())
+
+    # ── Input validation ──────────────────────────────────────────────────────
     if text and not file:
         media_type = "text"
         file_path = ""
         filename = ""
     elif file:
         filename = file.filename or "upload"
-        mime, _ = mimetypes.guess_type(filename)
-        mime = mime or "application/octet-stream"
 
-        # Save file
+        # Read file content
+        file_content = await file.read()
+        file_size = len(file_content)
+
+        # Validate file size (raises HTTPException 400 if > 100 MB)
+        validate_file_size(file_size)
+
+        # Validate user quota
+        if s3_client:
+            try:
+                validate_user_quota(username, file_size, s3_client)
+            except Exception as quota_err:
+                from fastapi import HTTPException
+                if isinstance(quota_err, HTTPException):
+                    raise
+                logger.warning("Quota check failed (non-blocking): %s", quota_err)
+
+        # Save file locally
         upload_filename = f"{check_id}_{filename}"
         file_path = str(UPLOAD_DIR / upload_filename)
         with open(file_path, "wb") as f:
-            f.write(await file.read())
+            f.write(file_content)
 
-        # Detect type from MIME
-        if mime.startswith("image/"):
-            media_type = "image"
-        elif mime.startswith("audio/"):
-            media_type = "audio"
-        elif mime.startswith("video/"):
-            media_type = "video"
-        else:
-            media_type = "text"
-            text = ""  # fallback
+        # ── S3 upload (with fallback to local) ────────────────────────────────
+        if s3_client:
+            try:
+                s3_key = build_s3_key(
+                    asset_type="upload",
+                    username=username,
+                    project_id=project_id,
+                    check_id=check_id,
+                    filename=filename,
+                )
+                s3_client.upload_file(file_path, s3_key)
+                s3_upload_key = s3_client.get_public_url(s3_key)
+                logger.info("[API] S3 upload succeeded: %s", s3_upload_key)
+            except Exception as s3_err:
+                logger.warning("[API] S3 upload failed — falling back to local: %s", s3_err)
+                fallback_queue.queue_s3_upload(file_path, build_s3_key(
+                    asset_type="upload", username=username,
+                    project_id=project_id, check_id=check_id, filename=filename,
+                ))
+
+        # Detect media type from filename
+        media_type = detect_media_type_from_filename(filename)
     else:
         return JSONResponse(status_code=400, content={"error": "Provide either 'text' or 'file'"})
 
     logger.info(f"[API] check_id={check_id}, media_type={media_type}, file={filename}")
 
-    def generate_events():
-        state: ComplianceState = {
-            "check_id": check_id,
-            "media_type": media_type,
-            "file_path": file_path,
-            "filename": filename,
-            "text_input": text or "",
-            "market": market,
-            "ethnicity": ethnicity,
-            "age_group": age_group,
-            "transcript": "",
-            "violations": [],
-            "violation_clips": [],
-            "result": {},
-        }
+    # Return immediately with check_id — client connects via WebSocket for streaming
+    # Also start the pipeline in the background
+    from agent.data_model import ComplianceState
 
-        node_descriptions = {
-            "router": "Detecting media type...",
-            "text_check": "Running text compliance check...",
-            "image_check": "Running image compliance check...",
-            "transcribe": "Transcribing audio (AWS Transcribe)...",
-            "video_check": "Analyzing video compliance (Gemini + RAG)...",
-            "parse_violations": "Parsing violations...",
-            "extract_clips": "Extracting violation clips (FFmpeg)...",
-        }
-
-        # Stream through LangGraph
-        final_state = state
-        for event in compliance_graph.stream(state, stream_mode="updates"):
-            for node_name, node_output in event.items():
-                desc = node_descriptions.get(node_name, node_name)
-                sse = json.dumps({
-                    "type": "node_status",
-                    "node": node_name,
-                    "status": "completed",
-                    "description": desc,
-                })
-                yield f"data: {sse}\n\n"
-                if node_output:
-                    final_state.update(node_output)
-
-        # Build final response
-        result = final_state.get("result", {})
-        response = {
-            "check_id": check_id,
-            "media_type": media_type,
-            "filename": filename,
-            "market": market,
-            "ethnicity": ethnicity,
-            "age_group": age_group,
-            "risk_percentage": result.get("risk_percentage", result.get("RISK_PERCENTAGE", 50)),
-            "risk_band": result.get("risk_band", result.get("RISK_BAND", "Moderate")),
-            "confidence": result.get("confidence", result.get("CONFIDENCE", "low")),
-            "score": result.get("score", 100 - result.get("risk_percentage", result.get("RISK_PERCENTAGE", 50))),
-            "risk_level": result.get("risk_band", result.get("RISK_BAND", "Moderate")),
-            "explanation": result.get("explanation", ""),
-            "suggestion": result.get("suggestion", ""),
-            "localization": result.get("localization", {}),
-            "persona": _parse_persona(result.get("persona_used", "")),
-            "transcript": final_state.get("transcript", ""),
-            "violations": final_state.get("violation_clips", []),
-            "high_risk_indicators": result.get("high_risk_indicators", result.get("high_risk_indicator", [])),
-            "processing_time_seconds": result.get("processing_time_ms", 0) / 1000,
-        }
-
-        # Convert high_risk_indicators to violations format for image/text/audio
-        # Each media type has its own violation structure
-        if not response["violations"] and response.get("high_risk_indicators"):
-            if media_type == "text":
-                response["violations"] = [
-                    {
-                        "index": i,
-                        "type": "text",
-                        "phrase": indicator,
-                        "severity": "error" if response.get("risk_level") == "High" else "warning",
-                        "reason": "",
-                        "suggested_replacement": "",
-                    }
-                    for i, indicator in enumerate(response["high_risk_indicators"])
-                ]
-            elif media_type == "image":
-                response["violations"] = [
-                    {
-                        "index": i,
-                        "type": "visual",
-                        "component": indicator,
-                        "severity": "error" if response.get("risk_level") == "High" else "warning",
-                        "location_description": "",
-                        "edit_prompt": "",
-                    }
-                    for i, indicator in enumerate(response["high_risk_indicators"])
-                ]
-            elif media_type == "audio":
-                response["violations"] = [
-                    {
-                        "index": i,
-                        "type": "audio",
-                        "spoken_phrase": indicator,
-                        "severity": "error" if response.get("risk_level") == "High" else "warning",
-                        "reason": "",
-                        "suggested_replacement": "",
-                        "voice_gender": "",
-                    }
-                    for i, indicator in enumerate(response["high_risk_indicators"])
-                ]
-
-        _save_result(check_id, response)
-        yield f"data: {json.dumps({'type': 'result', 'data': response})}\n\n"
-
-        # If risk > 30%, suggest remix
-        risk_pct = response.get("risk_percentage", 0)
-        if risk_pct > 30 and media_type in ("video", "image", "audio"):
-            yield f"data: {json.dumps({'type': 'ask_user', 'action': 'remix', 'message': f'Your content has {risk_pct}% risk of cultural backlash. Would you like to auto-remix it to reduce risk?', 'check_id': check_id})}\n\n"
-
-    return StreamingResponse(
-        generate_events(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    state = ComplianceState(
+        session_id=check_id,
+        media_type=media_type,
+        input_path=file_path,
+        text_input=text or "",
+        market=market,
+        platform="general",
+        ethnicity=ethnicity,
+        age_group=age_group,
     )
+
+    # Run pipeline in background task
+    async def run_pipeline():
+        try:
+            # Wait for the client to connect via WebSocket before starting the pipeline.
+            # The client receives the check_id from this response, then opens a WebSocket.
+            # Without this delay, pipeline events are emitted before anyone is listening.
+            max_wait = 10.0  # seconds
+            interval = 0.2
+            elapsed = 0.0
+            while elapsed < max_wait:
+                if manager.get_connection(check_id):
+                    logger.info(f"[Pipeline] Client connected for {check_id} after {elapsed:.1f}s")
+                    break
+                await asyncio.sleep(interval)
+                elapsed += interval
+            else:
+                logger.warning(f"[Pipeline] No client connected for {check_id} after {max_wait}s — running anyway")
+
+            result = await pipeline_runner.run_with_human_loop(check_id, state)
+            if result:
+                response = result.result if hasattr(result, 'result') else {}
+
+                # Upload segmented image to S3
+                s3_segmented_url = None
+                segmented_path = response.get("segmentation", {}).get("segmented_image_path") if isinstance(response.get("segmentation"), dict) else None
+                if segmented_path and s3_client and os.path.exists(segmented_path):
+                    try:
+                        s3_seg_key = build_s3_key(
+                            asset_type="segmented",
+                            username=username,
+                            project_id=project_id,
+                            check_id=check_id,
+                            filename=os.path.basename(segmented_path),
+                        )
+                        s3_segmented_url = s3_client.upload_file_public(segmented_path, s3_seg_key)
+                        logger.info("[Pipeline] Segmented uploaded to S3: %s", s3_segmented_url)
+                    except Exception as seg_err:
+                        logger.warning("[Pipeline] Segmented S3 upload failed: %s", seg_err)
+
+                # Send enriched result with image URLs via WS
+                # (pipeline_runner already sent a basic result, but we send media_urls if still connected)
+                await manager.send_message(check_id, {
+                    "type": "media_urls",
+                    "s3_upload_key": s3_upload_key,
+                    "s3_segmented_key": s3_segmented_url,
+                })
+
+                # Persist to Supabase
+                _persist_check_record(
+                    check_id=check_id,
+                    username=username,
+                    project_id=project_id,
+                    media_type=media_type,
+                    market=market,
+                    ethnicity=ethnicity,
+                    age_group=age_group,
+                    response=response,
+                    s3_upload_key=s3_upload_key,
+                    s3_segmented_key=s3_segmented_url,
+                    violations=[],
+                )
+        except Exception as e:
+            logger.error(f"[Pipeline] Error for {check_id}: {e}")
+            await manager.send_error(check_id, "pipeline", str(e)[:200], can_continue=False)
+
+    asyncio.create_task(run_pipeline())
+
+    return JSONResponse(content={
+        "check_id": check_id,
+        "media_type": media_type,
+        "status": "processing",
+        "message": "Connect to WebSocket for real-time updates",
+        "ws_url": f"/ws/{check_id}",
+        "s3_upload_key": s3_upload_key,
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PROJECT MODELS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+class CreateProjectRequest(BaseModel):
+    """Request body for POST /api/projects."""
+
+    name: str
+    media_type: str
+    username: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate project name is non-empty and ≤255 characters."""
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Project name cannot be empty")
+        if len(stripped) > 255:
+            raise ValueError("Project name cannot exceed 255 characters")
+        return stripped
+
+    @field_validator("media_type")
+    @classmethod
+    def validate_media_type(cls, v: str) -> str:
+        """Validate media_type is one of the allowed values."""
+        valid = {"compliance", "generation"}
+        if v not in valid:
+            raise ValueError(f"media_type must be one of: {', '.join(sorted(valid))}")
+        return v
+
+
+class ProjectResponse(BaseModel):
+    """Response body for project endpoints."""
+
+    id: str
+    user_id: str
+    name: str
+    media_type: str
+    created_at: str
+    updated_at: str
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PROJECT ENDPOINTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+@app.post("/api/projects")
+async def create_project(body: CreateProjectRequest) -> JSONResponse:
+    """Create a new project. Persists to Supabase projects table.
+
+    Returns 201 with the created project including generated UUID.
+    Returns 400 if validation fails (empty name, invalid media_type).
+    Returns 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        result = supabase_store.create_project(
+            user_id=body.username,
+            name=body.name,
+            media_type=body.media_type,
+        )
+        return JSONResponse(status_code=201, content=result)
+    except Exception as e:
+        logger.error("Failed to create project: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/projects")
+async def list_projects(username: str = Query(...)) -> JSONResponse:
+    """List all projects for a user, sorted by created_at descending.
+
+    Returns 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        projects = supabase_store.get_projects(user_id=username)
+        return JSONResponse(content=projects)
+    except Exception as e:
+        logger.error("Failed to list projects: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/projects/{project_id}/checks")
+async def get_project_checks(project_id: str) -> JSONResponse:
+    """Fetch compliance checks for a specific project, ordered by created_at descending.
+
+    Returns 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        checks = supabase_store.get_project_checks(project_id=project_id)
+        return JSONResponse(content=checks)
+    except Exception as e:
+        logger.error("Failed to get project checks: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TASK ENDPOINTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+@app.get("/api/projects/{project_id}/tasks")
+async def list_tasks(project_id: str) -> JSONResponse:
+    """List all tasks for a project, ordered by created_at descending.
+
+    Returns unified task summaries (id, type, status, summary, created_at).
+    Returns 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        tasks = supabase_store.list_tasks(project_id=project_id)
+        return JSONResponse(content=tasks)
+    except Exception as e:
+        logger.error("Failed to list tasks for project %s: %s", project_id, e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/projects/{project_id}/tasks/{task_id}")
+async def get_task_detail(project_id: str, task_id: str) -> JSONResponse:
+    """Get full task detail with type-specific data.
+
+    For compliance tasks, includes compliance check results and violations.
+    For generation tasks, includes pipeline_state.
+    Returns 404 if not found, 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        task = supabase_store.get_task_detail(project_id=project_id, task_id=task_id)
+        if task is None:
+            return JSONResponse(status_code=404, content={"error": "Task not found"})
+        return JSONResponse(content=task)
+    except Exception as e:
+        logger.error("Failed to get task %s: %s", task_id, e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/projects/{project_id}/tasks")
+async def create_task(project_id: str, body: CreateTaskRequest) -> JSONResponse:
+    """Create a new generation task with an empty pipeline.
+
+    Returns 201 with the created task.
+    Returns 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        task = supabase_store.create_task(
+            project_id=project_id,
+            task_type=body.type,
+            status="created",
+            summary=f"New {body.type} task",
+            pipeline_state={"nodes": [], "edges": [], "viewport": {"panX": 0, "panY": 0, "zoom": 1}} if body.type == "generation" else None,
+        )
+        return JSONResponse(status_code=201, content=task)
+    except Exception as e:
+        logger.error("Failed to create task for project %s: %s", project_id, e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.put("/api/projects/{project_id}/tasks/{task_id}/pipeline")
+async def update_task_pipeline(project_id: str, task_id: str, body: UpdatePipelineRequest) -> JSONResponse:
+    """Persist generation pipeline graph state and status.
+
+    Returns 200 on success, 404 if task not found, 503 if Supabase unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        success = supabase_store.update_task_pipeline(
+            project_id=project_id,
+            task_id=task_id,
+            status=body.status,
+            pipeline_state=body.pipeline_state,
+        )
+        if not success:
+            return JSONResponse(status_code=404, content={"error": "Task not found"})
+        return JSONResponse(content={"status": "updated"})
+    except Exception as e:
+        logger.error("Failed to update pipeline for task %s: %s", task_id, e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.patch("/api/projects/{project_id}")
+async def update_project(project_id: str, body: UpdateProjectRequest) -> JSONResponse:
+    """Update project name.
+
+    Returns 200 with the updated project row.
+    Returns 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        result = supabase_store.update_project_name(
+            project_id=project_id,
+            name=body.name,
+        )
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.error("Failed to update project %s: %s", project_id, e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: str) -> JSONResponse:
+    """Delete a project and all its associated data (cascade).
+
+    Returns 200 on success, 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        success = supabase_store.delete_project(project_id=project_id)
+        if not success:
+            return JSONResponse(status_code=500, content={"error": "Failed to delete project"})
+        return JSONResponse(content={"status": "deleted", "project_id": project_id})
+    except Exception as e:
+        logger.error("Failed to delete project %s: %s", project_id, e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.delete("/api/projects/{project_id}/tasks/{task_id}")
+async def delete_task(project_id: str, task_id: str) -> JSONResponse:
+    """Delete a single task from a project.
+
+    Returns 200 on success, 503 if Supabase is unavailable.
+    """
+    if not supabase_store:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        success = supabase_store.delete_task(project_id=project_id, task_id=task_id)
+        if not success:
+            return JSONResponse(status_code=500, content={"error": "Failed to delete task"})
+        return JSONResponse(content={"status": "deleted", "task_id": task_id})
+    except Exception as e:
+        logger.error("Failed to delete task %s: %s", task_id, e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# OTHER ENDPOINTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+@app.get("/api/compliance/history")
+async def get_compliance_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    """Fetch paginated compliance check history."""
+    user_id = "demo_user"
+
+    try:
+        store = SupabaseComplianceStore()
+        history = store.get_history(user_id=user_id, page=page, page_size=page_size)
+        return JSONResponse(content={
+            "records": [record.model_dump(mode="json") for record in history.records],
+            "total": history.total,
+            "page": history.page,
+            "page_size": history.page_size,
+        })
+    except Exception as e:
+        logger.error("Failed to fetch compliance history: %s", e)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to fetch compliance history", "detail": str(e)},
+        )
 
 
 @app.get("/api/compliance/{check_id}")
@@ -440,155 +654,56 @@ async def get_results(check_id: str):
         return JSONResponse(content=json.load(f))
 
 
-@app.post("/api/compliance/{check_id}/remix")
-async def remix_content(check_id: str):
+@app.get("/api/media/{check_id}/{asset_type}")
+async def get_media_url(check_id: str, asset_type: str):
+    """Generate a presigned URL for a compliance check media asset.
+
+    Returns a redirect to the presigned S3 URL so it can be used directly in <img src>.
     """
-    Trigger remediation for a previously checked asset.
-    Called when user confirms "Yes, remix it".
-    Streams SSE with remediation node status updates.
-    """
-    # Load previous result
-    result_path = RESULTS_DIR / f"{check_id}.json"
-    if not result_path.exists():
-        return JSONResponse(status_code=404, content={"error": "Check not found"})
+    from fastapi.responses import RedirectResponse
 
-    with open(result_path, "r", encoding="utf-8") as f:
-        prev_result = json.load(f)
+    if asset_type not in ("original", "remixed", "segmented"):
+        return JSONResponse(status_code=400, content={"error": "asset_type must be 'original', 'remixed', or 'segmented'"})
 
-    media_type = prev_result.get("media_type", "")
-    file_path = str(UPLOAD_DIR / f"{check_id}_{prev_result.get('filename', '')}")
+    try:
+        store = SupabaseComplianceStore()
+        response = (
+            store.client.table("compliance_checks")
+            .select("s3_upload_key, s3_segmented_key, s3_remix_key")
+            .eq("check_id", check_id)
+            .execute()
+        )
 
-    if not os.path.exists(file_path):
-        return JSONResponse(status_code=404, content={"error": "Original file not found"})
+        if not response.data:
+            return JSONResponse(status_code=404, content={"error": f"Check record not found: {check_id}"})
 
-    logger.info(f"[Remix] Starting remediation for {check_id} ({media_type})")
-
-    def generate_remix_events():
-        # Step 1: Signal start
-        yield f"data: {json.dumps({'type': 'node_status', 'node': 'remix_start', 'status': 'completed', 'description': 'Starting content remediation...'})}\n\n"
-
-        if media_type == "video":
-            # Import video remediation steps
-            import asyncio
-            from jusads_video_compliance.step3_visual_remediation import remediate_visual
-            from jusads_video_compliance.step4_audio_remediation import remediate_audio
-            from jusads_video_compliance.step5_compose_final import compose_final
-
-            violations = prev_result.get("violations", [])
-            visual_violations = [v for v in violations if v.get("type") == "visual"]
-            audio_violations = [v for v in violations if v.get("type") == "audio"]
-            market = prev_result.get("market", "malaysia")
-            ethnicity = prev_result.get("ethnicity", "malay")
-
-            output_dir = str(RESULTS_DIR / check_id)
-            os.makedirs(output_dir, exist_ok=True)
-
-            # Visual remediation
-            if visual_violations:
-                yield f"data: {json.dumps({'type': 'node_status', 'node': 'visual_remediation', 'status': 'running', 'description': f'Remediating {len(visual_violations)} visual violations (Gemini + Veo)...'})}\n\n"
-                try:
-                    visual_results = asyncio.run(remediate_visual(file_path, visual_violations, output_dir))
-                    fixed = sum(1 for r in visual_results if r["success"])
-                    yield f"data: {json.dumps({'type': 'node_status', 'node': 'visual_remediation', 'status': 'completed', 'description': f'Visual: {fixed}/{len(visual_violations)} fixed'})}\n\n"
-                except Exception as e:
-                    yield f"data: {json.dumps({'type': 'node_status', 'node': 'visual_remediation', 'status': 'error', 'description': str(e)})}\n\n"
-                    visual_results = []
-            else:
-                visual_results = []
-
-            # Audio remediation
-            if audio_violations:
-                yield f"data: {json.dumps({'type': 'node_status', 'node': 'audio_remediation', 'status': 'running', 'description': f'Remediating {len(audio_violations)} audio violations (ElevenLabs)...'})}\n\n"
-                try:
-                    audio_results = asyncio.run(remediate_audio(file_path, audio_violations, output_dir, market, ethnicity, "ms"))
-                    fixed = sum(1 for r in audio_results if r["success"])
-                    yield f"data: {json.dumps({'type': 'node_status', 'node': 'audio_remediation', 'status': 'completed', 'description': f'Audio: {fixed}/{len(audio_violations)} fixed'})}\n\n"
-                except Exception as e:
-                    yield f"data: {json.dumps({'type': 'node_status', 'node': 'audio_remediation', 'status': 'error', 'description': str(e)})}\n\n"
-                    audio_results = []
-            else:
-                audio_results = []
-
-            # Compose final
-            yield f"data: {json.dumps({'type': 'node_status', 'node': 'compose_final', 'status': 'running', 'description': 'Composing final video...'})}\n\n"
-            final_path = compose_final(file_path, visual_results, audio_results, output_dir)
-            yield f"data: {json.dumps({'type': 'node_status', 'node': 'compose_final', 'status': 'completed', 'description': f'Final video: {final_path}'})}\n\n"
-
-            remix_result = {
-                "check_id": check_id,
-                "status": "remixed",
-                "final_video": final_path,
-                "visual_fixed": sum(1 for r in visual_results if r["success"]),
-                "audio_fixed": sum(1 for r in audio_results if r["success"]),
-            }
-
-        elif media_type == "image":
-            # Image remediation
-            yield f"data: {json.dumps({'type': 'node_status', 'node': 'image_remediation', 'status': 'running', 'description': 'Regenerating compliant image (Gemini Flash Image)...'})}\n\n"
-            try:
-                from jusads_image_compliance.image_remediator import ImageRemediator
-                remediator = ImageRemediator()
-                remed_result = remediator.remediate(
-                    image_path=file_path,
-                    compliance_result=prev_result,
-                    market=prev_result.get("market", "malaysia"),
-                    ethnicity=prev_result.get("ethnicity", "malay"),
-                )
-                yield f"data: {json.dumps({'type': 'node_status', 'node': 'image_remediation', 'status': 'completed', 'description': 'Image remediated successfully'})}\n\n"
-                remix_result = {"check_id": check_id, "status": "remixed", **remed_result}
-            except Exception as e:
-                yield f"data: {json.dumps({'type': 'node_status', 'node': 'image_remediation', 'status': 'error', 'description': str(e)})}\n\n"
-                remix_result = {"check_id": check_id, "status": "error", "error": str(e)}
-
-        elif media_type == "audio":
-            # Audio: re-generate compliant script via text remediator
-            yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'running', 'description': 'Generating compliant script...'})}\n\n"
-            try:
-                from jusads_text_compliance.text_remediator import TextRemediator
-                remediator = TextRemediator()
-                transcript = prev_result.get("transcript", "")
-                remed_result = remediator.remediate(
-                    ad_text=transcript,
-                    compliance_result=prev_result,
-                    market=prev_result.get("market", "malaysia"),
-                    ethnicity=prev_result.get("ethnicity", "malay"),
-                )
-                yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'completed', 'description': 'Compliant script generated'})}\n\n"
-                remix_result = {"check_id": check_id, "status": "remixed", **remed_result}
-            except Exception as e:
-                yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'error', 'description': str(e)})}\n\n"
-                remix_result = {"check_id": check_id, "status": "error", "error": str(e)}
-
+        record = response.data[0]
+        if asset_type == "original":
+            s3_key = record.get("s3_upload_key")
+        elif asset_type == "segmented":
+            s3_key = record.get("s3_segmented_key")
         else:
-            # Text: re-generate compliant copy
-            yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'running', 'description': 'Rewriting compliant copy...'})}\n\n"
-            try:
-                from jusads_text_compliance.text_remediator import TextRemediator
-                remediator = TextRemediator()
-                remed_result = remediator.remediate(
-                    ad_text=prev_result.get("transcript", ""),
-                    compliance_result=prev_result,
-                    market=prev_result.get("market", "malaysia"),
-                    ethnicity=prev_result.get("ethnicity", "malay"),
-                )
-                yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'completed', 'description': 'Compliant copy generated'})}\n\n"
-                remix_result = {"check_id": check_id, "status": "remixed", **remed_result}
-            except Exception as e:
-                yield f"data: {json.dumps({'type': 'node_status', 'node': 'text_remediation', 'status': 'error', 'description': str(e)})}\n\n"
-                remix_result = {"check_id": check_id, "status": "error", "error": str(e)}
+            s3_key = record.get("s3_remix_key")
 
-        # Save remix result
-        remix_path = RESULTS_DIR / f"{check_id}_remix.json"
-        with open(remix_path, "w", encoding="utf-8") as f_out:
-            json.dump(remix_result, f_out, indent=2, ensure_ascii=False)
+        if not s3_key:
+            return JSONResponse(status_code=404, content={"error": f"No {asset_type} media found for {check_id}"})
 
-        yield f"data: {json.dumps({'type': 'remix_result', 'data': remix_result})}\n\n"
+        client = S3MediaClient()
+        url = client.generate_presigned_url(s3_key, expiry_seconds=3600)
+        return RedirectResponse(url=url)
 
-    return StreamingResponse(
-        generate_remix_events(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    except Exception as e:
+        logger.error("Failed to generate media URL for %s/%s: %s", check_id, asset_type, e)
+        return JSONResponse(status_code=500, content={"error": "Failed to generate media URL", "detail": str(e)})
+
+
+@app.get("/api/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "ok", "services": {
+        "s3": s3_client is not None,
+        "supabase": supabase_store is not None,
+    }}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -596,36 +711,86 @@ async def remix_content(check_id: str):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-def _save_result(check_id: str, data: dict):
-    result_path = RESULTS_DIR / f"{check_id}.json"
-    with open(result_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def _persist_check_record(
+    check_id: str,
+    username: str,
+    project_id: str,
+    media_type: str,
+    market: str,
+    ethnicity: str,
+    age_group: str,
+    response: dict,
+    s3_upload_key: str | None,
+    s3_segmented_key: str | None = None,
+    violations: list[dict] | None = None,
+) -> None:
+    """Persist compliance check result to Supabase with local fallback."""
+    now = datetime.now(timezone.utc)
+    violations = violations or []
 
+    record = CheckRecord(
+        check_id=check_id,
+        user_id=username,
+        project_id=uuid.UUID(project_id) if project_id else uuid.uuid4(),
+        media_type=media_type,
+        market=market,
+        ethnicity=ethnicity,
+        age_group=age_group,
+        risk_percentage=response.get("risk_percentage"),
+        risk_band=response.get("risk_band"),
+        confidence=response.get("confidence") if isinstance(response.get("confidence"), (int, float)) else None,
+        status="checked",
+        result_json=response,
+        s3_upload_key=s3_upload_key,
+        s3_segmented_key=s3_segmented_key,
+        s3_remix_key=None,
+        created_at=now,
+        updated_at=now,
+    )
 
-def _extract_clip(video_path: str, start: float, end: float, output_path: str) -> bool:
-    duration = end - start
-    if duration <= 0:
-        duration = 2.0
-    try:
-        cmd = [
-            "ffmpeg", "-y", "-ss", str(start), "-i", video_path,
-            "-t", str(duration), "-c:v", "libx264", "-c:a", "aac",
-            "-movflags", "+faststart", output_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        return result.returncode == 0 and os.path.exists(output_path)
-    except Exception as e:
-        logger.error(f"Clip extraction failed: {e}")
-        return False
+    if supabase_store:
+        try:
+            success = supabase_store.insert_check(record)
+            if success:
+                logger.info("[Persist] CheckRecord inserted: %s", check_id)
+                # Wire compliance task creation (Requirement 10.3, 4.3, 11.2)
+                try:
+                    supabase_store.create_task(
+                        project_id=project_id,
+                        task_type="compliance",
+                        status="checked",
+                        summary=f"Compliance check — {media_type} ({market})",
+                        reference_id=check_id,
+                    )
+                    logger.info("[Persist] Compliance task created for check: %s", check_id)
+                except Exception as task_err:
+                    # Task creation failure must never break compliance persistence
+                    logger.warning("[Persist] Failed to create compliance task for %s: %s", check_id, task_err)
+            else:
+                raise RuntimeError("insert_check returned False")
+        except Exception as e:
+            logger.warning("[Persist] Supabase failed for %s — queuing: %s", check_id, e)
+            fallback_queue.queue_supabase_write(check_id, record.model_dump(mode="json"))
+    else:
+        fallback_queue.queue_supabase_write(check_id, record.model_dump(mode="json"))
 
-
-def _parse_persona(persona_str: str) -> dict | None:
-    if not persona_str or persona_str == "No specific persona (ethnicity: all)":
-        return None
-    try:
-        return json.loads(persona_str)
-    except (json.JSONDecodeError, TypeError):
-        return None
+    # Insert violations
+    if violations and supabase_store:
+        try:
+            violation_rows = [
+                {
+                    "violation_index": v.get("index", i),
+                    "type": v.get("type", "unknown"),
+                    "severity": v.get("severity", "warning"),
+                    "description": v.get("description", ""),
+                    "start_time": v.get("start_time", v.get("start")),
+                    "end_time": v.get("end_time", v.get("end")),
+                }
+                for i, v in enumerate(violations)
+            ]
+            supabase_store.insert_violations(check_id, violation_rows)
+        except Exception as e:
+            logger.warning("[Persist] Violations insert failed for %s: %s", check_id, e)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -633,10 +798,7 @@ def _parse_persona(persona_str: str) -> dict | None:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 if FRONTEND_DIST.exists():
-    app.mount("/app", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
-
-if SIMPLE_FRONTEND.exists():
-    app.mount("/", StaticFiles(directory=str(SIMPLE_FRONTEND), html=True), name="simple-frontend")
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebSocket Compliance Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #eee; }
+    h1 { color: #4da6ff; }
+    .section { margin: 16px 0; padding: 12px; border: 1px solid #333; border-radius: 8px; }
+    .log { background: #0d0d1a; padding: 8px; margin: 4px 0; border-radius: 4px; font-size: 12px; white-space: pre-wrap; }
+    .log.info { border-left: 3px solid #4da6ff; }
+    .log.success { border-left: 3px solid #4caf50; }
+    .log.error { border-left: 3px solid #f44336; }
+    .log.event { border-left: 3px solid #ffeb3b; }
+    button { background: #4da6ff; color: #000; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px; }
+    button:hover { background: #80c0ff; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    input, select { background: #222; color: #eee; border: 1px solid #444; padding: 6px 10px; border-radius: 4px; margin: 4px; }
+    #logs { max-height: 500px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>🔌 WebSocket Compliance Test</h1>
+  <p>This page tests the full compliance flow: POST → get check_id → connect WebSocket → receive events</p>
+
+  <div class="section">
+    <h3>1. Test WebSocket Connection Only</h3>
+    <p>Connect to a fake check_id to verify the WS endpoint is reachable:</p>
+    <button onclick="testWsOnly()">Test WS Connection</button>
+  </div>
+
+  <div class="section">
+    <h3>2. Full Compliance Flow (Text)</h3>
+    <p>Submit a text compliance check and stream results via WebSocket:</p>
+    <input id="textInput" type="text" value="Buy now! Limited time offer for all Malaysians!" placeholder="Ad text..." style="width:400px">
+    <select id="market">
+      <option value="malaysia">Malaysia</option>
+      <option value="singapore">Singapore</option>
+    </select>
+    <br><br>
+    <button id="submitBtn" onclick="testFullFlow()">Submit Text Check</button>
+  </div>
+
+  <div class="section">
+    <h3>3. Full Compliance Flow (File)</h3>
+    <input id="fileInput" type="file" accept="image/*,video/*,audio/*">
+    <button onclick="testFileFlow()">Submit File Check</button>
+  </div>
+
+  <div class="section">
+    <h3>Logs</h3>
+    <button onclick="clearLogs()">Clear</button>
+    <div id="logs"></div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:8000';
+    const WS_BASE = 'ws://localhost:8000';
+
+    function log(msg, type = 'info') {
+      const el = document.getElementById('logs');
+      const div = document.createElement('div');
+      div.className = `log ${type}`;
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      el.prepend(div);
+      console.log(`[${type}]`, msg);
+    }
+
+    function clearLogs() {
+      document.getElementById('logs').innerHTML = '';
+    }
+
+    // ─── Test 1: WebSocket connection only ─────────────────────────────
+    function testWsOnly() {
+      const fakeId = 'test_' + Date.now().toString(36);
+      const wsUrl = `${WS_BASE}/ws/${fakeId}`;
+      log(`Connecting to ${wsUrl}...`);
+
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        log('✅ WebSocket CONNECTED', 'success');
+        log('Sending ping...');
+        ws.send(JSON.stringify({ action: 'ping' }));
+      };
+
+      ws.onmessage = (event) => {
+        log(`📨 Message: ${event.data}`, 'event');
+        // Close after pong
+        if (JSON.parse(event.data).type === 'pong') {
+          log('✅ Pong received — WS is working!', 'success');
+          ws.close();
+        }
+      };
+
+      ws.onerror = (err) => {
+        log(`❌ WebSocket ERROR: ${err}`, 'error');
+      };
+
+      ws.onclose = (event) => {
+        log(`WebSocket closed: code=${event.code}, clean=${event.wasClean}, reason="${event.reason}"`);
+      };
+    }
+
+    // ─── Test 2: Full text compliance flow ─────────────────────────────
+    async function testFullFlow() {
+      const text = document.getElementById('textInput').value;
+      const market = document.getElementById('market').value;
+
+      if (!text) {
+        log('❌ Please enter some text', 'error');
+        return;
+      }
+
+      document.getElementById('submitBtn').disabled = true;
+
+      const formData = new FormData();
+      formData.append('text', text);
+      formData.append('market', market);
+      formData.append('ethnicity', 'malay');
+      formData.append('age_group', 'all_ages');
+      formData.append('username', 'test_user');
+
+      log(`POST /api/compliance/check — text="${text.slice(0, 50)}...", market=${market}`);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/compliance/check`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        log(`Response status: ${res.status}`);
+
+        if (!res.ok) {
+          const body = await res.text();
+          log(`❌ HTTP Error: ${res.status} — ${body}`, 'error');
+          document.getElementById('submitBtn').disabled = false;
+          return;
+        }
+
+        const data = await res.json();
+        log(`✅ Check initiated: ${JSON.stringify(data)}`, 'success');
+
+        // Now connect WebSocket
+        connectAndListen(data.check_id);
+      } catch (err) {
+        log(`❌ Fetch error: ${err.message}`, 'error');
+        document.getElementById('submitBtn').disabled = false;
+      }
+    }
+
+    // ─── Test 3: Full file compliance flow ─────────────────────────────
+    async function testFileFlow() {
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        log('❌ Please select a file', 'error');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('market', 'malaysia');
+      formData.append('ethnicity', 'malay');
+      formData.append('age_group', 'all_ages');
+      formData.append('username', 'test_user');
+
+      log(`POST /api/compliance/check — file="${file.name}" (${(file.size / 1024).toFixed(1)} KB)`);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/compliance/check`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        log(`Response status: ${res.status}`);
+
+        if (!res.ok) {
+          const body = await res.text();
+          log(`❌ HTTP Error: ${res.status} — ${body}`, 'error');
+          return;
+        }
+
+        const data = await res.json();
+        log(`✅ Check initiated: ${JSON.stringify(data)}`, 'success');
+
+        connectAndListen(data.check_id);
+      } catch (err) {
+        log(`❌ Fetch error: ${err.message}`, 'error');
+      }
+    }
+
+    // ─── WebSocket listener ────────────────────────────────────────────
+    function connectAndListen(checkId) {
+      const wsUrl = `${WS_BASE}/ws/${checkId}`;
+      log(`Connecting WebSocket: ${wsUrl}`);
+
+      const ws = new WebSocket(wsUrl);
+      let eventCount = 0;
+
+      ws.onopen = () => {
+        log('✅ WebSocket connected for check: ' + checkId, 'success');
+        ws.send(JSON.stringify({ action: 'ping' }));
+      };
+
+      ws.onmessage = (event) => {
+        eventCount++;
+        const data = JSON.parse(event.data);
+        const type = data.type;
+
+        switch (type) {
+          case 'pong':
+            log('🏓 Pong — connection confirmed', 'event');
+            break;
+
+          case 'node_status':
+            log(`🔄 Node: "${data.node}" → ${data.status} — ${data.description}`, 'event');
+            break;
+
+          case 'interrupt':
+            log(`⏸ INTERRUPT: ${JSON.stringify(data.data?.message || data)}`, 'event');
+            log('Auto-resuming with decision="ok"...');
+            ws.send(JSON.stringify({ action: 'resume', decision: 'ok' }));
+            break;
+
+          case 'result':
+            log(`🎉 RESULT RECEIVED! (event #${eventCount})`, 'success');
+            log(`Result data: ${JSON.stringify(data.data, null, 2).slice(0, 500)}`, 'success');
+            ws.close();
+            document.getElementById('submitBtn').disabled = false;
+            break;
+
+          case 'error':
+            log(`❌ ERROR: node="${data.node}" — ${data.message}`, 'error');
+            ws.close();
+            document.getElementById('submitBtn').disabled = false;
+            break;
+
+          default:
+            log(`❓ Unknown event: ${JSON.stringify(data)}`, 'event');
+        }
+      };
+
+      ws.onerror = (err) => {
+        log(`❌ WebSocket error: ${err}`, 'error');
+        document.getElementById('submitBtn').disabled = false;
+      };
+
+      ws.onclose = (event) => {
+        log(`WebSocket closed: code=${event.code}, clean=${event.wasClean} (total events: ${eventCount})`);
+        document.getElementById('submitBtn').disabled = false;
+      };
+    }
+  </script>
+</body>
+</html>
