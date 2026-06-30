@@ -1,64 +1,29 @@
-import { useRef } from "react";
-import { useGSAP } from "@gsap/react";
-import gsap from "gsap";
-
 import type { StepDefinition, WorkflowStep } from "@/types/compliance";
-
-gsap.registerPlugin(useGSAP);
 
 interface StepNavigatorProps {
   steps: readonly StepDefinition[];
   currentStep: WorkflowStep;
   completedSteps: WorkflowStep[];
+  disabledSteps?: WorkflowStep[];
   onStepClick: (step: WorkflowStep) => void;
 }
 
 /**
  * Horizontal step navigator for the compliance workflow.
  * Displays Upload → Check → Review → Remix → Compare steps with
- * keyboard navigation, ARIA attributes, and GSAP animation.
+ * keyboard navigation and ARIA attributes.
  */
 export function StepNavigator({
   steps,
   currentStep,
   completedSteps,
+  disabledSteps = [],
   onStepClick,
 }: StepNavigatorProps) {
-  const containerRef = useRef<HTMLElement>(null);
-  const indicatorRef = useRef<HTMLDivElement>(null);
-
-  // Animate active indicator on step change
-  useGSAP(
-    () => {
-      if (!indicatorRef.current) return;
-
-      const activeIndex = steps.findIndex((s) => s.id === currentStep);
-      if (activeIndex === -1) return;
-
-      // Find the active button to position the indicator
-      const activeButton = containerRef.current?.querySelector(
-        `[data-step="${currentStep}"]`
-      ) as HTMLElement | null;
-
-      if (!activeButton) return;
-
-      const containerRect = containerRef.current!.getBoundingClientRect();
-      const buttonRect = activeButton.getBoundingClientRect();
-      const targetX = buttonRect.left - containerRect.left;
-
-      gsap.to(indicatorRef.current, {
-        x: targetX,
-        opacity: 1,
-        duration: 0.3,
-        ease: "power2.out",
-      });
-    },
-    { scope: containerRef, dependencies: [currentStep] }
-  );
-
   function getStepState(
     stepId: WorkflowStep
   ): "active" | "completed" | "unreached" {
+    if (disabledSteps.includes(stepId)) return "unreached";
     if (stepId === currentStep) return "active";
     if (completedSteps.includes(stepId)) return "completed";
     return "unreached";
@@ -67,7 +32,7 @@ export function StepNavigator({
   function getStepStyles(state: "active" | "completed" | "unreached"): string {
     switch (state) {
       case "active":
-        return "text-text-primary border-primary bg-surface-panel";
+        return "text-text-primary border-primary bg-surface-panel shadow-sm ring-1 ring-primary/20";
       case "completed":
         return "text-text-secondary border-border-default bg-surface-container hover:bg-surface-container-high cursor-pointer";
       case "unreached":
@@ -77,7 +42,7 @@ export function StepNavigator({
 
   function handleStepClick(stepId: WorkflowStep) {
     const state = getStepState(stepId);
-    if (state === "completed") {
+    if (state !== "unreached") {
       onStepClick(stepId);
     }
   }
@@ -93,15 +58,8 @@ export function StepNavigator({
   }
 
   return (
-    <nav ref={containerRef} aria-label="Compliance workflow steps">
-      <ol role="list" className="relative flex items-center gap-2">
-        {/* Active step indicator underline */}
-        <div
-          ref={indicatorRef}
-          className="absolute bottom-0 left-0 h-0.5 w-16 bg-primary rounded-full opacity-0"
-          aria-hidden="true"
-        />
-
+    <nav aria-label="Compliance workflow steps">
+      <ol role="list" className="flex items-center gap-2">
         {steps.map((step, index) => {
           const state = getStepState(step.id);
           const isActive = state === "active";
@@ -127,11 +85,11 @@ export function StepNavigator({
                 tabIndex={isUnreached ? -1 : 0}
                 onClick={() => handleStepClick(step.id)}
                 onKeyDown={(e) => handleKeyDown(e, step.id)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-label-ui font-label-ui transition-colors duration-200 ${getStepStyles(state)}`}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-label-ui font-label-ui transition-all duration-200 ${getStepStyles(state)}`}
               >
                 <span
                   className="material-symbols-outlined text-[18px]"
-                  style={{ fontVariationSettings: "'FILL' 0" }}
+                  style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}
                   aria-hidden="true"
                 >
                   {step.icon}

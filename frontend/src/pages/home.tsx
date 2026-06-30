@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -162,11 +162,13 @@ export default function DashboardHome() {
             Your global advertising engine is ready. Localize your campaigns across SEA with precision AI.
           </p>
         </div>
-        <div className="dash-header-sub flex items-center px-4 py-2 rounded-full border border-border-default">
-          <Zap size={14} className="text-text-caption" />
-          <span className="text-label-ui font-semibold text-text-body">
-            AI Engine Active
-          </span>
+        <div className="dash-header-sub flex items-center gap-3">
+          <div className="flex items-center px-4 py-2 rounded-full border border-border-default">
+            <Zap size={14} className="text-text-caption" />
+            <span className="text-label-ui font-semibold text-text-body">
+              AI Engine Active
+            </span>
+          </div>
         </div>
       </div>
 
@@ -289,6 +291,7 @@ export default function DashboardHome() {
           </div>
         </div>
       </div>
+
     </div>
   );
 }

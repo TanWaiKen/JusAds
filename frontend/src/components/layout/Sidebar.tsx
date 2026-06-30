@@ -1,16 +1,20 @@
-import { useRef, forwardRef, useImperativeHandle, useCallback } from "react";
-import { NavLink, useNavigate } from "react-router";
+import { useRef, forwardRef, useImperativeHandle, useCallback, useState, useEffect } from "react";
+import { NavLink, useNavigate, useParams } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
-  LayoutDashboard,
-  Megaphone,
   Image as ImageIcon,
-  ShieldCheck,
   TrendingUp,
   PanelLeftClose,
+  ChevronDown,
+  ChevronUp,
+  ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { API_BASE } from "@/services/complianceApi";
+import { deleteProject } from "@/services/taskApi";
+import { toast } from "sonner";
 
 gsap.registerPlugin(useGSAP);
 
@@ -21,6 +25,14 @@ interface NavItem {
   icon: React.ElementType;
   to: string;
   badge?: string;
+}
+
+/** Shape returned by GET /api/projects */
+interface SidebarProject {
+  id: string;
+  name: string;
+  owner_email: string;
+  created_at: string;
 }
 
 export interface SidebarHandle {
@@ -38,12 +50,11 @@ interface SidebarProps {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const navItems: NavItem[] = [
-  { label: "Home", icon: LayoutDashboard, to: "/dashboard" },
-  { label: "Campaigns", icon: Megaphone, to: "/dashboard/campaigns" },
   { label: "Assets", icon: ImageIcon, to: "/dashboard/assets" },
   { label: "Trends", icon: TrendingUp, to: "/dashboard/trends" },
-  { label: "Compliance", icon: ShieldCheck, to: "/dashboard/compliance" },
 ];
+
+const MAX_VISIBLE_PROJECTS = 5;
 
 export const SIDEBAR_WIDTH = 240;
 
@@ -53,10 +64,70 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
   function Sidebar({ isOpen, isDesktop, onClose, onOpen }, ref) {
     const { user, picture } = useAuth();
     const navigate = useNavigate();
+    const { projectId: activeProjectId } = useParams<{ projectId?: string }>();
     const sidebarRef = useRef<HTMLElement>(null);
 
     const name = user?.profile.name ?? "";
+    const email = user?.profile.email ?? "";
     const initials = name ? name.slice(0, 2).toUpperCase() : "?";
+
+    // ─── Projects State ─────────────────────────────────────────────────────
+    const [projects, setProjects] = useState<SidebarProject[]>([]);
+    const [projectsLoading, setProjectsLoading] = useState(false);
+    const [showAllProjects, setShowAllProjects] = useState(false);
+
+    // ─── New Project Modal State ────────────────────────────────────────────
+    // (removed — now just navigates to /dashboard/new)
+
+    // Fetch projects when user is authenticated
+    useEffect(() => {
+      if (!email) return;
+
+      const controller = new AbortController();
+      setProjectsLoading(true);
+
+      fetch(`${API_BASE}/api/projects?username=${encodeURIComponent(email)}`, {
+        signal: controller.signal,
+      })
+        .then((res) => {
+          console.log(`[Sidebar] GET /api/projects?username=${email} → ${res.status}`);
+          if (!res.ok) throw new Error(`Failed to fetch projects (${res.status})`);
+          return res.json();
+        })
+        .then((data: SidebarProject[]) => {
+          console.log(`[Sidebar] Loaded ${data.length} projects`, data);
+          setProjects(data);
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            console.error("[Sidebar] Could not load projects:", err.message);
+          }
+        })
+        .finally(() => {
+          setProjectsLoading(false);
+        });
+
+      return () => controller.abort();
+    }, [email]);
+
+    // Re-fetch projects when a new project is created elsewhere (e.g. new-project.tsx)
+    useEffect(() => {
+      const handler = () => {
+        if (!email) return;
+        setProjectsLoading(true);
+        fetch(`${API_BASE}/api/projects?username=${encodeURIComponent(email)}`)
+          .then((res) => (res.ok ? res.json() : []))
+          .then((data: SidebarProject[]) => setProjects(data))
+          .catch(() => {/* non-fatal */})
+          .finally(() => setProjectsLoading(false));
+      };
+      window.addEventListener("jusads:project-created", handler);
+      return () => window.removeEventListener("jusads:project-created", handler);
+    }, [email]);
+
+    const visibleProjects = showAllProjects
+      ? projects
+      : projects.slice(0, MAX_VISIBLE_PROJECTS);
 
     // Desktop: just toggle state, CSS transition handles the slide
     // Mobile: use GSAP for backdrop + slide animation
@@ -119,6 +190,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
     }, { scope: sidebarRef, dependencies: [] });
 
     return (
+      <>
       <aside
         ref={sidebarRef}
         className="fixed top-0 left-0 z-40 flex h-full flex-col bg-surface-card border-r border-border-default shadow-xl lg:shadow-none transition-transform duration-300"
@@ -146,14 +218,13 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
           </button>
         </div>
 
-        {/* Nav Links — clicking a link does NOT close the sidebar on desktop */}
-        <nav className="flex-1 overflow-y-auto px-3 py-5" aria-label="Main navigation">
+        {/* Nav Links */}
+        <nav className="px-3 py-5" aria-label="Main navigation">
           <ul className="flex flex-col gap-1">
             {navItems.map(({ label, icon: Icon, to, badge }) => (
               <li key={to}>
                 <NavLink
                   to={to}
-                  end={to === "/dashboard"}
                   onClick={() => { if (!isDesktop) handleClose(); }}
                   className={({ isActive }) =>
                     [
@@ -177,6 +248,117 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
           </ul>
         </nav>
 
+        {/* ── Projects Section ──────────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto px-3 border-t border-border-default">
+          <div className="flex items-center justify-between px-2 pt-4 pb-2">
+            <p className="font-bold text-body-md tracking-tight text-text-primary dark:text-white">
+              Projects
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                navigate("/dashboard/new");
+                if (!isDesktop) handleClose();
+              }}
+              className="flex items-center justify-center h-6 w-6 rounded-md hover:bg-surface-inset transition-colors text-text-caption hover:text-accent-blue"
+              title="New project"
+              aria-label="Create new project"
+            >
+              <span className="text-[18px] leading-none font-light">+</span>
+            </button>
+          </div>
+
+          {projectsLoading && (
+            <div className="space-y-2 px-2">
+              <div className="h-8 w-full rounded-lg bg-surface-inset animate-pulse" />
+              <div className="h-8 w-full rounded-lg bg-surface-inset animate-pulse" />
+              <div className="h-8 w-3/4 rounded-lg bg-surface-inset animate-pulse" />
+            </div>
+          )}
+
+          {!projectsLoading && projects.length === 0 && (
+            <p className="px-2 py-2 text-code-xs text-text-caption">
+              No projects yet
+            </p>
+          )}
+
+          {!projectsLoading && projects.length > 0 && (
+            <ul className="flex flex-col gap-0.5">
+              {visibleProjects.map((project) => {
+                const isActive = project.id === activeProjectId;
+                const TypeIcon = ShieldCheck;
+                return (
+                  <li key={project.id}>
+                    <div
+                      className={[
+                        "flex items-center gap-2.5 w-full rounded-lg px-2.5 py-2 text-left transition-colors group",
+                        isActive
+                          ? "bg-accent-blue/10 text-accent-blue"
+                          : "hover:bg-surface-inset",
+                      ].join(" ")}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigate(`/dashboard/project/${project.id}`);
+                          if (!isDesktop) handleClose();
+                        }}
+                        className="flex items-center gap-2.5 flex-1 min-w-0"
+                        title={project.name}
+                      >
+                        <TypeIcon size={15} className={`shrink-0 ${isActive ? "text-accent-blue" : "text-text-caption group-hover:text-text-body"}`} />
+                        <span className={`text-code-sm truncate ${isActive ? "text-accent-blue font-semibold" : "text-text-body group-hover:text-text-heading"}`}>
+                          {project.name}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm("Delete this project and all its data?")) return;
+                          try {
+                            await deleteProject(project.id);
+                            setProjects((prev) => prev.filter((p) => p.id !== project.id));
+                            if (isActive) navigate("/dashboard");
+                            toast.success("Project deleted");
+                          } catch {
+                            toast.error("Failed to delete project");
+                          }
+                        }}
+                        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/10"
+                        title="Delete project"
+                        aria-label="Delete project"
+                      >
+                        <Trash2 size={12} className="text-text-caption hover:text-red-500" />
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {!projectsLoading && projects.length > MAX_VISIBLE_PROJECTS && (
+            <button
+              type="button"
+              onClick={() => setShowAllProjects((prev) => !prev)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 mt-1 text-code-xs text-text-caption hover:text-accent-blue transition-colors"
+            >
+              {showAllProjects ? (
+                <>
+                  <ChevronUp size={12} />
+                  <span>Show less</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={12} />
+                  <span>Show more</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+
         {/* User Profile — navigates to profile page */}
         <div className="px-3 py-4 border-t border-border-default">
           <button
@@ -196,12 +378,13 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
                 {name || "User"}
               </p>
               <p className="text-code-xs text-text-caption truncate">
-                {user?.profile.email ?? ""}
+                {email}
               </p>
             </div>
           </button>
         </div>
       </aside>
+      </>
     );
   }
 );

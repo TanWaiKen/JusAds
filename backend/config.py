@@ -13,20 +13,25 @@ from dotenv import load_dotenv
 # Load .env from backend/ directory
 load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
-# ── Google Vertex AI ──────────────────────────────────────────────────────────
+# ── Google Vertex AI / Gemini ─────────────────────────────────────────────────
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
+LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "gemini-2.0-flash")
 
-# ── Qdrant Vector Database ────────────────────────────────────────────────────
-QDRANT_URL = os.environ.get("QDRANT_URL", "")
-QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "")
-QDRANT_COLLECTION_NAME = os.environ.get("QDRANT_COLLECTION_NAME", "regulatory-rules")
-QDRANT_TOP_K = int(os.environ.get("QDRANT_TOP_K", "10"))
+# ── AWS Credentials & S3 ──────────────────────────────────────────────────────
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+AWS_REGION = os.environ.get("AWS_REGION", "ap-southeast-1")
+S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "")
 
 # ── API Keys ──────────────────────────────────────────────────────────────────
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 FLUXAI_API_KEY = os.environ.get("FLUXAI_API_KEY", "")
+
+# ── Supabase ──────────────────────────────────────────────────────────────────
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
 # ── ElevenLabs Voice IDs ──────────────────────────────────────────────────────
 ELEVENLABS_VOICE_MY_MS_MALE = os.environ.get("ELEVENLABS_VOICE_MY_MS_MALE", "jvcMcno3QtjOzGtfpjoI")

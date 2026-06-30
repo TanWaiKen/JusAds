@@ -1,35 +1,55 @@
+---
+inclusion: always
+---
+
 # Project Structure
 
 ```
 Langhub-main/
 ├── backend/                        # Python FastAPI backend
-│   ├── api.py                      # Simple video compliance API
-│   ├── langgraph_api.py            # Main LangGraph-based unified API (text/image/audio/video)
-│   ├── config.py                   # Configuration
-│   ├── run_video_check.py          # CLI test script for video compliance
-│   ├── run_full_pipeline.py        # Full pipeline runner
-│   ├── run_remediation_test.py     # Remediation test script
+│   ├── langgraph_api.py            # Main API server (FastAPI + WebSocket)
+│   ├── config.py                   # Centralized configuration (env vars)
 │   ├── .env                        # API keys and secrets (do not commit)
 │   │
-│   ├── jusads_video_compliance/    # Video compliance module (5-step pipeline)
-│   │   ├── step1_compliance_check.py
-│   │   ├── step2_parse_violations.py
-│   │   ├── step3_visual_remediation.py
-│   │   ├── step4_audio_remediation.py
-│   │   ├── step5_compose_final.py
-│   │   ├── video_checker.py        # High-level VideoComplianceChecker class
-│   │   ├── orchestrator.py         # Pipeline orchestrator
-│   │   ├── visual_remediator.py
-│   │   └── audio_remediator.py
+│   ├── agent/                      # ★ Primary pipeline module (LangGraph)
+│   │   ├── pipeline.py             # LangGraph compliance pipeline (StateGraph)
+│   │   ├── pipeline_runner.py      # Runs pipeline + emits WebSocket events
+│   │   ├── ws_manager.py           # WebSocket ConnectionManager
+│   │   ├── s3_client.py            # S3 media storage client
+│   │   ├── supabase_client.py      # Supabase persistence client
+│   │   ├── fallback_queue.py       # Retry queue for failed S3/Supabase ops
+│   │   ├── validators.py           # File size + quota validation
+│   │   ├── models.py               # Pydantic models (CheckRecord, ViolationRecord)
+│   │   ├── data_model.py           # ComplianceState dataclass
+│   │   ├── routing.py              # Human decision routing logic
+│   │   ├── utils.py                # MIME detection utilities
+│   │   ├── clients.py              # Gemini + external API clients
+│   │   ├── compliance_tools.py     # Compliance analysis tools
+│   │   ├── remix_tools.py          # Remediation/remix tools
+│   │   ├── prompts.py              # LLM prompt templates
+│   │   ├── personas/               # Cultural persona definitions (JSON)
+│   │   ├── scripts/                # Utility scripts (ingestion, testing)
+│   │   └── tests/                  # Unit tests (pytest)
 │   │
-│   ├── jusads_image_compliance/    # Image compliance module
-│   ├── jusads_text_compliance/     # Text compliance module
-│   ├── jusads_transcription/       # Audio transcription (AWS Transcribe)
-│   ├── audio_ads_aws/              # Audio ad generation (AWS)
-│   ├── utils/                      # Shared utilities
-│   ├── assets/                     # Uploads, clips, results (runtime data)
-│   ├── archived/                   # Deprecated/old test files
-│   └── frontend/                   # Simple static frontend served by backend
+│   ├── migrations/                 # Supabase SQL migrations
+│   │   └── 001_initial_schema.sql  # Tables: projects, compliance_checks, violations
+│   │
+│   ├── assets/                     # Runtime data (gitignored)
+│   │   ├── uploads/                # Uploaded media files
+│   │   ├── clips/                  # Extracted violation clips
+│   │   ├── edits/                  # Remediated outputs
+│   │   ├── results/                # JSON result files
+│   │   └── fallback/               # Local fallback when Supabase is down
+│   │
+│   ├── archived/                   # ⚠️ DEPRECATED — do not use
+│   │   ├── jusads_text_compliance/
+│   │   ├── jusads_image_compliance/
+│   │   ├── jusads_video_compliance/
+│   │   ├── jusads_transcription/
+│   │   └── jusads_remix_pipeline/
+│   │
+│   ├── requirements.txt            # Python dependencies
+│   └── pytest.ini                  # Test configuration
 │
 ├── frontend/                       # React SPA (Vite + TypeScript)
 │   ├── src/
@@ -45,17 +65,28 @@ Langhub-main/
 │   │   │   ├── trends.tsx          # Trend analytics
 │   │   │   └── profile.tsx         # User profile
 │   │   ├── components/             # Shared components
-│   │   │   ├── ui/                 # shadcn/ui primitives (do not edit manually)
-│   │   │   ├── callback-handler.tsx
-│   │   │   ├── floating-button.tsx
-│   │   │   ├── login-modal.tsx
-│   │   │   ├── protected-route.tsx
-│   │   │   └── theme-provider.tsx
+│   │   │   ├── ui/                 # shadcn/ui primitives (do not edit)
+│   │   │   └── compliance/         # Compliance-specific components
+│   │   │       ├── PipelineFlowView.tsx   # React Flow pipeline visualization
+│   │   │       ├── ComparisonView.tsx     # Side-by-side original vs remix
+│   │   │       ├── ViolationPlayer.tsx    # Video segment player
+│   │   │       ├── ConnectionStatus.tsx   # WebSocket status indicator
+│   │   │       └── ProjectSidebar.tsx     # History + active projects
 │   │   ├── services/               # API service layer
+│   │   │   ├── complianceApi.ts    # HTTP API functions + interfaces
+│   │   │   └── complianceWebSocket.ts  # WebSocket client class
 │   │   ├── hooks/                  # Custom React hooks
+│   │   ├── types/                  # Shared TypeScript interfaces
 │   │   └── lib/                    # Utilities, auth config
 │   ├── public/                     # Static assets (logos, images)
 │   └── dist/                       # Production build output
+│
+├── erd.drawio                      # Entity-Relationship Diagram
+├── class-diagram.drawio            # Backend class diagram
+├── activity-pipeline.drawio        # Pipeline activity diagram
+├── use-case.drawio                 # Use case diagram
+├── system-architecture.drawio      # System architecture diagram
+├── agentflow.drawio                # Agent flow diagram
 │
 └── .kiro/
     ├── steering/                   # AI assistant guidance files
@@ -65,9 +96,11 @@ Langhub-main/
 
 ## Key Conventions
 
-- **Backend modules** are prefixed with `jusads_` (e.g. `jusads_video_compliance`)
-- **Frontend UI components** in `components/ui/` are generated by shadcn — do not edit directly
-- **Pages** are flat files in `src/pages/` corresponding to routes
-- **Services** in `src/services/` handle API communication
-- **Assets directory** (`backend/assets/`) is runtime data — uploads, extracted clips, and JSON results
-- **Archived code** in `backend/archived/` is deprecated; do not reference for new work
+- **`backend/agent/`** is the primary module — all new backend code goes here.
+- **`backend/archived/`** contains deprecated `jusads_*` modules — never import or reference.
+- **Frontend UI components** in `components/ui/` are shadcn-generated — do not edit directly.
+- **Compliance components** live in `components/compliance/` — domain-specific UI.
+- **Pages** are flat files in `src/pages/` corresponding to routes.
+- **Services** in `src/services/` handle all API communication (HTTP + WebSocket).
+- **Assets directory** (`backend/assets/`) is runtime data — gitignored, never committed.
+- **Diagrams** are `.drawio` files at project root — open with draw.io or VS Code extension.

@@ -239,25 +239,33 @@ The "changes_made" list must have at least one entry explaining what was modifie
 
 # ── Segmentation prompt (CLIPSeg) ────────────────────────────────────────────
 
-SEGMENTATION_PROMPT = """Look at this image carefully. Find the exact bounding boxes for these compliance violations:
+SEGMENTATION_PROMPT = """Look at this image carefully. Identify the people or objects that are non-compliant based on these violations:
 {violations}
 
 The image is {width}x{height} pixels.
 
+IMPORTANT: Do NOT segment individual body parts (arms, legs, hair, armpits separately).
+Instead, draw ONE bounding box around each WHOLE PERSON or WHOLE OBJECT that is violating.
+
+For example:
+- If a woman is showing exposed arms + legs + hair → draw ONE box around her entire body
+- If multiple women are non-compliant → draw ONE box per woman
+- Label each box with a summary like "Woman in underwear (exposed body, uncovered hair)"
+
 Return a JSON array where each item has:
-- "label": short description of what was found
+- "label": summary of what makes this person/object non-compliant
 - "box": [x1, y1, x2, y2] as pixel coordinates (integers, top-left origin)
 
 Rules:
-- x1,y1 = top-left corner of the violating region
+- x1,y1 = top-left corner of the bounding box
 - x2,y2 = bottom-right corner
 - Values must be 0 to {width} for x, 0 to {height} for y
-- Include each instance separately (e.g. left armpit AND right armpit)
-- Only include regions clearly visible
+- ONE box per violating person/entity — not per body part
+- Maximum 10 boxes (one per person or distinct violating object)
 - Return [] if nothing found
-- Be precise — tight boxes around just the violation area
+- Make boxes tight around the full person/object
 
-Example: [{{"label": "exposed armpit", "box": [350, 180, 420, 280]}}]"""
+Example: [{{"label": "Woman in revealing clothing (exposed arms, legs, uncovered hair)", "box": [50, 30, 300, 500]}}]"""
 
 
 # ── SCULPT framework prompt for image editing ─────────────────────────────────
@@ -266,6 +274,9 @@ SCULPT_PROMPT_TEMPLATE = """You are an expert image editing prompt engineer. Gen
 
 VIOLATIONS TO FIX:
 {violations}
+
+LOCALIZATION & COMPLIANCE GUIDANCE:
+{localization_plan}
 
 TARGET AUDIENCE:
 - Market: {market}
@@ -278,8 +289,9 @@ PLATFORM STYLE GUIDE:
 
 Generate a structured image editing prompt using the SCULPT framework. Each component MUST be present:
 
-1. **Subject**: What should appear in the edited region (describe replacement content)
-2. **Context**: Platform aesthetic, market context, and cultural considerations
+1. **Subject**: What should appear in the edited region — follow the localization guidance strictly
+   (e.g. if guidance says "show product only, no face" — describe the product placement, not a person)
+2. **Context**: Platform aesthetic, market context, and cultural considerations from the localization plan
 3. **Use**: The advertising purpose and compliance goal of this edit
 4. **Look**: Visual style that matches the original image's tone and branding
 5. **Photographic**: Lighting direction, perspective, depth of field choices
@@ -291,7 +303,7 @@ MANDATORY REQUIREMENTS — you MUST include these exact phrases in the Technical
 - "maintain lighting direction"
 
 MANDATORY REQUIREMENTS — include platform keywords:
-{platform_keywords_instruction}
+Include these platform-specific style keywords in the output: {platform_keywords}
 
 Return the prompt as a single cohesive paragraph combining all SCULPT components, clearly labeled with [Subject], [Context], [Use], [Look], [Photographic], [Technical] markers.
 """

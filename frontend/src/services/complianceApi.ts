@@ -113,6 +113,7 @@ export interface ComplianceResult {
   market: string;
   ethnicity: string;
   age_group: string;
+  platform?: string;
   // New risk percentage fields
   risk_percentage: number;    // 0-100, probability of cultural backlash
   risk_band: "Low" | "Moderate" | "High" | "Critical";
@@ -123,9 +124,22 @@ export interface ComplianceResult {
   explanation: string;
   suggestion: string;
   localization: Localization;
+  localization_plan?: string;
   persona: Persona | null;
   violations: Violation[];
   high_risk_indicators?: string[];
+  high_risk_indicator?: string[];
+  verification?: {
+    verified: { violation: string; confirmed: boolean; sources: string[] }[];
+    confidence: string;
+    confirmed_ratio: string;
+  };
+  violations_timeline?: { start?: number; end?: number; description?: string; severity?: string }[];
+  segmentation?: { segmented_image_path?: string; detections?: unknown[]; num_masks?: number };
+  _transcript?: { language: string; transcript: string };
+  s3_upload_key?: string;
+  s3_remix_key?: string;
+  s3_segmented_key?: string;
   processing_time_seconds: number;
 }
 
@@ -134,6 +148,7 @@ export async function checkCompliance(
   market: string,
   ethnicity: string,
   ageGroup: string,
+  platform: string = "general",
   text?: string
 ): Promise<ComplianceResult> {
   const formData = new FormData();
@@ -145,6 +160,7 @@ export async function checkCompliance(
   formData.append("market", market);
   formData.append("ethnicity", ethnicity);
   formData.append("age_group", ageGroup);
+  formData.append("platform", platform);
 
   const res = await fetch(`${API_BASE}/api/compliance/check`, {
     method: "POST",
@@ -190,6 +206,7 @@ export async function checkComplianceStream(
   market: string,
   ethnicity: string,
   ageGroup: string,
+  platform: string = "general",
   onEvent: (event: StreamEvent) => void,
   text?: string
 ): Promise<ComplianceResult> {
@@ -202,6 +219,7 @@ export async function checkComplianceStream(
   formData.append("market", market);
   formData.append("ethnicity", ethnicity);
   formData.append("age_group", ageGroup);
+  formData.append("platform", platform);
 
   const res = await fetch(`${API_BASE}/api/compliance/check`, {
     method: "POST",
@@ -260,7 +278,54 @@ export interface RemixResult {
   data?: unknown;
 }
 
-export type RemixStreamEvent = NodeStatus | RemixResult;
+/** Image passes compliance — no fix needed */
+export interface RemixCompliantEvent {
+  type: "compliant";
+  message: string;
+}
+
+/** Product/concept is the violation — cannot auto-fix */
+export interface RemixCannotFixEvent {
+  type: "cannot_fix";
+  guidance: string;
+  reasoning: string;
+  redirect_to_frontend: boolean;
+  violations: string[];
+}
+
+/** Edit succeeded — image has been remediated */
+export interface RemixImageEditEvent {
+  type: "image_edit";
+  s3_remix_url: string | null;
+  quality_score: number;
+  edit_mode: string;
+  bias_check?: {
+    passed: boolean;
+    issues: string[];
+  };
+}
+
+/** All edit attempts failed */
+export interface RemixEditFailedEvent {
+  type: "edit_failed";
+  fallback_guidance: string;
+  error: string;
+}
+
+/** SSE error event */
+export interface RemixErrorEvent {
+  type: "error";
+  message: string;
+}
+
+export type RemixStreamEvent =
+  | NodeStatus
+  | RemixResult
+  | RemixCompliantEvent
+  | RemixCannotFixEvent
+  | RemixImageEditEvent
+  | RemixEditFailedEvent
+  | RemixErrorEvent;
 
 export async function remixComplianceStream(
   checkId: string,
