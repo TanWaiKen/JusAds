@@ -19,6 +19,11 @@ export interface TaskSummary {
   status: string;
   summary: string;
   created_at: string;
+  market?: string;
+  ethnicity?: string;
+  age_group?: string;
+  platform?: string;
+  media_type?: string;
 }
 
 export interface ComplianceTaskDetail extends TaskSummary {
@@ -27,6 +32,8 @@ export interface ComplianceTaskDetail extends TaskSummary {
     risk_percentage: number | null;
     status: string;
     market: string;
+    ethnicity?: string;
+    age_group?: string;
     media_type?: string;
     violations: ViolationSummary[];
     s3_upload_key: string | null;
@@ -47,15 +54,20 @@ export type TaskDetail = ComplianceTaskDetail | GenerationTaskDetail;
 export interface ProjectResponse {
   id: string;
   name: string;
-  media_type: string;
-  user_id: string;
+  owner_email: string;
+  description: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export async function listTasks(projectId: string): Promise<TaskSummary[]> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/tasks`);
+export async function listTasks(projectId: string, username?: string): Promise<TaskSummary[]> {
+  const url = username
+    ? `${API_BASE}/api/projects/${projectId}/tasks?username=${encodeURIComponent(username)}`
+    : `${API_BASE}/api/projects/${projectId}/tasks`;
+  const res = await fetch(url);
 
+  if (res.status === 404) throw new Error("404: Project not found");
+  if (res.status === 403) throw new Error("403: Access denied");
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
@@ -66,10 +78,11 @@ export async function listTasks(projectId: string): Promise<TaskSummary[]> {
 export async function getTask(projectId: string, taskId: string): Promise<TaskDetail> {
   const res = await fetch(`${API_BASE}/api/projects/${projectId}/tasks/${taskId}`);
 
+  if (res.status === 404) throw new Error("404: Task not found");
+  if (res.status === 403) throw new Error("403: Access denied");
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
-
   return res.json();
 }
 
@@ -142,4 +155,25 @@ export async function deleteTask(projectId: string, taskId: string): Promise<voi
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
+}
+
+export async function sendChatWithAgent(
+  projectId: string,
+  taskId: string,
+  message: string
+): Promise<{ reply: string; pipeline_state: PipelineState }> {
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/chat`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status} ${res.statusText}`);
+  }
+
+  return res.json();
 }

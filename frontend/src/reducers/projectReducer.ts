@@ -95,11 +95,32 @@ export function projectReducer(
 
     case "NAVIGATE_TO_STEP": {
       const project = state.projects.get(action.projectId);
-      if (!project || !project.completedSteps.includes(action.step))
-        return state;
+      if (!project) return state;
+
+      // Determine the "frontier" — the furthest step ever reached.
+      // This is the max of currentStep and all completedSteps.
+      const stepOrder: string[] = ["upload", "check", "review", "remix", "compare"];
+      const currentIdx = stepOrder.indexOf(project.currentStep);
+      const maxCompletedIdx = project.completedSteps.reduce(
+        (max, s) => Math.max(max, stepOrder.indexOf(s)),
+        -1
+      );
+      const frontierIdx = Math.max(currentIdx, maxCompletedIdx);
+      const targetIdx = stepOrder.indexOf(action.step);
+
+      // Allow navigating to any step at or below the frontier
+      if (targetIdx > frontierIdx) return state;
+
+      // When navigating away from current step, add it to completedSteps
+      // so we can always return to it
+      const updatedCompleted = project.completedSteps.includes(project.currentStep)
+        ? project.completedSteps
+        : [...project.completedSteps, project.currentStep];
+
       const newProjects = new Map(state.projects);
       newProjects.set(action.projectId, {
         ...project,
+        completedSteps: updatedCompleted,
         currentStep: action.step,
       });
       return { ...state, projects: newProjects };

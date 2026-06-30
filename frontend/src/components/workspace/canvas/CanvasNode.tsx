@@ -45,12 +45,25 @@ export function CanvasNode({
   const colorClass = NODE_COLORS[node.type] ?? "bg-gray-500";
   const statusClass = STATUS_INDICATORS[node.status];
 
+  // Parse output JSON for output node summaries
+  let parsedCampaignOutput: Record<string, string> | null = null;
+  if (node.type === "output" && node.output) {
+    try {
+      parsedCampaignOutput = JSON.parse(node.output);
+    } catch {
+      // not json
+    }
+  }
+
+  // Double width if node has visual output to show
+  const nodeWidth = node.output && (node.type === "image" || node.type === "video" || node.type === "output" || node.type === "text") ? 220 : 180;
+
   return (
     <div
-      className={`absolute select-none rounded-lg border bg-card shadow-md transition-shadow ${
-        isSelected ? "ring-2 ring-primary shadow-lg" : "hover:shadow-lg"
+      className={`absolute select-none rounded-lg border bg-card shadow-md transition-all ${
+        isSelected ? "ring-2 ring-primary shadow-lg z-10" : "hover:shadow-lg"
       }`}
-      style={{ left: node.x, top: node.y, width: 180 }}
+      style={{ left: node.x, top: node.y, width: nodeWidth }}
       onMouseDown={(e) => {
         e.stopPropagation();
         onSelect(node.id);
@@ -69,7 +82,7 @@ export function CanvasNode({
       </div>
 
       {/* Body with ports */}
-      <div className="relative flex items-center justify-between px-1 py-3">
+      <div className="relative flex items-center justify-between px-1 py-2">
         {/* Input port */}
         <div
           className="flex h-4 w-4 cursor-crosshair items-center justify-center rounded-full border-2 border-muted-foreground/40 bg-background hover:border-primary"
@@ -82,7 +95,7 @@ export function CanvasNode({
           <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
         </div>
 
-        <span className="text-xs text-muted-foreground">{node.type}</span>
+        <span className="text-[10px] font-mono text-muted-foreground uppercase">{node.type}</span>
 
         {/* Output port */}
         <div
@@ -96,6 +109,76 @@ export function CanvasNode({
           <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
         </div>
       </div>
+
+      {/* Dynamic Generated Asset Preview */}
+      {node.output && (
+        <div className="border-t border-border bg-muted/20 px-3 py-2 text-xs">
+          {node.type === "text" && (
+            <div className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[10px] text-muted-foreground bg-background p-1.5 rounded border leading-tight">
+              {node.output}
+            </div>
+          )}
+          {node.type === "image" && (
+            <img
+              src={node.output}
+              alt="Generated Ad"
+              className="mt-1 max-h-32 w-full rounded border object-contain bg-background shadow-inner"
+            />
+          )}
+          {node.type === "audio" && (
+            <audio
+              src={node.output}
+              controls
+              className="mt-1 w-full scale-90 origin-left"
+            />
+          )}
+          {node.type === "video" && (
+            <video
+              src={node.output}
+              controls
+              className="mt-1 max-h-32 w-full rounded border object-contain bg-background"
+            />
+          )}
+          {node.type === "input" && (
+            <div className="italic text-muted-foreground text-[10px] line-clamp-3">
+              "{node.output}"
+            </div>
+          )}
+          {node.type === "output" && parsedCampaignOutput && (
+            <div className="space-y-1.5">
+              <span className="text-[9px] font-semibold text-primary uppercase tracking-wider block">Generated Campaign Assets</span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {parsedCampaignOutput.image && (
+                  <a href={parsedCampaignOutput.image} target="_blank" rel="noreferrer" className="block relative group">
+                    <img
+                      src={parsedCampaignOutput.image}
+                      className="h-14 w-full rounded object-cover border bg-background group-hover:opacity-80 transition-opacity"
+                      alt="preview"
+                    />
+                  </a>
+                )}
+                {parsedCampaignOutput.video && (
+                  <a href={parsedCampaignOutput.video} target="_blank" rel="noreferrer" className="h-14 w-full rounded bg-primary/10 flex flex-col items-center justify-center border border-primary/20 text-[8px] font-bold text-primary hover:bg-primary/20 transition-colors">
+                    <span>🎥 WATCH</span>
+                    <span>VIDEO</span>
+                  </a>
+                )}
+              </div>
+              {parsedCampaignOutput.audio && (
+                <div className="text-[8px] font-medium text-muted-foreground flex items-center justify-between bg-background p-1 rounded border">
+                  <span>🔊 Voiceover Audio</span>
+                  <a href={parsedCampaignOutput.audio} target="_blank" rel="noreferrer" className="text-primary hover:underline">Download</a>
+                </div>
+              )}
+              {parsedCampaignOutput.text && (
+                <div className="text-[9px] text-muted-foreground bg-background p-1.5 rounded border line-clamp-3 leading-snug">
+                  {parsedCampaignOutput.text}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

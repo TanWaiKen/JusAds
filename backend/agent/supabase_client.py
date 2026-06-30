@@ -1,591 +1,479 @@
 """
 supabase_client.py
 ──────────────────
-Supabase compliance store client for persisting compliance check records
-and violations to the Supabase Postgres database.
+Supabase CRUD functions organized by table + legacy class wrapper.
+Uses the shared supabase client from clients.py.
 
-Reads SUPABASE_URL and SUPABASE_KEY from environment variables.
-Implements insert, update, paginated history retrieval, bulk violation insert,
-and health check operations.
-
-Requirements: 4.1, 4.2, 4.3, 8.1, 8.2, 8.3
+Each table has: create, list/get, update, delete.
 """
 
 import logging
-import os
 from datetime import datetime, timezone
 
-from supabase import create_client, Client
-
+from agent.clients import supabase
 from agent.models import CheckRecord, HistoryResponse
 
 logger = logging.getLogger(__name__)
 
 
 class SupabaseComplianceStore:
-    """Manages compliance record persistence in Supabase."""
+    """Legacy class wrapper — prefer using the module functions directly."""
 
-    def __init__(self, url: str | None = None, key: str | None = None):
-        """Initialize the Supabase client.
+    def __init__(self, url=None, key=None):
+        pass
 
-        Args:
-            url: Supabase project URL. Falls back to SUPABASE_URL env var.
-            key: Supabase anon/service key. Falls back to SUPABASE_KEY env var.
-        """
-        self.url = url or os.environ.get("SUPABASE_URL", "")
-        self.key = key or os.environ.get("SUPABASE_KEY", "")
+    @property
+    def client(self):
+        """Expose the shared Supabase client for direct queries."""
+        return supabase
 
-        if not self.url or not self.key:
-            raise ValueError(
-                "Supabase URL and key are required. "
-                "Set SUPABASE_URL and SUPABASE_KEY environment variables."
-            )
+    def insert_check(self, record):
+        return create_check(record)
 
-        self.client: Client = create_client(self.url, self.key)
+    def update_check_status(self, check_id, status, **fields):
+        return update_check(check_id, status, **fields)
 
-    def insert_check(self, record: CheckRecord) -> bool:
-        """Insert a new compliance check record into the compliance_checks table.
+    def get_history(self, user_id, page=1, page_size=20):
+        return list_checks(user_id, page, page_size)
 
-        Args:
-            record: The CheckRecord to insert.
+    def insert_violations(self, check_id, violations):
+        return create_violations(check_id, violations)
 
-        Returns:
-            True if the insert succeeded, False otherwise.
-        """
-        try:
-            data = record.model_dump()
-            # Convert UUID and datetime to string for JSON serialization
-            data["project_id"] = str(data["project_id"])
-            data["created_at"] = data["created_at"].isoformat()
-            data["updated_at"] = data["updated_at"].isoformat()
+    def create_project(self, user_id, name, task_type=None):
+        return create_project(user_id, name)
 
-            self.client.table("compliance_checks").insert(data).execute()
-            logger.info("Inserted check record: %s", record.check_id)
-            return True
-        except Exception as e:
-            logger.error("Failed to insert check record %s: %s", record.check_id, e)
-            return False
+    def get_projects(self, user_id):
+        return list_projects(user_id)
 
-    def update_check_status(self, check_id: str, status: str, **fields) -> bool:
-        """Update check status and optional fields for a compliance check record.
+    def get_project_checks(self, project_id):
+        return list_checks_by_project(project_id)
 
-        Args:
-            check_id: The unique check identifier.
-            status: New status value.
-            **fields: Additional fields to update (e.g., s3_remix_key, result_json).
+    def create_task(self, project_id, task_type, status, summary, reference_id=None, pipeline_state=None):
+        return create_task(project_id, task_type, status, summary, reference_id, pipeline_state)
 
-        Returns:
-            True if the update succeeded, False otherwise.
-        """
-        try:
-            update_data = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
-            update_data.update(fields)
+    def list_tasks(self, project_id):
+        return list_tasks(project_id)
 
-            # Convert any UUID values to strings
-            for key, value in update_data.items():
-                if hasattr(value, "hex"):  # UUID-like
-                    update_data[key] = str(value)
+    def get_task_detail(self, project_id, task_id):
+        return get_task(project_id, task_id)
 
-            self.client.table("compliance_checks").update(update_data).eq(
-                "check_id", check_id
-            ).execute()
-            logger.info("Updated check %s to status: %s", check_id, status)
-            return True
-        except Exception as e:
-            logger.error("Failed to update check %s: %s", check_id, e)
-            return False
+    def update_task_pipeline(self, project_id, task_id, status, pipeline_state):
+        return update_task(project_id, task_id, status, pipeline_state)
 
-    def get_history(
-        self, user_id: str, page: int = 1, page_size: int = 20
-    ) -> HistoryResponse:
-        """Fetch paginated check history for a user.
+    def update_project_name(self, project_id, name):
+        return update_project(project_id, name)
 
-        Args:
-            user_id: The user to fetch history for.
-            page: Page number (minimum 1).
-            page_size: Number of records per page (clamped to 1–100).
+    def delete_project(self, project_id):
+        return delete_project(project_id)
 
-        Returns:
-            HistoryResponse with paginated records, total count, page, and page_size.
-        """
-        # Clamp pagination parameters
-        page = max(1, page)
-        page_size = max(1, min(100, page_size))
-        offset = (page - 1) * page_size
+    def delete_task(self, project_id, task_id):
+        return delete_task(project_id, task_id)
 
-        try:
-            # Get total count for the user
-            count_response = (
-                self.client.table("compliance_checks")
-                .select("*", count="exact")
-                .eq("user_id", user_id)
-                .execute()
-            )
-            total = count_response.count if count_response.count is not None else 0
+    def health_check(self):
+        return health_check()
 
-            # Fetch paginated records ordered by created_at descending
-            response = (
-                self.client.table("compliance_checks")
-                .select("*")
-                .eq("user_id", user_id)
-                .order("created_at", desc=True)
-                .range(offset, offset + page_size - 1)
-                .execute()
-            )
 
-            records = [CheckRecord(**row) for row in (response.data or [])]
+# ═════════════════════════════════════════════════════════════════════════════
+# PROJECTS
+# ═════════════════════════════════════════════════════════════════════════════
 
-            return HistoryResponse(
-                records=records,
-                total=total,
-                page=page,
-                page_size=page_size,
-            )
-        except Exception as e:
-            logger.error("Failed to fetch history for user %s: %s", user_id, e)
-            return HistoryResponse(records=[], total=0, page=page, page_size=page_size)
 
-    def insert_violations(self, check_id: str, violations: list[dict]) -> bool:
-        """Bulk insert violations for a compliance check.
+def create_project(user_id: str, name: str) -> dict:
+    """Create a new project.
 
-        Args:
-            check_id: The check_id to associate violations with.
-            violations: List of violation dicts. Each must contain at minimum:
-                violation_index, type, severity. Optional: description, start_time, end_time.
+    Args:
+        user_id: Owner's email address.
+        name: Project name (max 255 chars).
 
-        Returns:
-            True if all violations were inserted, False otherwise.
-        """
-        if not violations:
-            return True
+    Returns:
+        The inserted row dict (id as string).
+    """
+    data = {"owner_email": user_id, "name": name}
+    response = supabase.table("projects").insert(data).execute()
+    if response.data:
+        row = response.data[0]
+        row["id"] = str(row["id"])
+        return row
+    raise RuntimeError("Supabase insert returned no data")
 
-        try:
-            rows = []
-            for v in violations:
-                row = {
-                    "check_id": check_id,
-                    "violation_index": v.get("violation_index"),
-                    "type": v.get("type"),
-                    "severity": v.get("severity"),
-                    "description": v.get("description"),
-                    "start_time": v.get("start_time"),
-                    "end_time": v.get("end_time"),
-                }
-                rows.append(row)
 
-            self.client.table("violations").insert(rows).execute()
-            logger.info(
-                "Inserted %d violations for check %s", len(rows), check_id
-            )
-            return True
-        except Exception as e:
-            logger.error(
-                "Failed to insert violations for check %s: %s", check_id, e
-            )
-            return False
+def list_projects(user_id: str) -> list[dict]:
+    """List all projects for a user (newest first)."""
+    response = (
+        supabase.table("projects")
+        .select("*")
+        .eq("owner_email", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    rows = response.data or []
+    for row in rows:
+        row["id"] = str(row["id"])
+    return rows
 
-    def create_project(self, user_id: str, name: str, media_type: str) -> dict:
-        """Insert a new project into the projects table.
 
-        Args:
-            user_id: The user who owns the project.
-            name: Project name (non-empty, ≤255 chars).
-            media_type: One of text, image, audio, video.
+def update_project(project_id: str, name: str) -> dict:
+    """Update a project's name. Returns the updated row dict."""
+    update_data = {
+        "name": name.strip(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    response = (
+        supabase.table("projects")
+        .update(update_data)
+        .eq("id", project_id)
+        .execute()
+    )
+    if response.data:
+        row = response.data[0]
+        row["id"] = str(row["id"])
+        return row
+    raise RuntimeError("Supabase update returned no data")
 
-        Returns:
-            The inserted row as a dict including the generated UUID id as string.
 
-        Raises:
-            RuntimeError: If Supabase insert returned no data.
-        """
-        data = {
-            "user_id": user_id,
-            "name": name,
-            "media_type": media_type,
-        }
-        response = self.client.table("projects").insert(data).execute()
-        if response.data:
-            row = response.data[0]
-            # Convert UUID to string for JSON serialization
-            row["id"] = str(row["id"])
-            return row
-        raise RuntimeError("Supabase insert returned no data")
+def delete_project(project_id: str) -> bool:
+    """Delete a project (cascades to tasks, checks, violations)."""
+    try:
+        supabase.table("projects").delete().eq("id", project_id).execute()
+        logger.info("Deleted project %s", project_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to delete project %s: %s", project_id, e)
+        return False
 
-    def get_projects(self, user_id: str) -> list[dict]:
-        """Fetch all projects for a user, ordered by created_at descending.
 
-        Args:
-            user_id: The user whose projects to fetch.
+# ═════════════════════════════════════════════════════════════════════════════
+# COMPLIANCE CHECKS
+# ═════════════════════════════════════════════════════════════════════════════
 
-        Returns:
-            List of project dicts with UUID id converted to string.
-        """
+
+def create_check(record: CheckRecord) -> bool:
+    """Insert a compliance check record. Returns True on success."""
+    try:
+        data = record.model_dump()
+        data["project_id"] = str(data["project_id"])
+        data["created_at"] = data["created_at"].isoformat()
+        data["updated_at"] = data["updated_at"].isoformat()
+        supabase.table("compliance_checks").insert(data).execute()
+        logger.info("Inserted check: %s", record.check_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to insert check %s: %s", record.check_id, e)
+        return False
+
+
+def list_checks(user_id: str, page: int = 1, page_size: int = 20) -> HistoryResponse:
+    """Paginated compliance check history for a user."""
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))
+    offset = (page - 1) * page_size
+
+    try:
+        count_response = (
+            supabase.table("compliance_checks")
+            .select("*", count="exact")
+            .eq("user_email", user_id)
+            .execute()
+        )
+        total = count_response.count if count_response.count is not None else 0
+
         response = (
-            self.client.table("projects")
+            supabase.table("compliance_checks")
             .select("*")
-            .eq("user_id", user_id)
+            .eq("user_email", user_id)
+            .order("created_at", desc=True)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        records = [CheckRecord(**row) for row in (response.data or [])]
+        return HistoryResponse(records=records, total=total, page=page, page_size=page_size)
+    except Exception as e:
+        logger.error("Failed to list checks for user %s: %s", user_id, e)
+        return HistoryResponse(records=[], total=0, page=page, page_size=page_size)
+
+
+def list_checks_by_project(project_id: str) -> list[dict]:
+    """List compliance checks for a project (newest first, max 50)."""
+    response = (
+        supabase.table("compliance_checks")
+        .select("check_id, media_type, market, risk_percentage, status, created_at")
+        .eq("project_id", project_id)
+        .order("created_at", desc=True)
+        .limit(50)
+        .execute()
+    )
+    return response.data or []
+
+
+def update_check(check_id: str, status: str, **fields) -> bool:
+    """Update a compliance check's status and optional fields."""
+    try:
+        update_data = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
+        update_data.update(fields)
+        for key, value in update_data.items():
+            if hasattr(value, "hex"):
+                update_data[key] = str(value)
+
+        supabase.table("compliance_checks").update(update_data).eq("check_id", check_id).execute()
+        logger.info("Updated check %s -> status: %s", check_id, status)
+        return True
+    except Exception as e:
+        logger.error("Failed to update check %s: %s", check_id, e)
+        return False
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# VIOLATIONS
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def create_violations(check_id: str, violations: list[dict]) -> bool:
+    """Bulk insert violations for a compliance check.
+
+    Each dict should have: violation_index, type, severity.
+    Optional: description, start_time, end_time.
+    """
+    if not violations:
+        return True
+
+    try:
+        rows = [
+            {
+                "check_id": check_id,
+                "violation_index": v.get("violation_index"),
+                "type": v.get("type"),
+                "severity": v.get("severity"),
+                "description": v.get("description"),
+                "start_time": v.get("start_time"),
+                "end_time": v.get("end_time"),
+            }
+            for v in violations
+        ]
+        supabase.table("violations").insert(rows).execute()
+        logger.info("Inserted %d violations for check %s", len(rows), check_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to insert violations for check %s: %s", check_id, e)
+        return False
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TASKS
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def create_task(
+    project_id: str,
+    task_type: str,
+    status: str,
+    summary: str,
+    reference_id: str | None = None,
+    pipeline_state: dict | None = None,
+) -> dict:
+    """Create a task row. Returns the inserted row dict (id as string)."""
+    data: dict = {
+        "project_id": project_id,
+        "type": task_type,
+        "status": status,
+        "summary": summary,
+    }
+    if reference_id is not None:
+        data["reference_id"] = reference_id
+    if pipeline_state is not None:
+        data["pipeline_state"] = pipeline_state
+
+    response = supabase.table("tasks").insert(data).execute()
+    if response.data:
+        row = response.data[0]
+        row["id"] = str(row["id"])
+        logger.info("Created task %s for project %s", row["id"], project_id)
+        return row
+    raise RuntimeError("Supabase insert returned no data")
+
+
+def list_tasks(project_id: str) -> list[dict]:
+    """List all tasks for a project (newest first), enriched with compliance metadata."""
+    try:
+        response = (
+            supabase.table("tasks")
+            .select("*")
+            .eq("project_id", project_id)
             .order("created_at", desc=True)
             .execute()
         )
         rows = response.data or []
-        for row in rows:
-            row["id"] = str(row["id"])
-        return rows
 
-    def get_project_checks(self, project_id: str) -> list[dict]:
-        """Fetch compliance checks for a project, ordered by created_at descending.
+        # Collect reference_ids for compliance tasks to batch-fetch metadata
+        ref_ids = [r["reference_id"] for r in rows if r.get("type") == "compliance" and r.get("reference_id")]
 
-        Args:
-            project_id: The project UUID to fetch checks for.
-
-        Returns:
-            List of check record dicts (up to 50) for the sidebar history.
-        """
-        response = (
-            self.client.table("compliance_checks")
-            .select("check_id, media_type, market, risk_band, status, created_at")
-            .eq("project_id", project_id)
-            .order("created_at", desc=True)
-            .limit(50)
-            .execute()
-        )
-        return response.data or []
-
-    # ─── Task CRUD ────────────────────────────────────────────────────────
-
-    def create_task(
-        self,
-        project_id: str,
-        task_type: str,
-        status: str,
-        summary: str,
-        reference_id: str | None = None,
-        pipeline_state: dict | None = None,
-    ) -> dict:
-        """Insert a unified task row into the tasks table.
-
-        Args:
-            project_id: The project UUID this task belongs to.
-            task_type: Either 'compliance' or 'generation'.
-            status: Initial status string.
-            summary: Human-readable summary of the task.
-            reference_id: Optional compliance_checks id (for compliance tasks).
-            pipeline_state: Optional pipeline graph state (for generation tasks).
-
-        Returns:
-            The created row as a dict with id as string.
-
-        Raises:
-            RuntimeError: If Supabase insert returned no data.
-        """
-        try:
-            data: dict = {
-                "project_id": project_id,
-                "type": task_type,
-                "status": status,
-                "summary": summary,
-            }
-            if reference_id is not None:
-                data["reference_id"] = reference_id
-            if pipeline_state is not None:
-                data["pipeline_state"] = pipeline_state
-
-            response = self.client.table("tasks").insert(data).execute()
-            if response.data:
-                row = response.data[0]
-                row["id"] = str(row["id"])
-                logger.info(
-                    "[SupabaseComplianceStore] Created task %s for project %s",
-                    row["id"],
-                    project_id,
-                )
-                return row
-            raise RuntimeError("Supabase insert returned no data")
-        except RuntimeError:
-            raise
-        except Exception as e:
-            logger.error(
-                "[SupabaseComplianceStore] Failed to create task for project %s: %s",
-                project_id,
-                e,
-            )
-            raise
-
-    def list_tasks(self, project_id: str) -> list[dict]:
-        """Return all tasks for a project ordered by created_at descending.
-
-        Args:
-            project_id: The project UUID to fetch tasks for.
-
-        Returns:
-            List of task dicts with UUID id converted to string.
-            Returns an empty list on failure.
-        """
-        try:
-            response = (
-                self.client.table("tasks")
-                .select("*")
-                .eq("project_id", project_id)
-                .order("created_at", desc=True)
-                .execute()
-            )
-            rows = response.data or []
-            for row in rows:
-                row["id"] = str(row["id"])
-            logger.info(
-                "[SupabaseComplianceStore] Listed %d tasks for project %s",
-                len(rows),
-                project_id,
-            )
-            return rows
-        except Exception as e:
-            logger.error(
-                "[SupabaseComplianceStore] Failed to list tasks for project %s: %s",
-                project_id,
-                e,
-            )
-            return []
-
-    def get_task_detail(self, project_id: str, task_id: str) -> dict | None:
-        """Return full task detail with type-specific enrichment.
-
-        For compliance tasks, joins compliance_checks and violations via
-        reference_id. Returns the task row enriched with a 'compliance' key
-        containing: risk_percentage, status, market, violations list, s3_remix_key.
-
-        For generation tasks, simply includes the pipeline_state field.
-
-        Args:
-            project_id: The project UUID the task belongs to.
-            task_id: The task UUID to fetch.
-
-        Returns:
-            Enriched task dict, or None if not found.
-        """
-        try:
-            response = (
-                self.client.table("tasks")
-                .select("*")
-                .eq("id", task_id)
-                .eq("project_id", project_id)
-                .execute()
-            )
-            rows = response.data or []
-            if not rows:
-                logger.info(
-                    "[SupabaseComplianceStore] Task %s not found in project %s",
-                    task_id,
-                    project_id,
-                )
-                return None
-
-            task = rows[0]
-            task["id"] = str(task["id"])
-
-            if task["type"] == "compliance" and task.get("reference_id"):
-                # Join compliance_checks data
-                check_response = (
-                    self.client.table("compliance_checks")
-                    .select("risk_percentage, status, market, s3_upload_key, s3_segmented_key, s3_remix_key, result_json, check_id, media_type")
-                    .eq("check_id", task["reference_id"])
+        compliance_meta: dict[str, dict] = {}
+        if ref_ids:
+            try:
+                meta_resp = (
+                    supabase.table("compliance_checks")
+                    .select("check_id, market, ethnicity, age_group, platform, media_type")
+                    .in_("check_id", ref_ids)
                     .execute()
                 )
-                check_rows = check_response.data or []
-                if check_rows:
-                    check = check_rows[0]
-                    # Fetch violations for this check
-                    violations_response = (
-                        self.client.table("violations")
-                        .select("*")
-                        .eq("check_id", task["reference_id"])
-                        .execute()
-                    )
-                    violations = violations_response.data or []
+                for m in (meta_resp.data or []):
+                    compliance_meta[m["check_id"]] = m
+            except Exception as e:
+                logger.warning("[list_tasks] Failed to fetch compliance metadata: %s", e)
 
-                    task["compliance"] = {
-                        "risk_percentage": check.get("risk_percentage"),
-                        "status": check.get("status"),
-                        "market": check.get("market"),
-                        "media_type": check.get("media_type"),
-                        "violations": violations,
-                        "s3_upload_key": check.get("s3_upload_key"),
-                        "s3_segmented_key": check.get("s3_segmented_key"),
-                        "s3_remix_key": check.get("s3_remix_key"),
-                        "result_json": check.get("result_json"),
-                    }
-                    # Also expose pipeline_state at the task level
-                    # (it's already in the task row from the tasks table)
+        for row in rows:
+            row["id"] = str(row["id"])
+            # Attach compliance metadata if available
+            ref = row.get("reference_id")
+            if ref and ref in compliance_meta:
+                meta = compliance_meta[ref]
+                row["market"] = meta.get("market")
+                row["ethnicity"] = meta.get("ethnicity")
+                row["age_group"] = meta.get("age_group")
+                row["platform"] = meta.get("platform")
+                row["media_type"] = meta.get("media_type")
 
-            logger.info(
-                "[SupabaseComplianceStore] Fetched detail for task %s", task_id
-            )
-            return task
-        except Exception as e:
-            logger.error(
-                "[SupabaseComplianceStore] Failed to get task detail %s: %s",
-                task_id,
-                e,
-            )
+        return rows
+    except Exception as e:
+        logger.error("Failed to list tasks for project %s: %s", project_id, e)
+        return []
+
+
+def get_task(project_id: str, task_id: str) -> dict | None:
+    """Get full task detail with compliance enrichment if applicable."""
+    try:
+        response = (
+            supabase.table("tasks")
+            .select("*")
+            .eq("id", task_id)
+            .eq("project_id", project_id)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
             return None
 
-def update_task_pipeline(
-        self, project_id: str, task_id: str, status: str, pipeline_state: dict
-    ) -> bool:
-        """Persist compliance pipeline state and workflow status for a task.
+        task = rows[0]
+        task["id"] = str(task["id"])
 
-        Status should reflect the actual workflow stage:
-        - 'checked'  — compliance analysis completed
-        - 'reviewed' — user has reviewed the results
-        - 'remixed'  — remediation has been applied
-        - 'compared' — comparison between original and remix completed
-        - 'saved'    — pipeline state saved (for generation tasks)
-
-        Args:
-            project_id: The project UUID the task belongs to.
-            task_id: The task UUID to update.
-            status: New status value.
-            pipeline_state: The pipeline graph state to persist.
-
-        Returns:
-            True if the update succeeded, False otherwise.
-        """
-        try:
-            update_data = {
-                "status": status,
-                "pipeline_state": pipeline_state,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            self.client.table("tasks").update(update_data).eq(
-                "id", task_id
-            ).eq("project_id", project_id).execute()
+        if task["type"] == "compliance" and task.get("reference_id"):
+            task["compliance"] = _get_compliance_enrichment(task["reference_id"])
+            # Expose S3 URLs at top level for frontend convenience
+            task["s3_upload_key"] = task["compliance"].get("s3_upload_key")
+            task["s3_segmented_key"] = task["compliance"].get("s3_segmented_key")
+            task["s3_remix_key"] = task["compliance"].get("s3_remix_key")
             logger.info(
-                "[SupabaseComplianceStore] Updated pipeline for task %s to status: %s",
-                task_id,
-                status,
+                f"[get_task] task={task_id} | s3_upload_key={task['s3_upload_key']} | "
+                f"s3_segmented_key={task['s3_segmented_key']} | s3_remix_key={task['s3_remix_key']}"
             )
-            return True
-        except Exception as e:
-            logger.error(
-                "[SupabaseComplianceStore] Failed to update pipeline for task %s: %s",
-                task_id,
-                e,
-            )
-            return False
 
-    def update_project_name(self, project_id: str, name: str) -> dict:
-        """Update the project name and return the updated row.
+        return task
+    except Exception as e:
+        logger.error("Failed to get task %s: %s", task_id, e)
+        return None
 
-        Args:
-            project_id: The project UUID to update.
-            name: The new project name (will be trimmed).
 
-        Returns:
-            The updated project row as a dict with id as string.
+def update_task(project_id: str, task_id: str, status: str, pipeline_state: dict) -> bool:
+    """Update a task's status and pipeline_state."""
+    try:
+        update_data = {
+            "status": status,
+            "pipeline_state": pipeline_state,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        supabase.table("tasks").update(update_data).eq("id", task_id).eq("project_id", project_id).execute()
+        logger.info("Updated task %s -> status: %s", task_id, status)
+        return True
+    except Exception as e:
+        logger.error("Failed to update task %s: %s", task_id, e)
+        return False
 
-        Raises:
-            RuntimeError: If Supabase update returned no data.
-        """
-        try:
-            trimmed_name = name.strip()
-            update_data = {
-                "name": trimmed_name,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            response = (
-                self.client.table("projects")
-                .update(update_data)
-                .eq("id", project_id)
-                .execute()
-            )
-            if response.data:
-                row = response.data[0]
-                row["id"] = str(row["id"])
-                logger.info(
-                    "[SupabaseComplianceStore] Updated project %s name to '%s'",
-                    project_id,
-                    trimmed_name,
-                )
-                return row
-            raise RuntimeError("Supabase update returned no data")
-        except RuntimeError:
-            raise
-        except Exception as e:
-            logger.error(
-                "[SupabaseComplianceStore] Failed to update project %s name: %s",
-                project_id,
-                e,
-            )
-            raise
 
-    # ─── Delete Operations ────────────────────────────────────────────────
+def delete_task(project_id: str, task_id: str) -> bool:
+    """Delete a single task."""
+    try:
+        supabase.table("tasks").delete().eq("id", task_id).eq("project_id", project_id).execute()
+        logger.info("Deleted task %s from project %s", task_id, project_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to delete task %s: %s", task_id, e)
+        return False
 
-    def delete_project(self, project_id: str) -> bool:
-        """Delete a project and all its associated data (CASCADE).
 
-        Due to ON DELETE CASCADE on foreign keys, this also removes:
-        - All tasks for this project
-        - All compliance_checks for this project
-        - All violations for those checks
+# ═════════════════════════════════════════════════════════════════════════════
+# HEALTH
+# ═════════════════════════════════════════════════════════════════════════════
 
-        Args:
-            project_id: The project UUID to delete.
 
-        Returns:
-            True if deleted successfully, False otherwise.
-        """
-        try:
-            self.client.table("projects").delete().eq("id", project_id).execute()
-            logger.info(
-                "[SupabaseComplianceStore] Deleted project %s (cascade)",
-                project_id,
-            )
-            return True
-        except Exception as e:
-            logger.error(
-                "[SupabaseComplianceStore] Failed to delete project %s: %s",
-                project_id,
-                e,
-            )
-            return False
+def health_check() -> bool:
+    """Quick connectivity check against Supabase."""
+    try:
+        supabase.table("compliance_checks").select("check_id").limit(1).execute()
+        return True
+    except Exception:
+        return False
 
-    def delete_task(self, project_id: str, task_id: str) -> bool:
-        """Delete a single task from a project.
 
-        Args:
-            project_id: The project UUID the task belongs to.
-            task_id: The task UUID to delete.
+# ─── Private helpers ──────────────────────────────────────────────────────────
 
-        Returns:
-            True if deleted successfully, False otherwise.
-        """
-        try:
-            self.client.table("tasks").delete().eq(
-                "id", task_id
-            ).eq("project_id", project_id).execute()
-            logger.info(
-                "[SupabaseComplianceStore] Deleted task %s from project %s",
-                task_id,
-                project_id,
-            )
-            return True
-        except Exception as e:
-            logger.error(
-                "[SupabaseComplianceStore] Failed to delete task %s: %s",
-                task_id,
-                e,
-            )
-            return False
 
-    # ─── Health ─────────────────────────────────────────────────────────
+def _get_compliance_enrichment(reference_id: str) -> dict:
+    """Fetch compliance_checks + violations for a task's reference_id."""
+    empty = {
+        "risk_percentage": None,
+        "status": "pending",
+        "market": None,
+        "ethnicity": None,
+        "age_group": None,
+        "platform": None,
+        "media_type": None,
+        "violations": [],
+        "s3_upload_key": None,
+        "s3_segmented_key": None,
+        "s3_remix_key": None,
+        "result_json": None,
+    }
 
-    def health_check(self) -> bool:
-        """Check Supabase connectivity by querying the compliance_checks table.
+    try:
+        check_resp = (
+            supabase.table("compliance_checks")
+            .select("risk_percentage, status, market, ethnicity, age_group, platform, "
+                    "s3_upload_key, s3_segmented_key, s3_remix_key, result_json, check_id, media_type")
+            .eq("check_id", reference_id)
+            .execute()
+        )
+        check_rows = check_resp.data or []
+    except Exception as e:
+        logger.error("compliance_checks lookup failed for %s: %s", reference_id, e)
+        return empty
 
-        Returns:
-            True if the connection is healthy, False otherwise.
-        """
-        try:
-            self.client.table("compliance_checks").select("check_id").limit(1).execute()
-            return True
-        except Exception:
-            return False
+    if not check_rows:
+        return empty
+
+    check = check_rows[0]
+
+    try:
+        viol_resp = (
+            supabase.table("violations")
+            .select("*")
+            .eq("check_id", reference_id)
+            .execute()
+        )
+        violations = viol_resp.data or []
+    except Exception as e:
+        logger.error("violations lookup failed for %s: %s", reference_id, e)
+        violations = []
+
+    return {
+        "risk_percentage": check.get("risk_percentage"),
+        "status": check.get("status"),
+        "market": check.get("market"),
+        "ethnicity": check.get("ethnicity"),
+        "age_group": check.get("age_group"),
+        "platform": check.get("platform"),
+        "media_type": check.get("media_type"),
+        "violations": violations,
+        "s3_upload_key": check.get("s3_upload_key"),
+        "s3_segmented_key": check.get("s3_segmented_key"),
+        "s3_remix_key": check.get("s3_remix_key"),
+        "result_json": check.get("result_json"),
+    }

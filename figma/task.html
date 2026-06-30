@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>JusAds | Project Records</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed-dim": "#ffb1c5",
+                        "primary": "#000000",
+                        "on-primary-fixed": "#1c1b1b",
+                        "surface-container-low": "#f3f3f4",
+                        "cosmic-pink": "#ff0080",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#444748",
+                        "on-error-container": "#93000a",
+                        "surface-container-high": "#e8e8e8",
+                        "primary-fixed-dim": "#c8c6c5",
+                        "error": "#ba1a1a",
+                        "tertiary-fixed": "#ffd9e1",
+                        "primary-fixed": "#e5e2e1",
+                        "on-secondary-container": "#fefcff",
+                        "error-container": "#ffdad6",
+                        "inverse-on-surface": "#f0f1f1",
+                        "text-muted": "#666666",
+                        "on-primary-fixed-variant": "#474746",
+                        "text-secondary": "#4d4d4d",
+                        "emerald-glow": "#50e3c2",
+                        "outline-variant": "#c4c7c7",
+                        "on-tertiary-container": "#ef3982",
+                        "on-surface": "#1a1c1c",
+                        "surface-bright": "#f9f9f9",
+                        "aurora-purple": "#7928ca",
+                        "bg-dark": "#0a0a0f",
+                        "surface-container": "#eeeeee",
+                        "ship-red": "#ee0000",
+                        "on-secondary": "#ffffff",
+                        "surface-variant": "#e2e2e2",
+                        "on-tertiary-fixed": "#3f001b",
+                        "secondary": "#0057c0",
+                        "on-error": "#ffffff",
+                        "text-primary": "#171717",
+                        "surface-tint": "#5f5e5e",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-fixed-dim": "#aec6ff",
+                        "on-primary": "#ffffff",
+                        "tertiary": "#000000",
+                        "surface-dim": "#dadada",
+                        "inverse-primary": "#c8c6c5",
+                        "secondary-fixed": "#d8e2ff",
+                        "secondary-container": "#006ff0",
+                        "on-background": "#1a1c1c",
+                        "outline": "#747878",
+                        "inverse-surface": "#2f3131",
+                        "primary-container": "#1c1b1b",
+                        "surface-container-highest": "#e2e2e2"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-md": "16px",
+                        "stack-lg": "32px",
+                        "stack-sm": "8px",
+                        "max-content-width": "1200px",
+                        "sidebar-width": "240px",
+                        "margin-page": "40px",
+                        "gutter": "24px"
+                    },
+                    "fontFamily": {
+                        "label-ui": ["Hanken Grotesk"],
+                        "code-xs": ["JetBrains Mono"],
+                        "headline-sm": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "code-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "label-ui": ["14px", {"lineHeight": "1", "fontWeight": "500"}],
+                        "code-xs": ["11px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "headline-sm": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "code-sm": ["13px", {"lineHeight": "1.4", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .retina-border {
+            box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+        }
+        .hover-card-shadow:hover {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.04);
+        }
+        .aurora-border-active {
+            position: relative;
+        }
+        .aurora-border-active::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 2px;
+            background: linear-gradient(to bottom, #0070f3, #7928ca, #ff0080);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-text-primary font-body-md selection:bg-secondary/20">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full flex flex-col border-r border-outline-variant/30 w-sidebar-width bg-surface-bright z-50">
+<div class="p-gutter flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-primary flex items-center justify-center rounded">
+<span class="material-symbols-outlined text-white text-[20px]">ads_click</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-black text-primary leading-tight">JusAds</h1>
+<p class="font-label-ui text-[10px] text-text-muted tracking-widest uppercase">Localization Platform</p>
+</div>
+</div>
+<button class="mt-6 w-full py-2.5 px-4 bg-primary text-on-primary rounded-lg font-label-ui text-label-ui flex items-center justify-center gap-2 transition-all active:scale-95">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Project
+            </button>
+</div>
+<nav class="flex-1 px-3 space-y-1 mt-4 overflow-y-auto no-scrollbar">
+<div class="px-3 py-2">
+<span class="font-label-ui text-[11px] text-text-muted uppercase tracking-widest">Main Menu</span>
+</div>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant hover:bg-surface-container-low transition-all rounded-lg group" href="#">
+<span class="material-symbols-outlined text-[20px]">folder_open</span>
+<span class="font-label-ui text-label-ui">Assets</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant hover:bg-surface-container-low transition-all rounded-lg group" href="#">
+<span class="material-symbols-outlined text-[20px]">trending_up</span>
+<span class="font-label-ui text-label-ui">Trends</span>
+</a>
+<!-- Active State: Projects -->
+<a class="flex items-center gap-3 px-3 py-2.5 text-primary font-bold border-l-2 border-primary bg-surface-container-low transition-all rounded-r-lg group" href="#">
+<span class="material-symbols-outlined text-[20px]">account_tree</span>
+<span class="font-label-ui text-label-ui">Projects</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant hover:bg-surface-container-low transition-all rounded-lg group" href="#">
+<span class="material-symbols-outlined text-[20px]">fact_check</span>
+<span class="font-label-ui text-label-ui">Compliance</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant hover:bg-surface-container-low transition-all rounded-lg group" href="#">
+<span class="material-symbols-outlined text-[20px]">auto_awesome</span>
+<span class="font-label-ui text-label-ui">Generations</span>
+</a>
+<div class="px-3 py-6">
+<span class="font-label-ui text-[11px] text-text-muted uppercase tracking-widest">Recent Projects</span>
+<div class="mt-3 flex flex-col gap-1">
+<button class="text-left px-3 py-2 text-label-ui aurora-border-active bg-surface-container-low font-bold text-primary rounded-r-lg">
+                        Q4 Video Campaign
+                    </button>
+<button class="text-left px-3 py-2 text-label-ui text-text-secondary hover:text-primary transition-colors">
+                        Global Brand Launch
+                    </button>
+<button class="text-left px-3 py-2 text-label-ui text-text-secondary hover:text-primary transition-colors">
+                        Social Short Assets
+                    </button>
+</div>
+</div>
+</nav>
+<div class="p-gutter border-t border-outline-variant/30 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="font-label-ui text-label-ui">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">help</span>
+<span class="font-label-ui text-label-ui">Support</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-sidebar-width min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="sticky top-0 z-40 flex justify-between items-center h-16 px-gutter w-full bg-surface-container-lowest shadow-sm">
+<div class="flex items-center gap-4">
+<nav class="flex items-center gap-2 font-body-md text-text-muted">
+<span class="hover:text-primary cursor-pointer">Projects</span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<span class="text-primary font-bold">Q4 Video Campaign</span>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<button class="p-2 text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">undo</span></button>
+<button class="p-2 text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">redo</span></button>
+<button class="p-2 text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">download</span></button>
+<button class="p-2 text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">light_mode</span></button>
+</div>
+<div class="h-8 w-[1px] bg-outline-variant/30 mx-2"></div>
+<button class="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-ui text-label-ui hover:opacity-90 transition-all">
+                    Run Pipeline
+                </button>
+<img alt="User profile" class="w-8 h-8 rounded-full border border-outline-variant/30 object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBt3V-h9aVDYa5iVj8ssPiF5vwv9DDaHDOM67kQSDGK3GmnenZGiizfWoEQUqeuNbpKb92xgyKi67KuwmA28YmYhllsr_AJ9aIaoIBbvxjTtlrxz_LYjDHb7ttQezV4KXmXl6IxaQ0R7s1yO9shbdZbmxQmCuQAZYYtyTSrT9YPTHVFz8tzCZxEsM_Gy0W1auRH1-P5MSsdeXquijWJ6kZhN9cNTyFGmy8YUswCA32_JiCaBEhR19nyW563csBLVyOVHxDtwOZeJ_Y"/>
+</div>
+</header>
+<!-- Canvas -->
+<div class="flex-1 p-8 max-w-[1200px] mx-auto w-full">
+<!-- Dashboard Header -->
+<div class="mb-10">
+<div class="flex justify-between items-end mb-8">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary mb-1">Project Records</h2>
+<p class="text-text-muted font-body-md">Audit trail for <span class="font-code-sm text-code-sm bg-surface-container-low px-2 py-0.5 rounded">Q4-VID-9921</span> • <span class="text-text-secondary">Video Campaign</span> • <span class="text-text-secondary">Created Oct 12, 2023</span></p>
+</div>
+<div class="flex gap-2">
+<button class="retina-border bg-surface-container-lowest px-4 py-2 rounded-lg font-label-ui text-label-ui flex items-center gap-2 hover:bg-surface-bright transition-colors">
+<span class="material-symbols-outlined text-[18px]">filter_list</span> Filter
+                        </button>
+<button class="retina-border bg-surface-container-lowest px-4 py-2 rounded-lg font-label-ui text-label-ui flex items-center gap-2 hover:bg-surface-bright transition-colors">
+<span class="material-symbols-outlined text-[18px]">ios_share</span> Export
+                        </button>
+</div>
+</div>
+<!-- Stats Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="bg-surface-container-lowest p-6 rounded-xl retina-border hover-card-shadow transition-all group">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-surface-container-low rounded-lg text-primary">
+<span class="material-symbols-outlined">data_exploration</span>
+</div>
+<span class="font-code-xs text-code-xs text-emerald-glow bg-emerald-glow/10 px-2 py-1 rounded">+12% vs last week</span>
+</div>
+<p class="text-text-muted font-label-ui uppercase tracking-wider mb-1">Total Tasks</p>
+<h3 class="font-headline-md text-headline-md text-primary">1,284</h3>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-xl retina-border hover-card-shadow transition-all group">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-surface-container-low rounded-lg text-secondary">
+<span class="material-symbols-outlined">auto_awesome</span>
+</div>
+<span class="font-code-xs text-code-xs text-secondary bg-secondary/10 px-2 py-1 rounded">High Quality</span>
+</div>
+<p class="text-text-muted font-label-ui uppercase tracking-wider mb-1">Successful Generations</p>
+<h3 class="font-headline-md text-headline-md text-primary">1,202</h3>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-xl retina-border hover-card-shadow transition-all group">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-surface-container-low rounded-lg text-cosmic-pink">
+<span class="material-symbols-outlined">verified_user</span>
+</div>
+<span class="font-code-xs text-code-xs text-cosmic-pink bg-cosmic-pink/10 px-2 py-1 rounded">98.4% Pass Rate</span>
+</div>
+<p class="text-text-muted font-label-ui uppercase tracking-wider mb-1">Compliance Passes</p>
+<h3 class="font-headline-md text-headline-md text-primary">1,263</h3>
+</div>
+</div>
+</div>
+<!-- Execution List Table -->
+<div class="bg-surface-container-lowest rounded-xl retina-border overflow-hidden">
+<div class="px-6 py-4 border-b border-outline-variant/10 flex flex-wrap gap-4 items-center bg-surface-container-lowest"><div class="flex items-center gap-2"><span class="text-[11px] font-bold uppercase text-text-muted tracking-wider">Type:</span><select class="bg-surface-container-low border-none rounded-lg text-xs font-label-ui py-1.5 focus:ring-1 focus:ring-primary"><option>All Types</option><option>Generation</option><option>Compliance</option><option>Remix</option></select></div><div class="flex items-center gap-2"><span class="text-[11px] font-bold uppercase text-text-muted tracking-wider">Status:</span><select class="bg-surface-container-low border-none rounded-lg text-xs font-label-ui py-1.5 focus:ring-1 focus:ring-primary"><option>All Status</option><option>Completed</option><option>Failed</option><option>Processing</option></select></div><div class="flex items-center gap-2"><span class="text-[11px] font-bold uppercase text-text-muted tracking-wider">Range:</span><button class="bg-surface-container-low px-3 py-1.5 rounded-lg text-xs font-label-ui flex items-center gap-2">Last 30 Days <span class="material-symbols-outlined text-[14px]">calendar_today</span></button></div></div><div class="px-6 py-4 border-b border-outline-variant/20 flex justify-between items-center bg-surface-bright">
+<h4 class="font-label-ui text-label-ui text-primary font-bold">Execution History</h4>
+<div class="flex items-center gap-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[18px]">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-transparent border-none focus:ring-0 font-label-ui text-label-ui w-48" placeholder="Search Task ID..." type="text"/>
+</div>
+</div>
+</div>
+<table class="w-full text-left border-collapse">
+<thead class="bg-surface-container-low/50"><tr><th class="px-6 py-3 font-label-ui text-[12px] uppercase tracking-wider text-text-muted">Task ID</th><th class="px-6 py-3 font-label-ui text-[12px] uppercase tracking-wider text-text-muted">Preview</th><th class="px-6 py-3 font-label-ui text-[12px] uppercase tracking-wider text-text-muted">Type</th><th class="px-6 py-3 font-label-ui text-[12px] uppercase tracking-wider text-text-muted">Duration</th><th class="px-6 py-3 font-label-ui text-[12px] uppercase tracking-wider text-text-muted">Status</th><th class="px-6 py-3 font-label-ui text-[12px] uppercase tracking-wider text-text-muted">Date</th><th class="px-6 py-3"></th></tr></thead>
+<tbody class="divide-y divide-outline-variant/10">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group" onclick="document.getElementById('detail-panel').classList.remove('translate-x-full')"><td class="px-6 py-4"><a class="font-code-sm text-code-sm font-bold text-secondary hover:underline" href="#">TX-9021</a></td><td class="px-6 py-4"><div class="w-12 h-8 bg-bg-dark rounded overflow-hidden border border-outline-variant/20"><img class="w-full h-full object-cover opacity-80" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDmXlaMG1m88GVPSbrbLpGnXoS0oB_Ym4hkn-zD5lBxS6PjA6GFIeOSNegUDfLnJBdzS2HYXRX3jfduKPKMM0rE8Rc8slxM9ff81Rd25Zfcg_VwslPYFTMlXwY_pKDaapm6yKWcNijape8ssYxxV5-opxA21ZEXoyfCp4MCSXqfzSlwI4dj51XlpUSJ0wt7Mx4zwold3KMH64R7eM2N_gPzSdPanItPNt114ZNLY28MHffmj63O5KNPvEJPxHwyRYlTTTagzaq8nJw"/></div></td><td class="px-6 py-4"><span class="px-2 py-1 bg-secondary/5 text-secondary text-code-xs rounded uppercase">Generation</span></td><td class="px-6 py-4 text-text-secondary font-code-xs">42s</td><td class="px-6 py-4"><div class="flex items-center gap-2 text-emerald-glow"><span class="w-2 h-2 rounded-full bg-emerald-glow"></span><span class="font-label-ui text-label-ui">Completed</span></div></td><td class="px-6 py-4 text-text-secondary font-label-ui text-label-ui">Oct 24, 14:22</td><td class="px-6 py-4 text-right"><span class="material-symbols-outlined text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span></td></tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group">
+<td class="px-6 py-4">
+<span class="font-code-sm text-code-sm font-bold text-primary">TX-8994</span>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 bg-cosmic-pink/5 text-cosmic-pink text-code-xs rounded uppercase">Compliance</span>
+</td>
+<td class="px-6 py-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-text-muted">graphic_eq</span>
+<span class="font-label-ui text-label-ui">Audio</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 text-emerald-glow">
+<span class="w-2 h-2 rounded-full bg-emerald-glow"></span>
+<span class="font-label-ui text-label-ui">Completed</span>
+</div>
+</td>
+<td class="px-6 py-4 text-text-secondary font-label-ui text-label-ui">
+                                Oct 24, 2023 11:05
+                            </td>
+<td class="px-6 py-4 text-right">
+<span class="material-symbols-outlined text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward_ios</span>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group">
+<td class="px-6 py-4">
+<span class="font-code-sm text-code-sm font-bold text-primary">TX-8982</span>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 bg-secondary/5 text-secondary text-code-xs rounded uppercase">Generation</span>
+</td>
+<td class="px-6 py-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-text-muted">image</span>
+<span class="font-label-ui text-label-ui">Image</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 text-error">
+<span class="w-2 h-2 rounded-full bg-error animate-pulse"></span>
+<span class="font-label-ui text-label-ui">Failed</span>
+</div>
+</td>
+<td class="px-6 py-4 text-text-secondary font-label-ui text-label-ui">
+                                Oct 23, 2023 18:45
+                            </td>
+<td class="px-6 py-4 text-right">
+<span class="material-symbols-outlined text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward_ios</span>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group">
+<td class="px-6 py-4">
+<span class="font-code-sm text-code-sm font-bold text-primary">TX-8941</span>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 bg-cosmic-pink/5 text-cosmic-pink text-code-xs rounded uppercase">Compliance</span>
+</td>
+<td class="px-6 py-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-text-muted">videocam</span>
+<span class="font-label-ui text-label-ui">Video</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 text-emerald-glow">
+<span class="w-2 h-2 rounded-full bg-emerald-glow"></span>
+<span class="font-label-ui text-label-ui">Completed</span>
+</div>
+</td>
+<td class="px-6 py-4 text-text-secondary font-label-ui text-label-ui">
+                                Oct 23, 2023 09:12
+                            </td>
+<td class="px-6 py-4 text-right">
+<span class="material-symbols-outlined text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward_ios</span>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group">
+<td class="px-6 py-4">
+<span class="font-code-sm text-code-sm font-bold text-primary">TX-8902</span>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 bg-secondary/5 text-secondary text-code-xs rounded uppercase">Generation</span>
+</td>
+<td class="px-6 py-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-text-muted">videocam</span>
+<span class="font-label-ui text-label-ui">Video</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 text-emerald-glow">
+<span class="w-2 h-2 rounded-full bg-emerald-glow"></span>
+<span class="font-label-ui text-label-ui">Completed</span>
+</div>
+</td>
+<td class="px-6 py-4 text-text-secondary font-label-ui text-label-ui">
+                                Oct 22, 2023 15:30
+                            </td>
+<td class="px-6 py-4 text-right">
+<span class="material-symbols-outlined text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward_ios</span>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="px-6 py-4 border-t border-outline-variant/10 flex items-center justify-between bg-surface-bright">
+<p class="font-label-ui text-[12px] text-text-muted">Showing 5 of 1,284 executions</p>
+<div class="flex gap-1">
+<button class="w-8 h-8 flex items-center justify-center rounded retina-border hover:bg-surface-container-low transition-colors"><span class="material-symbols-outlined text-[18px]">chevron_left</span></button>
+<button class="w-8 h-8 flex items-center justify-center rounded bg-primary text-white font-code-xs">1</button>
+<button class="w-8 h-8 flex items-center justify-center rounded retina-border hover:bg-surface-container-low transition-colors font-code-xs">2</button>
+<button class="w-8 h-8 flex items-center justify-center rounded retina-border hover:bg-surface-container-low transition-colors font-code-xs">3</button>
+<button class="w-8 h-8 flex items-center justify-center rounded retina-border hover:bg-surface-container-low transition-colors"><span class="material-symbols-outlined text-[18px]">chevron_right</span></button>
+</div>
+</div>
+</div>
+<!-- Active AI Pulse Section (Visual Flourish) -->
+<div class="mt-12 p-8 rounded-2xl bg-bg-dark relative overflow-hidden group">
+<!-- Background visual noise/pattern -->
+<div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(#ffffff 1px, transparent 1px); background-size: 20px 20px;"></div>
+<div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
+<div>
+<div class="flex items-center gap-2 mb-4">
+<span class="w-2 h-2 rounded-full bg-emerald-glow animate-ping"></span>
+<span class="font-label-ui text-label-ui text-emerald-glow uppercase tracking-widest">Active Processing</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-white mb-2">Regional Variant Generation</h3>
+<p class="text-on-surface-variant font-body-md max-w-md">Currently generating 14 localized video assets for the APAC market. estimated completion in 4 minutes.</p>
+</div>
+<div class="flex-1 max-w-xs space-y-4">
+<div class="flex justify-between items-end mb-1">
+<span class="font-code-xs text-code-xs text-white">TX-9105-PACIFIC</span>
+<span class="font-code-xs text-code-xs text-emerald-glow">84%</span>
+</div>
+<div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-secondary via-aurora-purple to-cosmic-pink animate-aurora-shift" style="width: 84%;"></div>
+</div>
+<div class="flex justify-between">
+<span class="text-[10px] text-white/40 uppercase font-label-ui">Rendering...</span>
+<span class="text-[10px] text-white/40 uppercase font-label-ui">ETA 00:04:12</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<style>
+        @keyframes aurora-shift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .animate-aurora-shift {
+            background-size: 200% 200%;
+            animation: aurora-shift 3s ease infinite;
+        }
+    </style>
+<script>
+        // Simple micro-interaction for rows
+        document.querySelectorAll('tr[onclick]').forEach(row => {
+            row.addEventListener('mousedown', () => {
+                row.style.transform = 'scale(0.998)';
+                row.style.opacity = '0.8';
+            });
+            row.addEventListener('mouseup', () => {
+                row.style.transform = 'scale(1)';
+                row.style.opacity = '1';
+            });
+        });
+    </script>
+<div class="fixed right-0 top-0 h-full w-96 bg-surface-container-lowest shadow-2xl border-l border-outline-variant/30 z-[60] translate-x-full transition-transform duration-300 flex flex-col" id="detail-panel"><div class="p-6 border-b border-outline-variant/10 flex justify-between items-center"><h3 class="font-headline-sm text-[18px] font-bold">Task Details</h3><button class="p-2 hover:bg-surface-container-low rounded-full" onclick="document.getElementById('detail-panel').classList.add('translate-x-full')"><span class="material-symbols-outlined">close</span></button></div><div class="flex-1 overflow-y-auto p-6 space-y-6"><div><label class="text-[11px] font-bold uppercase text-text-muted tracking-widest">Execution Log</label><div class="mt-2 p-3 bg-bg-dark rounded-lg font-code-xs text-white/70 leading-relaxed">[14:22:01] Initializing Kling-V1...<br/>[14:22:05] Fetching assets...<br/>[14:22:12] Rendering frame 1/120...<br/>[14:22:43] Finalizing output...</div></div><div><label class="text-[11px] font-bold uppercase text-text-muted tracking-widest">Prompt Configuration</label><p class="mt-2 text-xs text-text-secondary">"Urban lifestyle, Malaysia market, Gen Z aesthetic, neon lighting, 4k resolution"</p></div></div></div></body></html>

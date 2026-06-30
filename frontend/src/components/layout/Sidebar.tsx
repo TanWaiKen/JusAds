@@ -6,11 +6,9 @@ import {
   Image as ImageIcon,
   TrendingUp,
   PanelLeftClose,
-  FolderOpen,
   ChevronDown,
   ChevronUp,
   ShieldCheck,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,7 +31,7 @@ interface NavItem {
 interface SidebarProject {
   id: string;
   name: string;
-  media_type: string;
+  owner_email: string;
   created_at: string;
 }
 
@@ -288,7 +286,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
             <ul className="flex flex-col gap-0.5">
               {visibleProjects.map((project) => {
                 const isActive = project.id === activeProjectId;
-                const TypeIcon = project.media_type === "generation" ? Sparkles : ShieldCheck;
+                const TypeIcon = ShieldCheck;
                 return (
                   <li key={project.id}>
                     <div

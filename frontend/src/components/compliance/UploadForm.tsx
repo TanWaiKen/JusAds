@@ -31,6 +31,7 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const MARKET_OPTIONS = ["malaysia", "singapore", "indonesia", "thailand"];
 const ETHNICITY_OPTIONS = ["malay", "chinese", "indian", "mixed"];
 const AGE_GROUP_OPTIONS = ["all_ages", "children", "teens", "adults", "seniors"];
+const PLATFORM_OPTIONS = ["general", "tiktok", "youtube", "instagram", "meta", "x"];
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -59,6 +60,7 @@ export function UploadForm({ onSubmit, isSubmitting }: UploadFormProps) {
   const [market, setMarket] = useState("malaysia");
   const [ethnicity, setEthnicity] = useState("malay");
   const [ageGroup, setAgeGroup] = useState("all_ages");
+  const [platform, setPlatform] = useState("general");
   const [fileSizeWarning, setFileSizeWarning] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -102,6 +104,7 @@ export function UploadForm({ onSubmit, isSubmitting }: UploadFormProps) {
       market,
       ethnicity,
       ageGroup,
+      platform,
     });
   }
 
@@ -265,6 +268,24 @@ export function UploadForm({ onSubmit, isSubmitting }: UploadFormProps) {
             </SelectTrigger>
             <SelectContent>
               {AGE_GROUP_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {formatLabel(option)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <label className="text-[12px] font-label-ui text-text-muted uppercase tracking-wider mb-1.5 block">
+            Platform
+          </label>
+          <Select value={platform} onValueChange={(v) => v && setPlatform(v)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PLATFORM_OPTIONS.map((option) => (
                 <SelectItem key={option} value={option}>
                   {formatLabel(option)}
                 </SelectItem>

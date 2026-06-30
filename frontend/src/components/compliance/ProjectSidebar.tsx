@@ -61,7 +61,12 @@ function getStepLabel(stepId: Project["currentStep"]): string {
 
 /** Derive risk level from the project result */
 function getRiskLevel(project: Project): "High" | "Medium" | "Low" | null {
-  return project.result?.risk_level ?? null;
+  const level = project.result?.risk_level ?? null;
+  if (level === "High" || level === "Medium" || level === "Low") return level;
+  // Map "Moderate" → "Medium", "Critical" → "High"
+  if (level === "Moderate") return "Medium";
+  if (level === "Critical") return "High";
+  return null;
 }
 
 export function ProjectSidebar({

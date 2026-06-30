@@ -3,9 +3,9 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import type { ComplianceResult } from "@/services/complianceApi";
 import { normalizeViolations } from "@/services/complianceApi";
-import type { Violation } from "@/services/complianceApi";
 import { Button } from "@/components/ui/button";
 import { API_BASE } from "@/services/complianceApi";
+import { ExternalLink, ShieldCheck, Globe, FileText } from "lucide-react";
 
 gsap.registerPlugin(useGSAP);
 
@@ -13,6 +13,7 @@ interface ReviewStepProps {
   result: ComplianceResult;
   onStartRemix: () => void;
   isRemixAvailable: boolean;
+  mediaType: "text" | "image" | "audio" | "video";
 }
 
 function getRiskLevelColor(riskLevel: string): string {
@@ -32,36 +33,38 @@ function getRiskBarColor(percentage: number): string {
   return "bg-emerald-500";
 }
 
-function getSeverityBadgeClasses(severity: string): string {
-  switch (severity.toLowerCase()) {
-    case "error": case "critical": case "high":
-      return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
-    case "warning": case "medium":
-      return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300";
-    default:
-      return "bg-surface-inset text-text-muted";
-  }
-}
-
-function getSeverityBorderColor(severity: string): string {
-  switch (severity.toLowerCase()) {
-    case "error": case "critical": case "high": return "border-red-500";
-    case "warning": case "medium": return "border-amber-500";
-    default: return "border-outline-variant";
-  }
-}
-
 function formatSeconds(s: number): string {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+/** Extract domain from a URL for display */
+function getDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace("www.", "");
+  } catch {
+    return url.slice(0, 30);
+  }
+}
+
 type ImageTab = "original" | "segmented" | "remix";
 
-export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewStepProps) {
+export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }: ReviewStepProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<ImageTab>("segmented");
+
+  // Image URLs (only relevant for image media)
+  const isImage = mediaType === "image";
+  const segmentedUrl = isImage ? (result.s3_segmented_key || null) : null;
+  const originalUrl = isImage ? (result.s3_upload_key || null) : null;
+  const remixUrl = isImage ? (result.s3_remix_key || null) : null;
+  const hasAnyImage = isImage && !!(originalUrl || segmentedUrl || remixUrl);
+
+  // Default to first available tab
+  const defaultTab: ImageTab = segmentedUrl ? "segmented" : originalUrl ? "original" : "remix";
+  const [activeTab, setActiveTab] = useState<ImageTab>(defaultTab);
+
+  console.log("[ReviewStep] result:", result);
 
   // Derive common values
   const riskPercentage = result.risk_percentage ?? (result.score != null ? 100 - result.score : 0);
@@ -71,19 +74,13 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
   const highRiskIndicators = result.high_risk_indicator ?? result.high_risk_indicators;
   const localizationPlan = result.localization_plan;
   const verification = result.verification;
-  const mediaType = result.video_filename ? "video" : (result.market ? "unknown" : "text");
 
-  // Image URLs (stored as public S3 URLs)
-  const segmentedUrl = result.s3_segmented_key || null;
-  const originalUrl = result.s3_upload_key || null;
-  const remixUrl = result.s3_remix_key || null;
-  const hasAnyImage = !!(originalUrl || segmentedUrl || remixUrl);
+  // Determine media type from prop (explicit from parent)
+  const isAudio = mediaType === "audio";
+  const isVideo = mediaType === "video";
 
-  // Video violations timeline (for video type)
+  // Video violations
   const violationsTimeline = result.violations_timeline ?? [];
-  const hasVideoClips = violationsTimeline.length > 0 && violationsTimeline.some(
-    (v) => typeof v === "object" && v !== null && "start_seconds" in v
-  );
 
   // Normalized violations
   const violations = normalizeViolations(result);
@@ -92,7 +89,6 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
   useGSAP(
     () => {
       gsap.from(".risk-bar-fill", { scaleX: 0, transformOrigin: "left", duration: 1.2, ease: "power2.out" });
-
       const counter = { val: 0 };
       gsap.to(counter, {
         val: riskPercentage,
@@ -103,7 +99,6 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
           if (el) el.textContent = Math.round(counter.val).toString();
         },
       });
-
       const cards = containerRef.current?.querySelectorAll(".result-card");
       if (cards && cards.length > 0) {
         gsap.from(cards, { y: 20, opacity: 0, stagger: 0.08, duration: 0.35, ease: "power2.out" });
@@ -114,7 +109,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
 
   return (
     <div ref={containerRef} className="flex flex-col gap-5 py-6 w-full max-w-3xl mx-auto">
-      {/* Risk Score Header */}
+      {/* ═══ Risk Score ═══ */}
       <div className="result-card bg-surface-card rounded-xl p-6 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex flex-col">
@@ -132,80 +127,151 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
         <div className="w-full h-3 bg-surface-inset rounded-full overflow-hidden">
           <div className={`risk-bar-fill h-full rounded-full ${getRiskBarColor(riskPercentage)}`} style={{ width: `${riskPercentage}%` }} />
         </div>
+
+        {/* ═══ Compliance Verdict Badge ═══ */}
+        {(() => {
+          const verdict = (result as unknown as Record<string, unknown>).compliance_verdict as string | undefined;
+          if (!verdict) return null;
+          const config = {
+            accepted: { label: "Accepted", bg: "bg-emerald-500/10 border-emerald-500/30", text: "text-emerald-600" },
+            needs_remediation: { label: "Needs Remediation", bg: "bg-amber-500/10 border-amber-500/30", text: "text-amber-600" },
+            rejected: { label: "Rejected", bg: "bg-red-500/10 border-red-500/30", text: "text-red-600" },
+          }[verdict] ?? { label: verdict, bg: "bg-surface-inset", text: "text-text-muted" };
+          return (
+            <div className={`mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border ${config.bg}`}>
+              <span className={`text-sm font-semibold ${config.text}`}>{config.label}</span>
+            </div>
+          );
+        })()}
+
         {explanation && <p className="mt-4 text-[13px] text-text-muted leading-relaxed">{explanation}</p>}
+
+        {/* ═══ Check Metadata: Market, Ethnicity, Age Group, Platform ═══ */}
+        <div className="mt-4 flex flex-wrap gap-3">
+          {result.market && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-inset/60">
+              <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Market</span>
+              <span className="text-xs font-medium text-text-primary capitalize">{result.market}</span>
+            </div>
+          )}
+          {result.ethnicity && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-inset/60">
+              <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Ethnicity</span>
+              <span className="text-xs font-medium text-text-primary capitalize">{result.ethnicity}</span>
+            </div>
+          )}
+          {result.age_group && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-inset/60">
+              <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Age Group</span>
+              <span className="text-xs font-medium text-text-primary capitalize">{result.age_group.replace(/_/g, " ")}</span>
+            </div>
+          )}
+          {result.platform && result.platform !== "general" && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-inset/60">
+              <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Platform</span>
+              <span className="text-xs font-medium text-text-primary capitalize">{result.platform}</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Image Viewer — for image/video media types with S3 URLs */}
+      {/* ═══ Image Viewer (Image media type) ═══ */}
       {hasAnyImage && (
         <div className="result-card bg-surface-card rounded-xl overflow-hidden shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
           <div className="flex border-b border-outline-variant">
             {originalUrl && (
-              <button
-                className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${activeTab === "original" ? "text-accent-blue border-b-2 border-accent-blue bg-accent-blue/5" : "text-text-muted hover:text-text-primary"}`}
-                onClick={() => setActiveTab("original")}
-              >
-                Original
-              </button>
+              <button className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${activeTab === "original" ? "text-accent-blue border-b-2 border-accent-blue bg-accent-blue/5" : "text-text-muted hover:text-text-primary"}`} onClick={() => setActiveTab("original")}>Original</button>
             )}
             {segmentedUrl && (
-              <button
-                className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${activeTab === "segmented" ? "text-accent-blue border-b-2 border-accent-blue bg-accent-blue/5" : "text-text-muted hover:text-text-primary"}`}
-                onClick={() => setActiveTab("segmented")}
-              >
-                Segmented
-              </button>
+              <button className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${activeTab === "segmented" ? "text-accent-blue border-b-2 border-accent-blue bg-accent-blue/5" : "text-text-muted hover:text-text-primary"}`} onClick={() => setActiveTab("segmented")}>Segmented</button>
             )}
             {remixUrl && (
-              <button
-                className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${activeTab === "remix" ? "text-accent-blue border-b-2 border-accent-blue bg-accent-blue/5" : "text-text-muted hover:text-text-primary"}`}
-                onClick={() => setActiveTab("remix")}
-              >
-                Remix
-              </button>
+              <button className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${activeTab === "remix" ? "text-accent-blue border-b-2 border-accent-blue bg-accent-blue/5" : "text-text-muted hover:text-text-primary"}`} onClick={() => setActiveTab("remix")}>Remix</button>
             )}
           </div>
           <div className="p-4 flex items-center justify-center min-h-[200px] bg-black/5 dark:bg-white/5">
             {activeTab === "original" && originalUrl && <img src={originalUrl} alt="Original" className="max-h-[400px] max-w-full object-contain rounded" />}
-            {activeTab === "segmented" && segmentedUrl && <img src={segmentedUrl} alt="Segmented analysis" className="max-h-[400px] max-w-full object-contain rounded" />}
-            {activeTab === "remix" && remixUrl && <img src={remixUrl} alt="Remixed" className="max-h-[400px] max-w-full object-contain rounded" />}
+            {activeTab === "segmented" && segmentedUrl && <img src={segmentedUrl} alt="Segmented" className="max-h-[400px] max-w-full object-contain rounded" />}
+            {activeTab === "remix" && remixUrl && <img src={remixUrl} alt="Remix" className="max-h-[400px] max-w-full object-contain rounded" />}
           </div>
         </div>
       )}
 
-      {/* Video Violations Timeline — for video media type */}
-      {hasVideoClips && (
+      {/* ═══ Audio Player + Transcript (Audio media type) ═══ */}
+      {isAudio && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-3">
-            Violations Timeline ({violationsTimeline.length})
+          <h3 className="text-sm font-bold text-text-primary mb-3 flex items-center gap-2">
+            <FileText size={16} className="text-accent-blue" />
+            Audio Analysis
           </h3>
+          {/* Audio player if S3 URL available */}
+          {result.s3_upload_key && (
+            <div className="mb-4">
+              <audio controls className="w-full rounded" src={result.s3_upload_key}>
+                Your browser does not support the audio element.
+              </audio>
+            </div>
+          )}
+          {/* Transcript extracted by Gemini */}
+          {result._transcript && (
+            <div className="p-3 bg-surface-inset/50 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Transcript</span>
+                {result._transcript.language && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-blue/10 text-accent-blue font-semibold uppercase">
+                    {result._transcript.language}
+                  </span>
+                )}
+              </div>
+              <p className="text-[13px] text-text-muted leading-relaxed whitespace-pre-wrap">
+                {result._transcript.transcript}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ Video Violations Timeline ═══ */}
+      {isVideo && violationsTimeline.length > 0 && violationsTimeline.some((v) => typeof v === "object" && v !== null && ("start_seconds" in v || "start" in v)) && (
+        <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+          <h3 className="text-sm font-bold text-text-primary mb-3">Violations Timeline ({violationsTimeline.length})</h3>
           <div className="space-y-2">
             {violationsTimeline.map((v, i) => {
               const item = v as Record<string, unknown>;
-              const start = item.start_seconds as number | undefined;
-              const end = item.end_seconds as number | undefined;
+              const start = (item.start_seconds ?? item.start) as number | undefined;
+              const end = (item.end_seconds ?? item.end) as number | undefined;
               const type = (item.type as string) ?? "visual";
+              const severity = (item.severity as string) ?? "warning";
               const desc = (item.description as string) ?? (item.region_description as string) ?? "";
               const clipUrl = item.clip_url as string | undefined;
+              const violationIndex = (item.violation_index ?? i) as number;
 
               return (
                 <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-surface-inset/50 border-l-4 border-amber-500">
-                  {start != null && end != null && (
-                    <span className="shrink-0 text-code-xs font-mono text-accent-blue bg-accent-blue/10 px-2 py-0.5 rounded">
-                      {formatSeconds(start)} – {formatSeconds(end)}
-                    </span>
-                  )}
-                  <div className="flex-1">
-                    <span className="text-code-xs text-text-muted uppercase mr-2">{type}</span>
-                    <span className="text-[13px] text-text-muted">{desc}</span>
+                  <div className="shrink-0 text-center">
+                    <span className="block text-[10px] text-text-muted font-mono">#{violationIndex}</span>
+                    {start != null && end != null && (
+                      <span className="block text-code-xs font-mono text-accent-blue bg-accent-blue/10 px-1.5 py-0.5 rounded mt-0.5">
+                        {formatSeconds(start)}–{formatSeconds(end)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[10px] font-bold uppercase text-text-muted bg-surface-inset px-1.5 py-0.5 rounded">{type}</span>
+                      <span className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">{severity}</span>
+                    </div>
+                    <p className="text-[13px] text-text-muted">{desc}</p>
                   </div>
                   {clipUrl && (
                     <a
                       href={clipUrl.startsWith("http") ? clipUrl : `${API_BASE}${clipUrl}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="shrink-0 text-xs text-accent-blue hover:underline"
+                      className="shrink-0 flex items-center gap-1 text-xs text-accent-blue hover:underline"
                     >
-                      Play clip
+                      <ExternalLink size={12} />
+                      Clip
                     </a>
                   )}
                 </div>
@@ -215,34 +281,10 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
         </div>
       )}
 
-      {/* Region-based violations (image type without timestamps) */}
-      {!hasVideoClips && violationsTimeline.length > 0 && (
-        <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-3">
-            Violation Regions ({violationsTimeline.length})
-          </h3>
-          <div className="space-y-2">
-            {violationsTimeline.map((v, i) => {
-              const item = v as Record<string, unknown>;
-              const type = (item.type as string) ?? "visual";
-              const desc = (item.region_description as string) ?? (item.description as string) ?? "";
-              return (
-                <div key={i} className="flex items-center gap-2 p-2 rounded bg-surface-inset/50">
-                  <span className="text-code-xs text-text-muted uppercase bg-surface-inset px-1.5 py-0.5 rounded">{type}</span>
-                  <span className="text-[13px] text-text-muted">{desc}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* High Risk Indicators */}
+      {/* ═══ High Risk Indicators ═══ */}
       {highRiskIndicators && highRiskIndicators.length > 0 && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-3">
-            High Risk Indicators ({highRiskIndicators.length})
-          </h3>
+          <h3 className="text-sm font-bold text-text-primary mb-3">High Risk Indicators ({highRiskIndicators.length})</h3>
           <ul className="space-y-2">
             {highRiskIndicators.map((indicator, i) => (
               <li key={i} className="flex items-start gap-2">
@@ -254,49 +296,53 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
         </div>
       )}
 
-      {/* Normalized Violations (from normalizeViolations) */}
-      {violations.length > 0 && (
-        <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-3">Violations ({violations.length})</h3>
-          <div className="space-y-3">
-            {violations.map((violation: Violation, i) => (
-              <div key={i} className={`p-3 rounded-lg border-l-4 bg-surface-inset/50 ${getSeverityBorderColor(violation.severity)}`}>
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${getSeverityBadgeClasses(violation.severity)}`}>{violation.severity}</span>
-                  <span className="text-code-xs text-text-muted capitalize">{violation.type}</span>
-                </div>
-                <p className="text-[13px] text-text-muted leading-relaxed">{violation.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Verification */}
+      {/* ═══ Verification (Bookmark-style URL cards) ═══ */}
       {verification && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-3">Verification</h3>
-          <div className="flex items-center gap-4 text-[13px] text-text-muted mb-3">
-            <span>Confidence: <strong className="text-text-primary">{verification.confidence}</strong></span>
-            <span>Confirmed: <strong className="text-text-primary">{verification.confirmed_ratio}</strong></span>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+              <ShieldCheck size={16} className="text-emerald-500" />
+              Verification
+            </h3>
+            <div className="flex items-center gap-3 text-xs text-text-muted">
+              <span>Confidence: <strong className="text-text-primary">{verification.confidence}</strong></span>
+              <span>Confirmed: <strong className="text-emerald-500">{verification.confirmed_ratio}</strong></span>
+            </div>
           </div>
+
           {verification.verified && verification.verified.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {verification.verified.map((v, i) => (
-                <div key={i} className="flex items-start gap-2 text-[12px]">
-                  <span className={`mt-0.5 shrink-0 ${v.confirmed ? "text-emerald-500" : "text-red-500"}`}>
-                    {v.confirmed ? "✓" : "✗"}
-                  </span>
-                  <div>
-                    <span className="text-text-muted">{v.violation}</span>
-                    {v.sources && v.sources.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        {v.sources.map((src, j) => (
-                          <a key={j} href={src} target="_blank" rel="noopener noreferrer" className="text-accent-blue hover:underline truncate max-w-[200px]">[{j + 1}]</a>
-                        ))}
-                      </div>
-                    )}
+                <div key={i} className="rounded-lg border bg-surface-inset/30 p-3">
+                  <div className="flex items-start gap-2 mb-2">
+                    <span className={`mt-0.5 text-sm ${v.confirmed ? "text-emerald-500" : "text-red-500"}`}>
+                      {v.confirmed ? "✓" : "✗"}
+                    </span>
+                    <span className="text-[13px] font-medium text-text-primary">{v.violation}</span>
                   </div>
+                  {/* Bookmark-style source cards */}
+                  {v.sources && v.sources.length > 0 && (
+                    <div className="ml-5 space-y-1.5">
+                      {v.sources.map((src, j) => (
+                        <a
+                          key={j}
+                          href={src}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2.5 rounded-md border bg-background px-3 py-2 hover:border-accent-blue hover:bg-accent-blue/5 transition-colors group"
+                        >
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-surface-inset group-hover:bg-accent-blue/10">
+                            <Globe size={14} className="text-text-muted group-hover:text-accent-blue" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-text-primary truncate group-hover:text-accent-blue">{getDomain(src)}</p>
+                            <p className="text-[10px] text-text-muted truncate">{src}</p>
+                          </div>
+                          <ExternalLink size={12} className="shrink-0 text-text-muted group-hover:text-accent-blue" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -304,7 +350,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
         </div>
       )}
 
-      {/* Suggestion */}
+      {/* ═══ Suggestion ═══ */}
       {suggestion && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
           <h3 className="text-sm font-bold text-text-primary mb-2">Suggestion</h3>
@@ -312,7 +358,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
         </div>
       )}
 
-      {/* Localization Plan */}
+      {/* ═══ Localization Plan ═══ */}
       {localizationPlan && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
           <h3 className="text-sm font-bold text-text-primary mb-2">Localization Plan</h3>
@@ -320,7 +366,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
         </div>
       )}
 
-      {/* No Issues */}
+      {/* ═══ No Issues ═══ */}
       {!hasViolations && (
         <div className="result-card bg-surface-card rounded-xl p-8 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] flex flex-col items-center justify-center text-center gap-3">
           <div className="h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
@@ -333,7 +379,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable }: ReviewSte
         </div>
       )}
 
-      {/* Auto-Remix Button */}
+      {/* ═══ Auto-Remix Button ═══ */}
       {hasViolations && isRemixAvailable && (
         <div className="flex justify-center pt-2">
           <Button variant="default" size="lg" onClick={onStartRemix} className="gap-2">

@@ -2,7 +2,7 @@
 compliance_tools.py
 ───────────────────
 Compliance checking tools for text, image, audio, and video ads.
-Uses a single Qdrant collection with metadata filtering.
+Queries rules and personas from Supabase (direct DB queries).
 """
 
 import os
@@ -11,10 +11,10 @@ import logging
 from pathlib import Path
 
 from google.genai import types
-from qdrant_client.models import Filter, FieldCondition, MatchAny
 from langchain_core.tools import tool
 
-from agent.clients import gemini, qdrant
+from agent.clients import gemini
+from agent.rules_client import get_all_rules_and_persona
 from agent.prompts import (
     UNIFIED_OUTPUT_TEMPLATE,
     IMAGE_PRESCAN_PROMPT,
@@ -25,81 +25,22 @@ from agent.prompts import (
     VIDEO_COMPLIANCE_PROMPT,
     SEGMENTATION_PROMPT,
 )
-from config import QDRANT_COLLECTION_NAME, QDRANT_TOP_K
 
 logger = logging.getLogger(__name__)
 
-# ── Persona file paths (relative to this file) ────────────────────────────────
-PERSONAS_DIR = Path(__file__).resolve().parent / "personas"
-PERSONA_FILES = {
-    "malaysia": PERSONAS_DIR / "malaysia_personas.json",
-    "singapore": PERSONAS_DIR / "singapore_personas.json",
-}
-
-
-def get_embedding(text: str) -> list[float]:
-    """Get embedding vector using Gemini embedding model."""
-    result = gemini.models.embed_content(
-        model="gemini-embedding-001",
-        contents=text,
-    )
-    return result.embeddings[0].values
-
-
-def _query_qdrant(query_vector: list[float], sources: list[str], top_k: int) -> list[dict]:
-    """Query the unified regulatory-rules collection with source filter."""
-    query_filter = Filter(
-        must=[
-            FieldCondition(
-                key="source",
-                match=MatchAny(any=sources),
-            )
-        ]
-    )
-
-    results = qdrant.query_points(
-        collection_name=QDRANT_COLLECTION_NAME,
-        query=query_vector,
-        query_filter=query_filter,
-        limit=top_k,
-    ).points
-
-    rules = []
-    for r in results:
-        payload = r.payload or {}
-        rules.append({
-            "text": payload.get("guideline_text", ""),
-            "category": payload.get("category", ""),
-            "severity": payload.get("severity", ""),
-            "source": payload.get("source", ""),
-            "score": r.score,
-        })
-    return rules
-
-
-def get_persona(market: str, ethnicity: str, age_group: str) -> dict:
-    """Load persona data for the given market and ethnicity."""
-    filepath = PERSONA_FILES.get(market.lower())
-    if not filepath or not filepath.exists():
-        return {}
-    data = json.loads(filepath.read_text(encoding="utf-8"))
-    return data.get(ethnicity.lower(), {})
-
 
 def _get_all_rules(query: str, market: str, platform: str, ethnicity: str, age_group: str, top_k: int = None) -> dict:
-    """Query rules from the single unified collection, filtering by market + platform."""
-    if top_k is None:
-        top_k = QDRANT_TOP_K
+    """Fetch rules and persona from Supabase.
 
-    query_vector = get_embedding(query)
-    sources = [market.lower(), platform.lower()]
-    rules = _query_qdrant(query_vector, sources, top_k)
-    persona = get_persona(market, ethnicity, age_group)
-
-    return {
-        "rules": rules,
-        "persona": persona,
-    }
+    The 'query' and 'top_k' params are kept for API compatibility but ignored
+    since we now fetch all matching rules directly from the DB.
+    """
+    return get_all_rules_and_persona(
+        market=market,
+        platform=platform,
+        ethnicity=ethnicity,
+        age_group=age_group,
+    )
 
 
 def _build_rules_context(rules_data: dict) -> tuple[str, str]:
@@ -184,47 +125,60 @@ def check_image_compliance(image_path: str, market: str, platform: str, ethnicit
 @tool
 def check_audio_compliance(audio_path: str, market: str, platform: str, ethnicity: str, age_group: str):
     """Check audio ad against regulatory + platform rules.
-    Step 1: Google Cloud Speech-to-Text (Chirp 3) for transcription
+    Step 1: AWS Transcribe for transcription (auto language detection)
     Step 2: Gemini compliance check based on transcript."""
     import mimetypes
-    from google.cloud.speech_v2.types import cloud_speech
-    from agent.clients import speech_client, speech_recognizer
+    import time
+    import uuid
+    import urllib.request
+    from agent.clients import s3, transcribe
+    from config import S3_BUCKET_NAME
 
     with open(audio_path, "rb") as f:
         audio_bytes = f.read()
     mime_type = mimetypes.guess_type(audio_path)[0] or "audio/mpeg"
 
-    # Step 1: Google Cloud Speech-to-Text (Chirp 3, auto language detection)
+    # Step 1: AWS Transcribe (auto language detection)
     transcript = ""
     language = "unknown"
+    s3_key = None
     try:
-        config = cloud_speech.RecognitionConfig(
-            auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
-            model="chirp_3",
-            language_codes=["auto"],
+        # Upload audio to S3 for Transcribe to access
+        s3_key = f"transcribe-tmp/{uuid.uuid4()}{os.path.splitext(audio_path)[1] or '.mp3'}"
+        s3.put_object(Bucket=S3_BUCKET_NAME, Key=s3_key, Body=audio_bytes, ContentType=mime_type)
+        s3_uri = f"s3://{S3_BUCKET_NAME}/{s3_key}"
+
+        job_name = f"jusads-{uuid.uuid4().hex}"
+        transcribe.start_transcription_job(
+            TranscriptionJobName=job_name,
+            Media={"MediaFileUri": s3_uri},
+            IdentifyLanguage=True,
         )
 
-        request = cloud_speech.RecognizeRequest(
-            recognizer=speech_recognizer,
-            config=config,
-            content=audio_bytes,
-        )
+        # Poll until the job completes (max 120 s)
+        for _ in range(40):
+            time.sleep(3)
+            status = transcribe.get_transcription_job(TranscriptionJobName=job_name)
+            job_status = status["TranscriptionJob"]["TranscriptionJobStatus"]
+            if job_status == "COMPLETED":
+                break
+            if job_status == "FAILED":
+                raise RuntimeError(status["TranscriptionJob"].get("FailureReason", "Transcription job failed"))
 
-        response = speech_client.recognize(request=request)
+        if job_status != "COMPLETED":
+            raise TimeoutError("AWS Transcribe job timed out after 120 s")
 
-        # Extract transcript and detected language
-        parts = []
-        for result in response.results:
-            if result.alternatives:
-                parts.append(result.alternatives[0].transcript)
-                if result.language_code:
-                    language = result.language_code
+        # Fetch transcript JSON from the result URI
+        transcript_uri = status["TranscriptionJob"]["Transcript"]["TranscriptFileUri"]
+        with urllib.request.urlopen(transcript_uri) as resp:
+            transcript_json = json.loads(resp.read().decode())
 
-        transcript = " ".join(parts).strip()
-        logger.info(f"STT transcribed: language={language}, length={len(transcript)}")
+        transcript = transcript_json.get("results", {}).get("transcripts", [{}])[0].get("transcript", "")
+        language = status["TranscriptionJob"].get("LanguageCode", "unknown")
+        logger.info(f"[AudioCompliance] AWS Transcribe: language={language}, length={len(transcript)}")
 
     except Exception as e:
-        logger.warning(f"Google STT failed, falling back to Gemini: {e}")
+        logger.warning(f"[AudioCompliance] AWS Transcribe failed, falling back to Gemini: {e}")
         # Fallback: use Gemini for transcription
         try:
             transcribe_response = gemini.models.generate_content(
@@ -242,8 +196,17 @@ def check_audio_compliance(audio_path: str, market: str, platform: str, ethnicit
             transcript = transcript_data.get("transcript", "")
             language = transcript_data.get("language", "unknown")
         except Exception as fallback_e:
-            logger.error(f"Fallback transcription also failed: {fallback_e}")
+            logger.error(f"[AudioCompliance] Fallback transcription also failed: {fallback_e}")
             transcript = "(transcription unavailable)"
+    finally:
+        # Clean up the temporary S3 object regardless of outcome
+        if s3_key:
+            try:
+                from agent.clients import s3 as _s3
+                from config import S3_BUCKET_NAME as _bucket
+                _s3.delete_object(Bucket=_bucket, Key=s3_key)
+            except Exception:
+                pass
 
     if not transcript:
         transcript = "(no speech detected)"
@@ -353,7 +316,7 @@ def segment_violations(image_path: str, high_risk_indicators: list):
     )
 
     response = gemini.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
         contents=[types.Content(role="user", parts=[
             types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
             types.Part.from_text(text=bbox_prompt),
@@ -444,6 +407,113 @@ def segment_violations(image_path: str, high_risk_indicators: list):
         "segmented_image_path": output_path,
         "detections": [{"label": d["label"], "box": d["box"]} for d in detections],
         "num_masks": len(mask_arrays),
+    }
+
+
+@tool
+def segment_violations_clipseg(image_path: str, high_risk_indicators: list):
+    """Segment non-compliant regions using CLIPSeg (text-to-segmentation).
+
+    Flow:
+      1. Gemini converts high_risk_indicators → short visual prompts for CLIPSeg
+      2. CLIPSeg segments the image using all prompts
+      3. Union all prompt masks into a single binary mask
+      4. Save overlay visualization
+
+    Args:
+        image_path: Path to the source image.
+        high_risk_indicators: List of violation descriptions from compliance result.
+
+    Returns:
+        Dict with segmented_image_path, mask_path, visual_prompts, coverage_percent.
+    """
+    import torch
+    import numpy as np
+    from transformers import CLIPSegProcessor, CLIPSegForImageSegmentation
+    from PIL import Image, ImageDraw
+
+    if not high_risk_indicators:
+        return {"error": "No violations to segment"}
+
+    image = Image.open(image_path).convert("RGB")
+    w, h = image.size
+
+    # Step 1: Gemini converts indicators → visual prompts
+    prompt_text = f"""Convert these compliance violation indicators into short visual descriptions
+that a segmentation model can use to find the violating regions in an image.
+
+INDICATORS:
+{json.dumps(high_risk_indicators, indent=2)}
+
+RULES:
+- Output 8-15 prompts (max 6 words each)
+- Mix specific AND broad prompts:
+  - Specific: "woman in bra", "bare legs", "alcohol bottle"
+  - Broad: "person", "exposed body", "revealing clothing"
+- The broad prompts help catch the FULL area of the violation
+- Use concrete visible things only
+- Include "person" or "woman" as one of the prompts
+
+Return ONLY a JSON array: ["prompt 1", "prompt 2", ...]"""
+
+    response = gemini.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt_text,
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
+    visual_prompts = json.loads(response.text)
+    if not any("person" in p.lower() or "woman" in p.lower() or "man" in p.lower() for p in visual_prompts):
+        visual_prompts.append("person")
+
+    logger.info(f"Visual prompts ({len(visual_prompts)}): {visual_prompts}")
+
+    # Step 2: CLIPSeg segmentation
+    processor = CLIPSegProcessor.from_pretrained("CIDAS/clipseg-rd64-refined")
+    model = CLIPSegForImageSegmentation.from_pretrained("CIDAS/clipseg-rd64-refined")
+
+    inputs = processor(
+        text=visual_prompts,
+        images=[image] * len(visual_prompts),
+        padding=True,
+        return_tensors="pt",
+    )
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    # Resize to original image size
+    logits = outputs.logits
+    masks_resized = torch.nn.functional.interpolate(
+        logits.unsqueeze(1), size=(h, w), mode="bilinear", align_corners=False
+    ).squeeze(1)
+
+    # Union all prompt masks with threshold 0.2
+    probs = torch.sigmoid(masks_resized)
+    union_mask = (probs.max(dim=0).values > 0.2).numpy().astype(np.uint8) * 255
+
+    # Step 3: Save binary mask
+    os.makedirs("assets/results", exist_ok=True)
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    mask_path = f"assets/results/mask_{base_name}.png"
+    Image.fromarray(union_mask, mode="L").save(mask_path)
+
+    # Step 4: Create overlay visualization
+    overlay = image.convert("RGBA").copy()
+    red_overlay = np.zeros((h, w, 4), dtype=np.uint8)
+    red_overlay[union_mask > 0] = (255, 0, 0, 130)
+    overlay = Image.alpha_composite(overlay, Image.fromarray(red_overlay, "RGBA"))
+
+    output_path = f"assets/results/segmented_{base_name}.png"
+    overlay.save(output_path, format="PNG")
+
+    coverage = (union_mask > 0).sum() / union_mask.size * 100
+    logger.info(f"CLIPSeg segmentation: {coverage:.1f}% coverage, saved to {output_path}")
+
+    return {
+        "segmented_image_path": output_path,
+        "mask_path": mask_path,
+        "visual_prompts": visual_prompts,
+        "coverage_percent": round(coverage, 1),
     }
 
 

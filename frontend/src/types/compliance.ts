@@ -33,6 +33,7 @@ export interface UploadParams {
   market: string;
   ethnicity: string;
   ageGroup: string;
+  platform: string;
 }
 
 export type QueueAction =

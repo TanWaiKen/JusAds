@@ -1,7 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "compliance": "./agent/pipeline.py:compliance_pipeline"
+    "compliance": "./agent/compliance_pipeline.py:compliance_pipeline",
+    "remediation": "./agent/remediation_pipeline.py:remediation_pipeline"
   },
   "env": ".env"
 }

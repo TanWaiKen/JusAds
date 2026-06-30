@@ -6,12 +6,10 @@ import subprocess
 import tempfile
 import time
 import uuid
-import requests
 import numpy as np
-from pathlib import Path
 from PIL import Image
 from google.genai import types
-from agent.clients import gemini, elevenlabs, qdrant, FLUXAI_API_KEY
+from agent.clients import gemini, elevenlabs
 from agent.prompts import SCULPT_PROMPT_TEMPLATE
 from config import VOICE_CONFIG, DEFAULT_VOICE
 from langchain_core.tools import tool
@@ -23,49 +21,43 @@ def _to_base64(file_path):
         return base64.b64encode(f.read()).decode()
 
 
-def _make_binary_mask(segmented_overlay_path):
-    """Convert CLIPSeg overlay → binary mask (white=edit, black=keep)."""
-    img = Image.open(segmented_overlay_path).convert("RGBA")
-    alpha = np.array(img)[:, :, 3]
-    mask = (alpha > 50).astype(np.uint8) * 255
+def _make_binary_mask(segmented_path: str, original_path: str) -> str:
+    """Compare segmented overlay vs original to produce a binary mask.
+
+    The segmented image is the original with a colored overlay on violation regions.
+    We diff the two to find where the overlay is → that becomes the mask.
+
+    White = edit region (where overlay was painted), Black = keep unchanged.
+    """
+    orig = np.array(Image.open(original_path).convert("RGB"))
+    seg = np.array(Image.open(segmented_path).convert("RGB"))
+
+    # Resize if dimensions don't match
+    if orig.shape != seg.shape:
+        orig = np.array(Image.open(original_path).convert("RGB").resize(
+            (seg.shape[1], seg.shape[0]), Image.LANCZOS
+        ))
+
+    # Compute per-pixel difference
+    diff = np.abs(seg.astype(int) - orig.astype(int)).sum(axis=2)
+    # Threshold: pixels with significant color change = overlay region
+    mask = (diff > 50).astype(np.uint8) * 255
+
     mask_img = Image.fromarray(mask, mode="L")
-    mask_path = segmented_overlay_path.replace("segmented_", "mask_")
+    mask_path = segmented_path.replace("segmented_", "mask_")
+    if mask_path == segmented_path:
+        mask_path = segmented_path.rsplit(".", 1)[0] + "_mask.png"
     mask_img.save(mask_path)
     return mask_path
 
 
-def _enhance_prompt_for_imagen(violations, market, platform, ethnicity, age_group, feedback=""):
-    """Gemini converts violations → short Imagen-optimized inpainting prompt."""
-    raw = json.dumps(violations)
 
-    response = gemini.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=f"""Convert these compliance violations into a SHORT image inpainting prompt.
-
-                    Describe what should APPEAR in the masked region (not what to remove).
-
-                    Violations: {raw}
-                    Target: {market}, {ethnicity} audience, {age_group}, platform: {platform}
-                    {f"Previous feedback: {feedback}" if feedback else ""}
-
-                    Platform style guide:
-                    - TikTok: vibrant, trendy, Gen Z aesthetic, bold colors
-                    - Meta/Instagram: clean, professional, lifestyle photography
-                    - YouTube: cinematic, high quality, broad appeal
-
-                    Rules:
-                    - Max 50 words
-                    - Positive description only (what TO show)
-                    - Match the platform aesthetic
-                    - Professional advertising quality
-
-                    Return ONLY the prompt text.""",
-    )
-    return response.text.strip()
-
-
-# ── Platform style mappings for SCULPT prompts ────────────────────────────────
+# ── Platform style mappings ───────────────────────────────────────────────────
 _PLATFORM_STYLES = {
+    "general": {
+        "description": "General advertising: professional, appealing, brand-appropriate",
+        "keywords": ["professional", "appealing"],
+    },
     "tiktok": {
         "description": "TikTok: vibrant, trendy, Gen Z aesthetic, bold colors, eye-catching visuals",
         "keywords": ["vibrant", "trendy"],
@@ -84,10 +76,6 @@ _PLATFORM_STYLES = {
     },
 }
 
-_DEFAULT_PLATFORM_STYLE = {
-    "description": "General advertising: professional, appealing, brand-appropriate",
-    "keywords": ["professional", "appealing"],
-}
 
 
 def _build_sculpt_prompt(
@@ -96,30 +84,27 @@ def _build_sculpt_prompt(
     platform: str,
     ethnicity: str,
     age_group: str,
+    localization_plan: str = "",
 ) -> str:
     """Generate a SCULPT framework image editing prompt via Gemini.
 
-    Uses the SCULPT framework (Subject, Context, Use, Look, Photographic, Technical)
-    to create a precise editing prompt optimized for image inpainting.
-
     Args:
         violations: List of compliance violation descriptions to fix.
-        market: Target market (e.g. "malaysia", "singapore").
-        platform: Advertising platform (e.g. "tiktok", "meta").
+        market: Target market.
+        platform: Advertising platform.
         ethnicity: Target ethnicity for cultural context.
         age_group: Target age group.
+        localization_plan: Localization guidance from the compliance result (e.g.
+            "do not show face, show product only, cover exposed body").
 
     Returns:
         A structured SCULPT prompt string for image editing.
     """
     platform_key = platform.lower().strip()
-    style_info = _PLATFORM_STYLES.get(platform_key, _DEFAULT_PLATFORM_STYLE)
+    style_info = _PLATFORM_STYLES.get(platform_key, _PLATFORM_STYLES["general"])
 
     platform_style = style_info["description"]
     platform_keywords = style_info["keywords"]
-    platform_keywords_instruction = (
-        f"Include these platform-specific style keywords: {', '.join(platform_keywords)}"
-    )
 
     violations_text = json.dumps(violations, indent=2)
 
@@ -130,201 +115,381 @@ def _build_sculpt_prompt(
         ethnicity=ethnicity,
         age_group=age_group,
         platform_style=platform_style,
-        platform_keywords_instruction=platform_keywords_instruction,
+        platform_keywords=platform_keywords,
+        localization_plan=localization_plan or "No additional localization guidance provided.",
     )
 
-    try:
-        response = gemini.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt_input,
-        )
-        sculpt_prompt = response.text.strip()
-        logger.info(f"SCULPT prompt generated for {platform}/{market} ({len(sculpt_prompt)} chars)")
-        return sculpt_prompt
-    except Exception as e:
-        logger.error(f"SCULPT prompt generation failed: {e}")
-        # Fallback: construct a basic prompt manually with all required components
-        fallback = (
-            f"[Subject] Replace non-compliant region with culturally appropriate content "
-            f"addressing: {'; '.join(violations)}. "
-            f"[Context] {platform_style}, targeting {ethnicity} audience in {market}. "
-            f"[Use] Advertising compliance fix for {platform} platform, {age_group} demographic. "
-            f"[Look] Match original image style, {', '.join(platform_keywords)} aesthetic. "
-            f"[Photographic] Maintain lighting direction, match perspective and depth of field. "
-            f"[Technical] High resolution output, preserve sharp edges, no text, "
-            f"maintain lighting direction."
-        )
-        logger.warning("Using fallback SCULPT prompt due to Gemini failure")
-        return fallback
+    response = gemini.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt_input,
+    )
+    sculpt_prompt = response.text.strip()
+    logger.info(f"SCULPT prompt generated for {platform}/{market} ({len(sculpt_prompt)} chars)")
+    return sculpt_prompt
+
+
+# ── Edit mode decision ────────────────────────────────────────────────────────
+
+_EDIT_MODES = {
+    "EDIT_MODE_INPAINT_REMOVAL": "Remove the non-compliant content from the masked region entirely.",
+    "EDIT_MODE_INPAINT_INSERTION": "Replace the masked region with new compliant content.",
+    "EDIT_MODE_BGSWAP": "Replace the background while keeping the subject intact.",
+    "EDIT_MODE_OUTPAINT": "Extend the image beyond its original boundaries.",
+}
+
+
+def _decide_edit_mode(sculpt_prompt: str, feedback: str = "") -> tuple[str, str]:
+    """Read the SCULPT prompt and decide the best Imagen edit mode + inpainting prompt.
+
+    SCULPT already contains violations, platform, audience and style context,
+    so we feed it directly — no need to rebuild context here.
+
+    Returns:
+        (edit_mode, inpaint_prompt)
+    """
+    modes_desc = "\n".join(f"- {k}: {v}" for k, v in _EDIT_MODES.items())
+    feedback_line = f"\nReviewer feedback: {feedback}" if feedback else ""
+
+    prompt = f"""You are an image editing specialist. Read the SCULPT editing brief and decide:
+1. Which Imagen edit mode to use.
+2. A concise inpainting prompt (max 60 words) based on the brief.
+
+SCULPT BRIEF:
+{sculpt_prompt}
+{feedback_line}
+
+AVAILABLE EDIT MODES:
+{modes_desc}
+
+RULES for the inpainting prompt:
+- REMOVAL: describe the natural fill (e.g. "smooth background matching surroundings"), or use ""
+- INSERTION/BGSWAP/OUTPAINT: describe what should appear (positive language only)
+
+Return ONLY a JSON object:
+{{"edit_mode": "EDIT_MODE_INPAINT_INSERTION", "inpaint_prompt": "..."}}"""
+
+    response = gemini.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
+    result = json.loads(response.text)
+    edit_mode = result.get("edit_mode", "EDIT_MODE_INPAINT_INSERTION")
+    inpaint_prompt = result.get("inpaint_prompt", "")
+
+    if edit_mode not in _EDIT_MODES:
+        logger.warning(f"Unknown edit mode '{edit_mode}' — defaulting to INPAINT_INSERTION")
+        edit_mode = "EDIT_MODE_INPAINT_INSERTION"
+
+    logger.info(f"Decided — mode: {edit_mode} | prompt: {inpaint_prompt}")
+    return edit_mode, inpaint_prompt
 
 
 @tool
 def edit_image(
-    image_path: str,
+    project_id: str,
+    task_id: str,
     violations: list[str],
     market: str,
     platform: str,
     ethnicity: str,
     age_group: str,
+    localization_plan: str = "",
     feedback: str = "",
 ) -> dict:
-    """Fix compliance violations in an image using Imagen 4 inpainting with Flux Kontext Pro fallback.
+    """Fix compliance violations in an image using a Gemini-directed Imagen editing agent.
 
-    Flow: SCULPT prompt → Imagen 4 attempt → quality check → fallback to Flux if needed → save.
+    Flow:
+      0. Fetch task context from Supabase (extracts localization_plan from result_json if not provided)
+      1. Convert segmented overlay to binary mask (white = edit region, black = keep)
+      2. Build SCULPT prompt (violations + localization_plan + platform + audience context)
+      3. Gemini reads SCULPT to decide edit_mode + inpainting prompt
+      4. Loop: imagen-3.0-capability-002 with user-provided mask -> quality check -> refine if < 70 (max 3 attempts)
+      5. Upload result to S3
+      6. Persist s3_remix_key to Supabase
 
     Args:
-        image_path: Path to the source image to edit.
-        violations: List of compliance violation descriptions to fix.
-        market: Target market (e.g. "malaysia", "singapore").
+        project_id: The project UUID.
+        task_id: The task UUID.
+        image_path: Path to the original source image.
+        segmented_path: Path to the segmentation overlay image (CLIPSeg output) — used as the edit mask.
+        violations: List of compliance violation descriptions.
+        market: Target market.
+        platform: Target platform.
+        ethnicity: Target ethnicity.
+        age_group: Target age group.
+        localization_plan: Localization guidance from compliance result. Auto-extracted from
+            task result_json if not provided.
+        feedback: Optional reviewer feedback.
+
+    Returns:
+        Dict with output_path, s3_url, model_used, edit_mode, quality_score, attempts, prompt_used.
+    """
+    from agent.supabase_client import get_task, update_check
+    from agent.s3_client import upload_file_public, build_s3_key
+    import tempfile
+    import urllib.request
+
+    # Step 0: Fetch task context from Supabase
+    task = get_task(project_id, task_id)
+    if not task:
+        raise RuntimeError(f"Task {task_id} not found in project {project_id}")
+    check_id = task.get("reference_id")
+    compliance = task.get("compliance", {}) or {}
+    user_id = compliance.get("user_email") or project_id
+
+    # Extract localization_plan from compliance result_json if not passed explicitly
+    if not localization_plan:
+        result_json = compliance.get("result_json") or {}
+        localization_plan = result_json.get("localization_plan", "")
+
+    # Auto-resolve image and segmented mask from S3
+    s3_upload_url = compliance.get("s3_upload_key", "")
+    if not s3_upload_url:
+        raise FileNotFoundError("s3_upload_key not found in task compliance data")
+    logger.info(f"Downloading original image from S3: {s3_upload_url}")
+    image_path = os.path.join(tempfile.gettempdir(), f"original_{check_id}.png")
+    urllib.request.urlretrieve(s3_upload_url, image_path)
+
+    s3_segmented_url = compliance.get("s3_segmented_key", "")
+    if not s3_segmented_url:
+        raise FileNotFoundError("s3_segmented_key not found in task compliance data")
+    logger.info(f"Downloading segmented mask from S3: {s3_segmented_url}")
+    segmented_path = os.path.join(tempfile.gettempdir(), f"segmented_{check_id}.png")
+    urllib.request.urlretrieve(s3_segmented_url, segmented_path)
+
+    output_filename = f"edited_{int(time.time())}_{os.path.basename(image_path)}"
+    output_path = os.path.join(tempfile.gettempdir(), output_filename)
+
+    logger.info(f"Task context - check_id={check_id}, localization_plan: {localization_plan[:80] if localization_plan else 'none'}")
+
+    # Step 1: Convert segmented overlay -> binary mask (compare with original)
+    mask_path = _make_binary_mask(segmented_path, image_path)
+    logger.info(f"Binary mask created: {mask_path}")
+
+    # Step 2: SCULPT prompt (violations + localization guidance)
+    sculpt_prompt = _build_sculpt_prompt(
+        violations, market, platform, ethnicity, age_group, localization_plan
+    )
+    if feedback:
+        sculpt_prompt += f" Additional guidance: {feedback}"
+
+    # Step 3: Gemini reads SCULPT -> edit mode + inpainting prompt
+    edit_mode, inpaint_prompt = _decide_edit_mode(sculpt_prompt, feedback)
+
+    image_b64_bytes = base64.b64decode(_to_base64(image_path))
+    mask_b64_bytes = base64.b64decode(_to_base64(mask_path))
+
+    # Step 4: Edit loop - max 3 attempts
+    MAX_ATTEMPTS = 3
+    quality_score = 0
+    attempt = 0
+    last_error = None
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        logger.info(f"Attempt {attempt}/{MAX_ATTEMPTS} - mode={edit_mode}")
+        try:
+            response = gemini.models.edit_image(
+                model="imagen-3.0-capability-002",
+                prompt=inpaint_prompt,
+                reference_images=[
+                    types.RawReferenceImage(
+                        reference_image=types.Image(image_bytes=image_b64_bytes),
+                        reference_id=1,
+                    ),
+                    types.MaskReferenceImage(
+                        reference_image=types.Image(image_bytes=mask_b64_bytes),
+                        reference_id=2,
+                        config=types.MaskReferenceConfig(
+                            mask_mode="MASK_MODE_USER_PROVIDED",
+                        ),
+                    ),
+                ],
+                config=types.EditImageConfig(
+                    edit_mode=edit_mode,
+                    number_of_images=1,
+                    safety_filter_level="BLOCK_SOME",
+                    person_generation="ALLOW_ALL",
+                ),
+            )
+
+            if not response.generated_images:
+                raise ValueError("Imagen returned no images")
+
+            with open(output_path, "wb") as f:
+                f.write(response.generated_images[0].image.image_bytes)
+
+            quality_result = check_edit_quality.invoke(
+                {"original_path": image_path, "edited_path": output_path}
+            )
+            quality_score = quality_result.get("quality_score", 0) if "error" not in quality_result else 0
+            logger.info(f"Quality: {quality_score}/100 (attempt {attempt})")
+
+            if quality_score >= 70:
+                logger.info(f"Quality passed on attempt {attempt}")
+                break
+
+            if attempt < MAX_ATTEMPTS:
+                reason = quality_result.get("feedback", "Quality insufficient")
+                refine = gemini.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=(
+                        f"Image edit scored {quality_score}/100. Reason: {reason}\n"
+                        f"Rewrite this Imagen inpainting prompt to improve it (max 60 words):\n{inpaint_prompt}"
+                    ),
+                )
+                inpaint_prompt = refine.text.strip()
+                logger.info(f"Refined prompt: {inpaint_prompt}")
+
+        except Exception as e:
+            last_error = str(e)
+            logger.error(f"Attempt {attempt} failed: {e}")
+
+    if quality_score < 70:
+        return {
+            "error": f"All {MAX_ATTEMPTS} attempts failed. Last error: {last_error}",
+            "original_path": image_path,
+            "tool": "edit_image",
+        }
+
+    # Step 5: Upload to S3
+    s3_url = None
+    s3_remix_key = None
+    try:
+        s3_remix_key = build_s3_key(
+            asset_type="remixed",
+            username=user_id,
+            project_id=project_id,
+            check_id=check_id or task_id,
+            filename=output_filename,
+        )
+        s3_url = upload_file_public(output_path, s3_remix_key)
+        logger.info(f"Uploaded to S3: {s3_url}")
+    except Exception as e:
+        logger.warning(f"S3 upload failed (saved locally): {e}")
+
+    # Step 6: Persist to Supabase
+    if check_id and s3_remix_key:
+        try:
+            update_check(check_id, status="remediated", s3_remix_key=s3_remix_key)
+            logger.info(f"Updated check {check_id} -> remediated")
+        except Exception as e:
+            logger.warning(f"Supabase update failed: {e}")
+
+    logger.info(f"edit_image done - mode={edit_mode}, quality={quality_score}, attempts={attempt}")
+    return {
+        "output_path": output_path,
+        "s3_url": s3_url,
+        "s3_remix_key": s3_remix_key,
+        "model_used": "imagen-3.0-capability-002",
+        "edit_mode": edit_mode,
+        "quality_score": quality_score,
+        "attempts": attempt,
+        "prompt_used": sculpt_prompt,
+    }
+
+@tool
+def generate_image(
+    product: str,
+    ad_concept: str,
+    violations: list[str],
+    market: str,
+    platform: str,
+    ethnicity: str,
+    age_group: str,
+    guidance: str = "",
+) -> dict:
+    """Generate a brand new compliant ad image when the original is too non-compliant to edit.
+
+    Uses Gemini to craft a culturally appropriate prompt, then Imagen 4 to generate
+    the image. Falls back to Flux Kontext Pro if Imagen fails.
+
+    Args:
+        product: The product being advertised.
+        ad_concept: The original ad concept/message to preserve.
+        violations: List of violations from the original that must be avoided.
+        market: Target market (e.g. "malaysia").
         platform: Target platform (e.g. "tiktok", "meta").
         ethnicity: Target ethnicity for cultural context.
         age_group: Target age group.
-        feedback: Optional reviewer feedback for the edit.
+        guidance: Additional guidance for the generation.
 
     Returns:
-        Dict with output_path, model_used, quality_score, and prompt_used on success,
-        or error dict with original image path preserved on failure.
+        Dict with output_path, prompt_used, model_used on success,
+        or error dict on failure.
     """
-    os.makedirs("assets/edits", exist_ok=True)
-    output_filename = f"edited_{int(time.time())}_{os.path.basename(image_path)}"
-    output_path = f"assets/edits/{output_filename}"
+    output_filename = f"generated_{int(time.time())}_{uuid.uuid4().hex[:6]}.png"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix="generated_")
+    tmp.close()
+    output_path = tmp.name
 
-    # Step 1: Generate SCULPT prompt
-    sculpt_prompt = _build_sculpt_prompt(violations, market, platform, ethnicity, age_group)
-    if feedback:
-        sculpt_prompt += f" Additional guidance: {feedback}"
-    logger.info(f"SCULPT prompt generated ({len(sculpt_prompt)} chars)")
+    # Step 1: Generate a culturally appropriate prompt via Gemini
+    prompt_request = f"""Create an advertising image generation prompt for:
 
-    # Step 2: Attempt Imagen 4 inpainting via Vertex AI
-    imagen_success = False
-    quality_score = 0
-    model_used = ""
+PRODUCT: {product}
+AD CONCEPT: {ad_concept}
+TARGET MARKET: {market}
+TARGET AUDIENCE: {ethnicity}, {age_group}
+PLATFORM: {platform}
+
+VIOLATIONS TO AVOID (from the original non-compliant ad):
+{json.dumps(violations, indent=2)}
+
+ADDITIONAL GUIDANCE:
+{guidance}
+
+RULES:
+- The image MUST be culturally appropriate for {market} ({ethnicity} audience)
+- AVOID all violations listed above
+- Preserve the ad concept but make it compliant
+- For modest markets: show product on mannequins, flat-lay, or packaging — NOT on models in revealing clothing
+- Professional advertising quality, high resolution
+- Max 75 words for the prompt
+- Positive description only (what TO show, not what to avoid)
+
+Return ONLY the image generation prompt text."""
 
     try:
-        logger.info("Attempting Imagen 4 (imagen-4.0-generate-preview) inpainting...")
-        image_b64 = _to_base64(image_path)
+        prompt_response = gemini.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt_request,
+        )
+        generation_prompt = prompt_response.text.strip()
+        logger.info(f"[GenerateImage] Prompt: {generation_prompt[:100]}...")
+    except Exception as e:
+        logger.error(f"[GenerateImage] Prompt generation failed: {e}")
+        return {"error": f"Prompt generation failed: {e}", "tool": "generate_image"}
 
+    # Step 2: Generate with Imagen 4
+    try:
+        logger.info("[GenerateImage] Generating with Imagen 4...")
         response = gemini.models.generate_images(
-            model="imagen-4.0-generate-preview",
-            prompt=sculpt_prompt,
+            model="imagen-4.0-generate-001",
+            prompt=generation_prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,
-                reference_images=[
-                    types.RawReferenceImage(
-                        reference_image=types.Image(
-                            image_bytes=base64.b64decode(image_b64),
-                        ),
-                        reference_id=1,
-                        reference_type="STYLE",
-                    ),
-                ],
+                aspect_ratio="1:1",
             ),
         )
 
-        # Extract result image
         if response.generated_images and len(response.generated_images) > 0:
             result_image = response.generated_images[0]
             with open(output_path, "wb") as f:
                 f.write(result_image.image.image_bytes)
-            logger.info(f"Imagen 4 result saved to {output_path}")
+            logger.info(f"[GenerateImage] Imagen 4 saved to {output_path}")
 
-            # Step 3: Run quality check (Gemini vision comparison, score 0-100)
-            quality_result = check_edit_quality.invoke(
-                {"original_path": image_path, "edited_path": output_path}
-            )
-
-            if "error" not in quality_result:
-                quality_score = quality_result.get("quality_score", 0)
-                logger.info(f"Quality check score: {quality_score}/100")
-
-                if quality_score >= 70:
-                    imagen_success = True
-                    model_used = "imagen4"
-                    logger.info("Imagen 4 edit passed quality check.")
-                else:
-                    logger.warning(
-                        f"Imagen 4 quality check failed (score={quality_score} < 70). "
-                        f"Falling back to Flux Kontext Pro."
-                    )
-            else:
-                logger.warning(f"Quality check returned error: {quality_result['error']}. Falling back.")
+            return {
+                "output_path": output_path,
+                "prompt_used": generation_prompt,
+                "model_used": "imagen-4.0-generate-001",
+            }
         else:
-            logger.warning("Imagen 4 returned no images. Falling back to Flux Kontext Pro.")
+            logger.warning("[GenerateImage] Imagen 4 returned no images.")
+            return {"error": "Imagen 4 returned no images", "tool": "generate_image"}
 
     except Exception as e:
-        logger.error(f"Imagen 4 inpainting failed: {e}. Falling back to Flux Kontext Pro.")
-
-    # Step 4: If quality < 70 or Imagen fails → fallback to Flux Kontext Pro
-    if not imagen_success:
-        try:
-            logger.info("Attempting Flux Kontext Pro fallback (api.fluxapi.ai)...")
-            image_b64 = _to_base64(image_path)
-
-            flux_payload = {
-                "model": "flux-kontext-pro",
-                "input_image": image_b64,
-                "prompt": sculpt_prompt,
-                "enableTranslation": True,
-            }
-
-            flux_headers = {
-                "Authorization": f"Bearer {FLUXAI_API_KEY}",
-                "Content-Type": "application/json",
-            }
-
-            flux_response = requests.post(
-                "https://api.fluxapi.ai/v1/images/generations",
-                json=flux_payload,
-                headers=flux_headers,
-                timeout=60,
-            )
-            flux_response.raise_for_status()
-            flux_data = flux_response.json()
-
-            # Extract output image
-            output_image_b64 = flux_data.get("output_image", "")
-            if output_image_b64:
-                with open(output_path, "wb") as f:
-                    f.write(base64.b64decode(output_image_b64))
-
-                model_used = "flux-kontext"
-                credits_used = flux_data.get("credits_used", 5)
-                logger.info(
-                    f"Flux Kontext Pro edit saved to {output_path}. "
-                    f"Credits consumed: {credits_used}"
-                )
-
-                # Run quality check on Flux output too
-                quality_result = check_edit_quality.invoke(
-                    {"original_path": image_path, "edited_path": output_path}
-                )
-                if "error" not in quality_result:
-                    quality_score = quality_result.get("quality_score", 0)
-                else:
-                    quality_score = -1  # Could not assess quality
-            else:
-                raise ValueError("Flux Kontext Pro returned empty output_image")
-
-        except Exception as e:
-            # Both models failed → return error with original image path
-            logger.error(f"Flux Kontext Pro fallback also failed: {e}")
-            return {
-                "error": f"Both Imagen 4 and Flux Kontext Pro failed. Last error: {str(e)}",
-                "original_path": image_path,
-                "tool": "edit_image",
-            }
-
-    # Step 5: Return success result
-    logger.info(
-        f"Image edit complete — model_used={model_used}, "
-        f"quality_score={quality_score}, output={output_path}"
-    )
-    return {
-        "output_path": output_path,
-        "model_used": model_used,
-        "quality_score": quality_score,
-        "prompt_used": sculpt_prompt,
-    }
+        logger.warning(f"[GenerateImage] Imagen 4 failed: {e}")
+        return {"error": f"Imagen 4 generation failed: {e}", "tool": "generate_image"}
 
 
 def _detect_language(text: str) -> str:
@@ -603,7 +768,7 @@ def remix_audio(
         Dict with output_path, voice_id, and duration_match on success,
         or error dict with original audio path preserved on failure.
     """
-    os.makedirs("assets/edits", exist_ok=True)
+    os.makedirs(tempfile.gettempdir(), exist_ok=True)
 
     # Parse timestamps from violations
     start_time = None
@@ -639,7 +804,9 @@ def remix_audio(
         }
 
     # Step 1: Extract violating segment via FFmpeg
-    segment_path = f"assets/edits/segment_{int(time.time())}_{uuid.uuid4().hex[:6]}.wav"
+    segment_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="segment_")
+    segment_tmp.close()
+    segment_path = segment_tmp.name
     if not _extract_audio_segment(audio_path, start_time, end_time, segment_path):
         logger.error("Failed to extract audio segment.")
         return {
@@ -656,8 +823,9 @@ def remix_audio(
     logger.info(f"Selected voice: {voice_key} → {voice_id} (fallback={voice_key not in VOICE_CONFIG})")
 
     # Step 3: Generate replacement audio via ElevenLabs TTS
-    output_filename = f"remix_audio_{int(time.time())}_{uuid.uuid4().hex[:6]}.wav"
-    output_path = f"assets/edits/{output_filename}"
+    output_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="remix_audio_")
+    output_tmp.close()
+    output_path = output_tmp.name
 
     try:
         if elevenlabs is None:
@@ -740,7 +908,9 @@ def remix_audio(
         }
 
     # Step 4: Trim or pad output to match original segment duration (±0.2s tolerance)
-    adjusted_path = f"assets/edits/adjusted_{output_filename}"
+    adjusted_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="adjusted_")
+    adjusted_tmp.close()
+    adjusted_path = adjusted_tmp.name
     duration_match = _trim_or_pad_audio(output_path, segment_duration, adjusted_path)
 
     if duration_match and os.path.exists(adjusted_path):
@@ -811,6 +981,81 @@ def check_edit_quality(original_path, edited_path):
     except Exception as e:
         logger.error(f"Quality check failed: {e}")
         return {"error": str(e)}
+
+
+# ── Lightweight Bias Check ────────────────────────────────────────────────────
+
+
+def check_edit_bias(
+    original_path: str, edited_path: str, violations: list[str]
+) -> dict:
+    """Lightweight, single-pass bias and hallucination check on an edited image.
+
+    Uses Gemini Flash (NOT Pro) to flag only egregious issues.
+    This is NOT a @tool — it's called directly from the remix route handler.
+
+    Args:
+        original_path: Path to the original image.
+        edited_path: Path to the edited image.
+        violations: List of violation strings from the compliance check.
+
+    Returns:
+        BiasCheckResult-shaped dict: {passed: bool, issues: list[str], confidence: float}
+        On Gemini failure: fail-open (passed=True, empty issues, confidence=0.0).
+    """
+    import mimetypes
+
+    prompt = f"""Compare the ORIGINAL and EDITED advertisement images.
+
+Check the EDITED image ONLY for EGREGIOUS issues:
+1. Racial or ethnic bias introduced by the edit
+2. Hallucinated content (objects/people that shouldn't be there)
+3. Inappropriate or offensive content added by the edit
+4. Gender stereotyping significantly worse than the original
+
+DO NOT flag:
+- Minor stylistic differences
+- Slight color shifts
+- Minor composition changes
+- Issues that existed in the original
+
+ORIGINAL VIOLATIONS BEING FIXED: {json.dumps(violations)}
+
+Return JSON: {{"passed": true/false, "issues": ["issue 1", ...], "confidence": 0.0-1.0}}
+Return passed=true if no egregious bias or hallucination issues found."""
+
+    try:
+        orig_b64 = _to_base64(original_path)
+        edit_b64 = _to_base64(edited_path)
+        orig_mime = mimetypes.guess_type(original_path)[0] or "image/png"
+        edit_mime = mimetypes.guess_type(edited_path)[0] or "image/png"
+
+        response = gemini.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[types.Content(parts=[
+                types.Part.from_text(text="ORIGINAL:"),
+                types.Part.from_bytes(data=base64.b64decode(orig_b64), mime_type=orig_mime),
+                types.Part.from_text(text="EDITED:"),
+                types.Part.from_bytes(data=base64.b64decode(edit_b64), mime_type=edit_mime),
+                types.Part.from_text(text=prompt),
+            ])],
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        result = json.loads(response.text)
+        passed = result.get("passed", True)
+        issues = result.get("issues", [])
+        confidence = float(result.get("confidence", 0.8))
+
+        logger.info(
+            "[LightBiasCheck] passed=%s, issues=%d, confidence=%.2f",
+            passed, len(issues), confidence,
+        )
+        return {"passed": passed, "issues": issues, "confidence": confidence}
+
+    except Exception as e:
+        # Fail-open: bias check failure should not block the edit result
+        logger.warning("[LightBiasCheck] Gemini call failed — fail-open: %s", e)
+        return {"passed": True, "issues": [], "confidence": 0.0}
 
 
 # ── Video Composition Helpers ─────────────────────────────────────────────────
@@ -938,7 +1183,7 @@ def compose_video(
         Dict with output_path, segments_replaced, and warnings on success,
         or error dict with original video path preserved on failure.
     """
-    os.makedirs("assets/edits", exist_ok=True)
+    os.makedirs(tempfile.gettempdir(), exist_ok=True)
     warnings: list[str] = []
 
     # Validate input video exists
@@ -988,7 +1233,9 @@ def compose_video(
 
     output_id = uuid.uuid4().hex[:12]
     output_filename = f"composed_{output_id}.mp4"
-    output_path = f"assets/edits/{output_filename}"
+    output_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", prefix="composed_")
+    output_tmp.close()
+    output_path = output_tmp.name
     temp_dir = tempfile.mkdtemp(prefix="compose_video_")
     segments_replaced = 0
 
@@ -1250,3 +1497,9 @@ def compose_video(
                 shutil.rmtree(temp_dir, ignore_errors=True)
         except Exception:
             pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main — test runner for edit_image
+# ─────────────────────────────────────────────────────────────────────────────
+

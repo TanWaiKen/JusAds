@@ -47,7 +47,7 @@ function getNodeInfo(nodeName: string): { label: string; icon: string } {
  */
 export function CheckStep({
   nodeStatuses,
-  currentNode,
+  currentNode: _currentNode,
   isStreaming,
   mediaType,
   error,

@@ -3,6 +3,7 @@
 # API Framework
 fastapi
 uvicorn
+mangum  # Lambda adapter for FastAPI (ASGI → API Gateway)
 python-multipart
 python-dotenv
 
@@ -14,9 +15,6 @@ google-cloud-aiplatform
 # LangGraph / LangChain (agent pipeline orchestration)
 langgraph
 langchain-core
-
-# Vector Database (regulatory rules retrieval)
-qdrant-client
 
 # Segmentation (SAM 2 for violation region detection)
 torch
