@@ -346,13 +346,11 @@
       "Portray elderly Chinese with wisdom, dignity, and active family roles"
     ],
     "content_guardrails": [
-      "The number 4 (四 sì) is homophonous with death (死 sǐ) in Chinese — numbers 4, 14, and 44 carry strong negative associations",
       "Clocks (送钟 sòng zhōng) sound identical to 'attending a funeral' (送终) — gifting clocks is a cultural taboo",
       "Vertical chopsticks in rice resemble joss sticks at funeral altars — a deeply inauspicious image",
       "Qing Ming (Tomb Sweeping) items such as joss paper and incense hold sacred funeral significance",
       "Buddhist monks and Taoist priests hold spiritual authority positions that are culturally incompatible with commercial endorsement",
-      "Filial piety (孝 xiào) is a core Confucian value — elderly representation must reflect dignity and respect",
-      "White and black-white combinations are associated with Chinese funeral rites"
+      "Filial piety (孝 xiào) is a core Confucian value — elderly representation must reflect dignity and respect"
     ],
 
     "nuances_and_behavior": [
