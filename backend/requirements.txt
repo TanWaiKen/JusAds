@@ -25,6 +25,9 @@ Pillow
 # TTS / Voice (audio remediation)
 elevenlabs
 
+# Video Editing (CapCut/JianYing draft generation)
+pyJianYingDraft
+
 # Image Editing (Flux Kontext Pro fallback)
 requests
 
@@ -43,3 +46,4 @@ supabase
 # Testing
 pytest
 hypothesis
+pydub
