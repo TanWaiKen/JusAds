@@ -9,9 +9,9 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import { Filter, Download, Pencil, Check, X, Plus } from "lucide-react";
+import { Filter, Download, Pencil, Check, X, Plus, ShieldCheck, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { listTasks, updateProjectName } from "@/services/taskApi";
+import { listTasks, updateProjectName, deleteTask } from "@/services/taskApi";
 import type { TaskSummary } from "@/services/taskApi";
 import { API_BASE } from "@/services/taskApi";
 import { useAuth } from "@/hooks/useAuth";
@@ -212,6 +212,20 @@ export default function ProjectOverviewPage() {
     }
   }, [tasks, projectId, navigate]);
 
+  const handleDeleteTask = useCallback(async (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task || !projectId) return;
+    if (!confirm(`Delete task ${task.id} and its generated media? This cannot be undone.`)) return;
+
+    try {
+      await deleteTask(projectId, task.realId);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      toast.success("Task deleted");
+    } catch {
+      toast.error("Failed to delete task");
+    }
+  }, [tasks, projectId]);
+
   const handleNameSubmit = async () => {
     if (!projectId || !editName.trim()) return;
     const originalName = project?.name ?? "";
@@ -316,13 +330,30 @@ export default function ProjectOverviewPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={() => navigate(`/dashboard/project/${projectId}/compliance`)}
-                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-label-ui font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                <Plus size={16} />
-                New Task
-              </button>
+              <div className="relative group">
+                <button
+                  className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-label-ui font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <Plus size={16} />
+                  New Task
+                </button>
+                <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border-default bg-surface-card shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                  <button
+                    onClick={() => navigate(`/dashboard/project/${projectId}/compliance`)}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-text-body hover:bg-surface-inset rounded-t-lg transition-colors"
+                  >
+                    <ShieldCheck size={14} />
+                    Compliance Check
+                  </button>
+                  <button
+                    onClick={() => navigate(`/dashboard/project/${projectId}/generate`)}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-text-body hover:bg-surface-inset rounded-b-lg transition-colors"
+                  >
+                    <Sparkles size={14} />
+                    Generate Ad
+                  </button>
+                </div>
+              </div>
               <button className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-card px-4 py-2 text-label-ui font-medium hover:bg-surface-inset transition-colors">
                 <Filter size={16} />
                 Filter
@@ -346,6 +377,7 @@ export default function ProjectOverviewPage() {
           currentPage={currentPage}
           onPageChange={setCurrentPage}
           onSelectTask={handleSelectTask}
+          onDeleteTask={handleDeleteTask}
         />
       </div>
   );

@@ -22,6 +22,8 @@ export interface CanvasNode {
   type: NodeType;
   x: number;
   y: number;
+  width?: number;
+  height?: number;
   label: string;
   props: Record<string, string>;
   status: NodeStatus;
@@ -247,6 +249,52 @@ export function deleteNode(
   };
 }
 
+/**
+ * Returns a new state with the specified node's label and/or props updated.
+ * If nodeId is not found, returns the state unchanged.
+ */
+export function updateNodeProps(
+  state: PipelineState,
+  nodeId: string,
+  updates: { label?: string; props?: Record<string, string> }
+): PipelineState {
+  const nodeExists = state.nodes.some((n) => n.id === nodeId);
+  if (!nodeExists) return state;
+
+  return {
+    ...state,
+    nodes: state.nodes.map((node) => {
+      if (node.id !== nodeId) return node;
+      return {
+        ...node,
+        label: updates.label ?? node.label,
+        props: updates.props ? { ...node.props, ...updates.props } : node.props,
+      };
+    }),
+  };
+}
+
+/**
+ * Returns a new state with the specified node's dimensions updated.
+ * If nodeId is not found, returns the state unchanged.
+ */
+export function resizeNode(
+  state: PipelineState,
+  nodeId: string,
+  width: number,
+  height: number
+): PipelineState {
+  const nodeExists = state.nodes.some((n) => n.id === nodeId);
+  if (!nodeExists) return state;
+
+  return {
+    ...state,
+    nodes: state.nodes.map((node) =>
+      node.id === nodeId ? { ...node, width, height } : node
+    ),
+  };
+}
+
 // ─── Edge Connection ─────────────────────────────────────────────────────────
 
 /**
@@ -385,4 +433,106 @@ function parseProps(value: unknown): Record<string, string> {
     return result;
   }
   return {};
+}
+
+
+// ─── Fixed Pipeline Templates ────────────────────────────────────────────────
+
+/**
+ * Creates a pre-built video pipeline with all nodes and edges pre-connected.
+ * Used for the "Fixed Pipeline" mode — deterministic sequential execution.
+ *
+ * Layout:
+ *   Input → Text Agent → Audio Agent ─┐
+ *                       Image Agent ───┤→ Video Agent → Output
+ */
+export function createFixedVideoPipeline(): PipelineState {
+  const inputNode: CanvasNode = {
+    id: "fixed-input",
+    type: "input",
+    x: 50,
+    y: 200,
+    label: "Campaign Brief",
+    props: {},
+    status: "idle",
+    output: null,
+    error: null,
+  };
+
+  const textNode: CanvasNode = {
+    id: "fixed-text",
+    type: "text",
+    x: 300,
+    y: 100,
+    label: "Text Agent",
+    props: {},
+    status: "idle",
+    output: null,
+    error: null,
+  };
+
+  const imageNode: CanvasNode = {
+    id: "fixed-image",
+    type: "image",
+    x: 300,
+    y: 300,
+    label: "Image Agent",
+    props: {},
+    status: "idle",
+    output: null,
+    error: null,
+  };
+
+  const audioNode: CanvasNode = {
+    id: "fixed-audio",
+    type: "audio",
+    x: 550,
+    y: 100,
+    label: "Audio Agent",
+    props: {},
+    status: "idle",
+    output: null,
+    error: null,
+  };
+
+  const videoNode: CanvasNode = {
+    id: "fixed-video",
+    type: "video",
+    x: 800,
+    y: 200,
+    label: "Video Agent",
+    props: {},
+    status: "idle",
+    output: null,
+    error: null,
+  };
+
+  const outputNode: CanvasNode = {
+    id: "fixed-output",
+    type: "output",
+    x: 1050,
+    y: 200,
+    label: "Final Output",
+    props: {},
+    status: "idle",
+    output: null,
+    error: null,
+  };
+
+  const nodes = [inputNode, textNode, imageNode, audioNode, videoNode, outputNode];
+
+  const edges: CanvasEdge[] = [
+    { id: "edge-input-text", from: "fixed-input", to: "fixed-text" },
+    { id: "edge-input-image", from: "fixed-input", to: "fixed-image" },
+    { id: "edge-text-audio", from: "fixed-text", to: "fixed-audio" },
+    { id: "edge-audio-video", from: "fixed-audio", to: "fixed-video" },
+    { id: "edge-image-video", from: "fixed-image", to: "fixed-video" },
+    { id: "edge-video-output", from: "fixed-video", to: "fixed-output" },
+  ];
+
+  return {
+    nodes,
+    edges,
+    viewport: { panX: 50, panY: 50, zoom: 0.85 },
+  };
 }

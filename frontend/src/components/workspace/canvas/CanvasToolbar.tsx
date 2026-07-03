@@ -1,43 +1,38 @@
 /**
- * CanvasToolbar — Run and Save buttons for the Generation Canvas.
+ * CanvasToolbar — Minimal toolbar for the Generation Canvas.
+ * Save is now Ctrl+S (no button). Run Pipeline was removed (runs on chat send).
+ * Only shows a Settings gear icon.
  */
 
-import { Play, Save, Loader2 } from "lucide-react";
+import { Settings, Loader2 } from "lucide-react";
 
 interface CanvasToolbarProps {
-  onRun: () => void;
-  onSave: () => void;
-  isRunning: boolean;
   isSaving: boolean;
+  onOpenSettings: () => void;
 }
 
-export function CanvasToolbar({ onRun, onSave, isRunning, isSaving }: CanvasToolbarProps) {
+export function CanvasToolbar({ isSaving, onOpenSettings }: CanvasToolbarProps) {
   return (
-    <div className="flex items-center gap-2 border-b bg-background px-4 py-2">
-      <button
-        className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        onClick={onRun}
-        disabled={isRunning}
-      >
-        {isRunning ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Play className="h-3.5 w-3.5" />
+    <div className="flex items-center justify-between border-b bg-background px-4 py-2">
+      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide select-none">
+        Generation Canvas
+      </span>
+      <div className="flex items-center gap-2">
+        {isSaving && (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Saving…
+          </span>
         )}
-        {isRunning ? "Running..." : "Run Pipeline"}
-      </button>
-      <button
-        className="flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50"
-        onClick={onSave}
-        disabled={isSaving}
-      >
-        {isSaving ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Save className="h-3.5 w-3.5" />
-        )}
-        Save
-      </button>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border bg-background text-foreground hover:bg-accent transition-colors cursor-pointer"
+          title="Settings"
+        >
+          <Settings className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

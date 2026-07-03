@@ -11,6 +11,8 @@ import {
   moveNode,
   deleteNode,
   addEdge,
+  updateNodeProps,
+  resizeNode,
 } from "@/components/workspace/canvas/graphModel";
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -56,6 +58,13 @@ interface SelectNodeAction {
   nodeId: string | null;
 }
 
+interface UpdateNodePropsAction {
+  type: "UPDATE_NODE_PROPS";
+  nodeId: string;
+  label?: string;
+  props?: Record<string, string>;
+}
+
 interface PanAction {
   type: "PAN";
   panX: number;
@@ -74,6 +83,13 @@ interface SetPipelineAction {
   pipeline: PipelineState;
 }
 
+interface ResizeNodeAction {
+  type: "RESIZE_NODE";
+  nodeId: string;
+  width: number;
+  height: number;
+}
+
 export type CanvasAction =
   | AddNodeAction
   | MoveNodeAction
@@ -81,9 +97,11 @@ export type CanvasAction =
   | AddEdgeAction
   | CancelConnectionAction
   | SelectNodeAction
+  | UpdateNodePropsAction
   | PanAction
   | ZoomAction
-  | SetPipelineAction;
+  | SetPipelineAction
+  | ResizeNodeAction;
 
 // ─── Reducer ─────────────────────────────────────────────────────────────────
 
@@ -120,6 +138,15 @@ function canvasReducer(state: CanvasGraphState, action: CanvasAction): CanvasGra
     case "SELECT_NODE":
       return { ...state, selectedNodeId: action.nodeId };
 
+    case "UPDATE_NODE_PROPS":
+      return {
+        ...state,
+        pipeline: updateNodeProps(state.pipeline, action.nodeId, {
+          label: action.label,
+          props: action.props,
+        }),
+      };
+
     case "PAN": {
       const viewport: Viewport = {
         ...state.pipeline.viewport,
@@ -146,6 +173,12 @@ function canvasReducer(state: CanvasGraphState, action: CanvasAction): CanvasGra
 
     case "SET_PIPELINE":
       return { pipeline: action.pipeline, selectedNodeId: null };
+
+    case "RESIZE_NODE":
+      return {
+        ...state,
+        pipeline: resizeNode(state.pipeline, action.nodeId, action.width, action.height),
+      };
 
     default:
       return state;

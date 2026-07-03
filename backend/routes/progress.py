@@ -13,7 +13,7 @@ import re
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from agent.clients import supabase
+from shared.clients import supabase
 
 logger = logging.getLogger(__name__)
 

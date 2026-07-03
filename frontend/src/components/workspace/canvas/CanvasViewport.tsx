@@ -3,7 +3,7 @@
  * Renders SVG edge layer and positioned CanvasNode components.
  */
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import type { CanvasAction } from "@/components/workspace/canvas/useCanvasGraph";
 import type { PipelineState, CanvasEdge } from "@/components/workspace/canvas/graphModel";
 import { screenToCanvas } from "@/components/workspace/canvas/graphModel";
@@ -32,17 +32,28 @@ export function CanvasViewport({
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [dragNodeId, setDragNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [resizeNodeId, setResizeNodeId] = useState<string | null>(null);
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
   const [tempEdgeEnd, setTempEdgeEnd] = useState<{ x: number; y: number } | null>(null);
 
   const { viewport, nodes, edges } = pipeline;
 
-  // Pan handling
+  // Background click — right-click or middle-click on empty space starts pan
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === "svg") {
+      const isBg = e.target === e.currentTarget || (e.target as HTMLElement).tagName === "svg";
+      
+      // Right click (button 2) or Middle click (button 1) starts pan
+      if (e.button === 2 || (e.button === 1 && isBg)) {
+        e.preventDefault();
         setIsPanning(true);
         setPanStart({ x: e.clientX - viewport.panX, y: e.clientY - viewport.panY });
+        return;
+      }
+      
+      // Left click on empty space deselects node
+      if (e.button === 0 && isBg) {
         dispatch({ type: "SELECT_NODE", nodeId: null });
       }
     },
@@ -57,12 +68,30 @@ export function CanvasViewport({
           panX: e.clientX - panStart.x,
           panY: e.clientY - panStart.y,
         });
-      } else if (dragNodeId) {
-        const canvasPoint = screenToCanvas(
-          { x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y },
+      } else if (resizeNodeId && containerRef.current) {
+        // Resize: compute delta from start position and apply as width+height change
+        const deltaX = (e.clientX - resizeStart.x) / viewport.zoom;
+        const deltaY = (e.clientY - resizeStart.y) / viewport.zoom;
+        const newWidth = Math.max(140, resizeStart.w + deltaX);
+        const newHeight = Math.max(80, resizeStart.h + deltaY);
+        dispatch({
+          type: "RESIZE_NODE",
+          nodeId: resizeNodeId,
+          width: Math.round(newWidth),
+          height: Math.round(newHeight),
+        });
+      } else if (dragNodeId && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const canvasMouse = screenToCanvas(
+          { x: e.clientX - rect.left, y: e.clientY - rect.top },
           viewport
         );
-        dispatch({ type: "MOVE_NODE", nodeId: dragNodeId, x: canvasPoint.x, y: canvasPoint.y });
+        dispatch({
+          type: "MOVE_NODE",
+          nodeId: dragNodeId,
+          x: canvasMouse.x + dragOffset.x,
+          y: canvasMouse.y + dragOffset.y,
+        });
       } else if (connectingFrom && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         const canvasPoint = screenToCanvas(
@@ -72,20 +101,48 @@ export function CanvasViewport({
         setTempEdgeEnd(canvasPoint);
       }
     },
-    [isPanning, panStart, dragNodeId, dragOffset, connectingFrom, viewport, dispatch]
+    [isPanning, panStart, resizeNodeId, resizeStart, dragNodeId, dragOffset, connectingFrom, viewport, dispatch]
   );
 
-  const handleMouseUp = useCallback(() => {
-    setIsPanning(false);
-    setDragNodeId(null);
-    if (connectingFrom) {
-      dispatch({ type: "CANCEL_CONNECTION" });
-      setConnectingFrom(null);
-      setTempEdgeEnd(null);
-    }
-  }, [connectingFrom, dispatch]);
+  // Global mousemove/mouseup for pan and resize (works even when mouse leaves container)
+  useEffect(() => {
+    if (!isPanning && !resizeNodeId) return;
 
-  // Zoom handling
+    const handleGlobalMove = (e: MouseEvent) => {
+      if (isPanning) {
+        dispatch({
+          type: "PAN",
+          panX: e.clientX - panStart.x,
+          panY: e.clientY - panStart.y,
+        });
+      } else if (resizeNodeId) {
+        const deltaX = (e.clientX - resizeStart.x) / viewport.zoom;
+        const deltaY = (e.clientY - resizeStart.y) / viewport.zoom;
+        const newWidth = Math.max(140, resizeStart.w + deltaX);
+        const newHeight = Math.max(80, resizeStart.h + deltaY);
+        dispatch({
+          type: "RESIZE_NODE",
+          nodeId: resizeNodeId,
+          width: Math.round(newWidth),
+          height: Math.round(newHeight),
+        });
+      }
+    };
+
+    const handleGlobalUp = () => {
+      setIsPanning(false);
+      setResizeNodeId(null);
+    };
+
+    window.addEventListener("mousemove", handleGlobalMove);
+    window.addEventListener("mouseup", handleGlobalUp);
+    return () => {
+      window.removeEventListener("mousemove", handleGlobalMove);
+      window.removeEventListener("mouseup", handleGlobalUp);
+    };
+  }, [isPanning, panStart, resizeNodeId, resizeStart, viewport.zoom, dispatch]);
+
+  // Zoom handling — zoom toward cursor position
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
@@ -106,7 +163,7 @@ export function CanvasViewport({
     [viewport, dispatch]
   );
 
-  // Node drag
+  // Node drag start in canvas space
   const handleNodeDragStart = useCallback(
     (nodeId: string, e: React.MouseEvent) => {
       const node = nodes.find((n) => n.id === nodeId);
@@ -114,16 +171,31 @@ export function CanvasViewport({
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
 
-      const screenNodeX = node.x * viewport.zoom + viewport.panX + rect.left;
-      const screenNodeY = node.y * viewport.zoom + viewport.panY + rect.top;
+      const canvasMouse = screenToCanvas(
+        { x: e.clientX - rect.left, y: e.clientY - rect.top },
+        viewport
+      );
 
       setDragNodeId(nodeId);
       setDragOffset({
-        x: e.clientX - screenNodeX,
-        y: e.clientY - screenNodeY,
+        x: node.x - canvasMouse.x,
+        y: node.y - canvasMouse.y,
       });
     },
     [nodes, viewport]
+  );
+
+  // Node resize start
+  const handleNodeResizeStart = useCallback(
+    (nodeId: string, e: React.MouseEvent) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      const defaultWidth = node.output && (node.type === "image" || node.type === "video" || node.type === "output" || node.type === "text") ? 220 : 180;
+      const defaultHeight = 120;
+      setResizeNodeId(nodeId);
+      setResizeStart({ x: e.clientX, y: e.clientY, w: node.width ?? defaultWidth, h: node.height ?? defaultHeight });
+    },
+    [nodes]
   );
 
   // Connection handling
@@ -208,12 +280,28 @@ export function CanvasViewport({
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 overflow-hidden bg-muted/30 cursor-grab active:cursor-grabbing"
+      className="relative flex-1 overflow-hidden bg-muted/30 text-muted-foreground/15 cursor-crosshair"
+      style={{
+        backgroundImage: "radial-gradient(circle, currentColor 1.2px, transparent 1.2px)",
+        backgroundSize: `${24 * viewport.zoom}px ${24 * viewport.zoom}px`,
+        backgroundPosition: `${viewport.panX}px ${viewport.panY}px`,
+      }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseUp={() => {
+        setDragNodeId(null);
+        if (connectingFrom) {
+          dispatch({ type: "CANCEL_CONNECTION" });
+          setConnectingFrom(null);
+          setTempEdgeEnd(null);
+        }
+      }}
+      onMouseLeave={() => {
+        setDragNodeId(null);
+      }}
       onWheel={handleWheel}
+      onAuxClick={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
@@ -255,7 +343,9 @@ export function CanvasViewport({
             node={node}
             isSelected={selectedNodeId === node.id}
             onSelect={(id) => dispatch({ type: "SELECT_NODE", nodeId: id })}
+            onDelete={(id) => dispatch({ type: "DELETE_NODE", nodeId: id })}
             onDragStart={handleNodeDragStart}
+            onResizeStart={handleNodeResizeStart}
             onPortDragStart={handlePortDragStart}
             onPortDrop={handlePortDrop}
             onContextMenu={onContextMenu}
@@ -263,9 +353,13 @@ export function CanvasViewport({
         ))}
       </div>
 
-      {/* Zoom indicator */}
-      <div className="absolute bottom-3 right-3 rounded bg-background/80 px-2 py-1 text-xs text-muted-foreground backdrop-blur-sm">
-        {Math.round(viewport.zoom * 100)}%
+      {/* Zoom + Coordinates indicator */}
+      <div className="absolute bottom-3 right-3 flex items-center gap-3 rounded-lg bg-background/80 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm border border-border font-mono">
+        <span className="flex items-center gap-1">
+          ✛ {Math.round(-viewport.panX / viewport.zoom)}, {Math.round(-viewport.panY / viewport.zoom)}
+        </span>
+        <span className="w-px h-3 bg-border" />
+        <span>{Math.round(viewport.zoom * 100)}%</span>
       </div>
     </div>
   );

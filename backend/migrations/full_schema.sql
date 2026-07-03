@@ -7,6 +7,7 @@
 -- Table order respects foreign key dependencies:
 --   1. projects (no FK)
 --   1b. project_members (FK → projects)
+--   1c. business_profiles (no FK — linked by owner_email)
 --   2. compliance_checks (FK → projects)
 --   3. violations (FK → compliance_checks)
 --   4. tasks (FK → projects)
@@ -24,6 +25,16 @@
 -- ─── 1. projects ─────────────────────────────────────────────────────────────
 -- Container for tasks. No task_type here — tasks carry their own type.
 -- owner_email is the creator; shared access via project_members table.
+
+CREATE TABLE IF NOT EXISTS public.users (
+    email text NOT NULL,
+    is_onboarded boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT users_pkey PRIMARY KEY (email)
+);
+
+
+-- ─── 1a. projects ────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.projects (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -56,6 +67,29 @@ CREATE TABLE IF NOT EXISTS public.project_members (
 
 CREATE INDEX IF NOT EXISTS idx_project_members_email
     ON public.project_members(email);
+
+
+-- ─── 1c. business_profiles ───────────────────────────────────────────────────
+-- Mandatory onboarding: what the user's company does, product category,
+-- target platforms, and markets. Passed to AI for context-aware compliance.
+
+CREATE TABLE IF NOT EXISTS public.business_profiles (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    owner_email text NOT NULL UNIQUE,
+    company_name text NOT NULL,
+    product_category text NOT NULL,
+    product_description text,
+    target_platforms text[] NOT NULL DEFAULT '{}',
+    target_markets text[] NOT NULL DEFAULT '{}',
+    logo_s3_key text,
+    onboarding_complete boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT business_profiles_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_business_profiles_email
+    ON public.business_profiles(owner_email);
 
 
 -- ─── 2. compliance_checks ────────────────────────────────────────────────────
@@ -295,6 +329,15 @@ CREATE TABLE IF NOT EXISTS public.generated_ads (
     parent_ad_id uuid,
     status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'generating', 'completed', 'failed', 'published')),
     metadata jsonb,
+    -- Compliance (written by compliance_bridge after generation)
+    compliance_status text,
+    compliance_result jsonb,
+    compliance_check_id text,
+    -- Distribution (written after Zernio push)
+    distributed_at timestamptz,
+    distribution_platform text,
+    distribution_post_id text,
+    --
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT generated_ads_pkey PRIMARY KEY (id),

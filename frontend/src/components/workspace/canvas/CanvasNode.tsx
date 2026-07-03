@@ -3,13 +3,16 @@
  * Displays type color, label, input/output ports, status indicator, and selection ring.
  */
 
+import { Trash2 } from "lucide-react";
 import type { CanvasNode as CanvasNodeType, NodeStatus } from "@/components/workspace/canvas/graphModel";
 
 interface CanvasNodeProps {
   node: CanvasNodeType;
   isSelected: boolean;
   onSelect: (nodeId: string) => void;
+  onDelete: (nodeId: string) => void;
   onDragStart: (nodeId: string, e: React.MouseEvent) => void;
+  onResizeStart: (nodeId: string, e: React.MouseEvent) => void;
   onPortDragStart: (nodeId: string, portType: "output") => void;
   onPortDrop: (nodeId: string, portType: "input") => void;
   onContextMenu: (nodeId: string, e: React.MouseEvent) => void;
@@ -37,7 +40,9 @@ export function CanvasNode({
   node,
   isSelected,
   onSelect,
+  onDelete,
   onDragStart,
+  onResizeStart,
   onPortDragStart,
   onPortDrop,
   onContextMenu,
@@ -55,15 +60,16 @@ export function CanvasNode({
     }
   }
 
-  // Double width if node has visual output to show
-  const nodeWidth = node.output && (node.type === "image" || node.type === "video" || node.type === "output" || node.type === "text") ? 220 : 180;
+  // Use node.width if set (user resized), otherwise compute default
+  const defaultWidth = node.output && (node.type === "image" || node.type === "video" || node.type === "output" || node.type === "text") ? 220 : 180;
+  const nodeWidth = node.width ?? defaultWidth;
 
   return (
     <div
       className={`absolute select-none rounded-lg border bg-card shadow-md transition-all ${
         isSelected ? "ring-2 ring-primary shadow-lg z-10" : "hover:shadow-lg"
       }`}
-      style={{ left: node.x, top: node.y, width: nodeWidth }}
+      style={{ left: node.x, top: node.y, width: nodeWidth, ...(node.height ? { minHeight: node.height } : {}) }}
       onMouseDown={(e) => {
         e.stopPropagation();
         onSelect(node.id);
@@ -78,7 +84,14 @@ export function CanvasNode({
       {/* Header */}
       <div className={`flex items-center gap-2 rounded-t-lg px-3 py-2 ${colorClass}`}>
         <span className="text-xs font-semibold text-white truncate">{node.label}</span>
-        <div className={`ml-auto h-2.5 w-2.5 rounded-full ${statusClass}`} />
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(node.id); }}
+          className="ml-auto p-0.5 rounded text-white/60 hover:text-white hover:bg-white/20 transition-colors"
+          aria-label="Delete node"
+        >
+          <Trash2 size={12} />
+        </button>
+        <div className={`h-2.5 w-2.5 rounded-full ${statusClass}`} />
       </div>
 
       {/* Body with ports */}
@@ -179,6 +192,29 @@ export function CanvasNode({
           )}
         </div>
       )}
+
+      {/* Prompt used for generation */}
+      {node.props?.prompt_used && (
+        <div className="border-t border-border bg-muted/10 px-3 py-1.5">
+          <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Prompt</span>
+          <p className="mt-0.5 text-[10px] text-muted-foreground line-clamp-3 italic leading-tight">
+            "{node.props.prompt_used}"
+          </p>
+        </div>
+      )}
+
+      {/* Resize handle — bottom-right corner */}
+      <div
+        className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize opacity-0 hover:opacity-100 transition-opacity"
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          onResizeStart(node.id, e);
+        }}
+      >
+        <svg viewBox="0 0 12 12" className="h-3 w-3 text-muted-foreground">
+          <path d="M11 1v10H1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </div>
     </div>
   );
 }
