@@ -21,6 +21,7 @@ torch
 torchvision
 transformers
 Pillow
+numpy
 
 # TTS / Voice (audio remediation)
 elevenlabs
@@ -32,8 +33,9 @@ pyJianYingDraft
 # Image Editing (Flux Kontext Pro fallback)
 requests
 
-# Search / Verification
+# Search / Vector DB
 tavily-python
+qdrant-client
 
 # AWS (transcription legacy fallback)
 boto3

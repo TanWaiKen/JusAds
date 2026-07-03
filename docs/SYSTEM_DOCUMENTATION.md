@@ -15,6 +15,7 @@
 5. [Key Libraries & Dependencies](#5-key-libraries--dependencies)
 6. [Use Case Diagram](#6-use-case-diagram)
 7. [Class Diagram](#7-class-diagram)
+7.5. [Database Entity-Relationship Diagram (ERD)](#75-database-entity-relationship-diagram-erd)
 8. [Activity Diagrams](#8-activity-diagrams)
 9. [Sequence Diagrams](#9-sequence-diagrams)
 10. [Test Cases](#10-test-cases)
@@ -196,86 +197,114 @@ backend/
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| fastapi | 0.115+ | Async web framework |
-| uvicorn | 0.30+ | ASGI server |
-| google-genai | latest | Gemini + Imagen + Veo via Vertex AI |
-| langgraph | 0.2+ | StateGraph pipeline orchestration |
-| qdrant-client | 1.9+ | Vector similarity search |
-| boto3 | 1.34+ | AWS S3 + Bedrock |
-| supabase | 2.0+ | PostgreSQL client |
-| elevenlabs | 1.0+ | Text-to-speech + sound effects |
-| pydantic | 2.0+ | Data validation + serialization |
-| Pillow | 10.0+ | Image fallback generation |
-| requests | 2.31+ | HTTP client (Zernio) |
-| python-dotenv | 1.0+ | Environment variable loading |
+| **fastapi** | 0.115+ | Main web framework for high-performance async REST API and SSE streaming |
+| **uvicorn** | 0.30+ | ASGI web server for running the FastAPI application |
+| **mangum** | latest | AWS Lambda adapter to support serverless API Gateway deployment |
+| **python-multipart** | latest | Form-data parsing for uploading reference media assets |
+| **python-dotenv** | 1.0+ | Reads configuration and service API keys from local environment files |
+| **google-genai** | latest | Official Google SDK for Vertex AI (Gemini 2.5 Flash, Imagen 4, Veo 3) |
+| **google-cloud-speech**| latest | Performs voice transcription fallbacks for audio/video ads |
+| **google-cloud-aiplatform**| latest | Vertex AI platform client for unified orchestration |
+| **langgraph** | 0.2+ | StateGraph orchestrator to structure generative agents and compliance checks |
+| **langchain-core** | latest | Base schemas and interfaces for structuring LLM inputs and prompts |
+| **qdrant-client** | 1.9+ | High-performance vector database client for prompt template searches |
+| **boto3 / botocore** | 1.34+ | AWS SDK for storage (S3 bucket media) and Transcribe service fallback |
+| **supabase** | 2.0+ | Database client for PostgreSQL structured persistence layer |
+| **elevenlabs** | 1.0+ | High-fidelity text-to-speech, sound effects generator, and voice cloning |
+| **pydantic** | 2.0+ | Type hinting, schema compliance, and JSON serialization validation |
+| **Pillow** | 10.0+ | Python Imaging Library (PIL) for keyframe editing and format fallbacks |
+| **numpy** | latest | Matrix calculations for violation image mask arrays and sound signals |
+| **torch / torchvision**| latest | PyTorch framework backing visual segmentation checks (e.g. SAM 2) |
+| **transformers** | latest | Hugging Face library running local image/video compliance classifications |
+| **pycapcut** | latest | Generates editable CapCut draft packages containing timelines and tracks |
+| **pyJianYingDraft** | latest | Generates editor-compliant JianYing drafts for Chinese-market workflows |
+| **pydub** | latest | Audio mixing, volume ducking, and MP3 format splicing/processing |
+| **tavily-python** | latest | Web search client verifying policy rules against active ad copy claims |
+| **requests** | 2.31+ | Client for external API interactions (Zernio publishing) |
 
 ### Frontend (TypeScript)
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| react | 19.x | UI framework |
-| typescript | 6.x | Type safety |
-| vite | 8.x | Build tool |
-| tailwindcss | 4.x | Styling |
-| gsap | 3.15 | Animation |
-| @gsap/react | 2.x | React GSAP hook |
-| react-router | 7.x | Routing |
-| lucide-react | latest | Icons |
-| sonner | latest | Toast notifications |
-| recharts | 2.x | Charts |
-| oidc-client-ts | latest | OAuth (Cognito) |
+| **react** | 19.x | Component UI architecture framework |
+| **typescript** | 6.x | System-wide type-safety and visual component typing |
+| **vite** | 8.x | Frontend build tool and rapid Hot Module Replacement (HMR) server |
+| **tailwindcss** | 4.x | Utility-first CSS framework for visual layouts |
+| **gsap** | 3.15 | Smooth timeline animations and transitions on the canvas dashboard |
+| **@gsap/react** | 2.x | Specialized React hooks wrapping GSAP timelines |
+| **react-router** | 7.x | Frontend routing and route transitions |
+| **lucide-react** | latest | Modern clean SVG icon set |
+| **sonner** | latest | UI toast alerts and progress popups |
+| **recharts** | 2.x | Visual performance and ad analytics dashboard graphs |
+| **oidc-client-ts** | latest | OpenID Connect client for AWS Cognito user authentication |
 
 ---
 
 ## 6. Use Case Diagram
 
+### 6.1 Actor Definitions
+
+| Actor Category | Actor Name | Description | Role / Permissions |
+|---|---|---|---|
+| **Human Actors** | **Project Owner (Admin)** | The owner of the project. | Full access to manage project metadata, invite project members, delete projects/tasks, configure brand assets, and run generation/compliance/publishing flows. |
+| | **Content Creator (Editor)** | Standard workspace user. | Full access to create/update tasks, run prompt searches, generate creatives, run compliance, request remediation, and publish/distribute ads. Cannot delete projects or invite team members. |
+| | **Auditor (Viewer)** | Read-only external or internal reviewer. | View-only access. Can inspect generated ads, compliance scores, and reasons/logs, but cannot generate, edit, delete, publish, or distribute. |
+| **System Actors** | **Google Vertex AI** | AI foundation models. | Executes text copy generation (Gemini), keyframe rendering (Imagen 4), compliance analysis, and video clip generation (Veo 3). |
+| | **ElevenLabs API** | Audio foundation service. | Generates scene voiceovers (TTS) and ambient sound effects (SFX), and conducts voice-cloning remediation. |
+| | **Zernio API** | Distribution gateway. | Directs cross-posting and status updates to TikTok and Instagram. |
+| | **Supabase (PostgreSQL)** | Database layer. | Manages persistence for projects, tasks, members, rules, target personas, ads, and compliance checks. |
+| | **AWS S3** | Object storage. | Stores raw inputs, generated video clips, keyframe images, VO audio, and combined media tracks. |
+| | **Qdrant Vector DB** | Vector search engine. | Performs 768-dimensional prompt template searches and recommendations. |
+
+### 6.2 Diagram
+
 ```
-                    ┌─────────────────────────────────────────────┐
-                    │              JusAds Platform                  │
-                    │                                              │
-   ┌────────┐      │  ┌─────────────────────────────────────┐   │
-   │        │      │  │  UC1: Generate Ad Creative           │   │
-   │        │──────│──│  (text/image/audio/video)            │   │
-   │        │      │  └─────────────────────────────────────┘   │
-   │        │      │                                              │
-   │        │      │  ┌─────────────────────────────────────┐   │
-   │  Ad    │──────│──│  UC2: Check Compliance               │   │
-   │Manager │      │  │  (cultural + regulatory)             │   │
-   │        │      │  └─────────────────────────────────────┘   │
-   │        │      │                                              │
-   │        │      │  ┌─────────────────────────────────────┐   │
-   │        │──────│──│  UC3: Review & Publish               │   │
-   │        │      │  │  (human-in-the-loop gate)            │   │
-   │        │      │  └─────────────────────────────────────┘   │
-   │        │      │                                              │
-   │        │      │  ┌─────────────────────────────────────┐   │
-   │        │──────│──│  UC4: Distribute to Social           │   │
-   │        │      │  │  (TikTok / Instagram via Zernio)     │   │
-   │        │      │  └─────────────────────────────────────┘   │
-   │        │      │                                              │
-   │        │      │  ┌─────────────────────────────────────┐   │
-   │        │──────│──│  UC5: Browse Prompt Library           │   │
-   │        │      │  │  (vector search + recommendations)   │   │
-   │        │      │  └─────────────────────────────────────┘   │
-   │        │      │                                              │
-   │        │      │  ┌─────────────────────────────────────┐   │
-   │        │──────│──│  UC6: Manage Projects & Assets       │   │
-   │        │      │  │  (CRUD, delete with S3 cleanup)      │   │
-   └────────┘      │  └─────────────────────────────────────┘   │
-                    │                                              │
-                    └─────────────────────────────────────────────┘
+                                 ┌───────────────────────────────────────────────┐
+                                 │                JusAds Platform                │
+                                 │                                               │
+  ┌─────────────────┐            │    ┌─────────────────────────────────────┐    │
+  │  Project Owner  ├────────────┼───►│ UC6: Manage Projects & Assets       │    │
+  │     (Admin)     │            │    │ (CRUD, delete, team invitations)    │    │
+  └────────┬────────┘            │    └─────────────────────────────────────┘    │
+           │ inherits            │                                               │
+           ▼                     │    ┌─────────────────────────────────────┐    │
+  ┌─────────────────┐            │    │ UC1: Generate Ad Creative           │◄───┼───────┐
+  │ Content Creator ├────────────┼───►│ (text/image/audio/video)            │    │       │
+  │    (Editor)     │            │    └─────────────────────────────────────┘    │       │
+  └────────┬────────┘            │                                               │       ▼
+           │ inherits            │    ┌─────────────────────────────────────┐    │  ┌──────────┐
+           ▼                     │    │ UC2: Check Compliance               │◄───┼──┤ Vertex   │
+  ┌─────────────────┐            │    │ (cultural + regulatory analysis)    │    │  │ AI Engine│
+  │     Auditor     ├────────────┼──┐ └─────────────────────────────────────┘    │  └──────────┘
+  │    (Viewer)     │            │  │                                            │       ▲
+  └─────────────────┘            │  │ ┌─────────────────────────────────────┐    │       │
+                                 │  │ │ UC3: Review & Publish               │    │  ┌────┴─────┐
+                                 │  │ │ (human-in-the-loop gate)            │    │  │ElevenLabs│
+                                 │  │ └─────────────────────────────────────┘    │  └──────────┘
+                                 │  │                                            │
+                                 │  │ ┌─────────────────────────────────────┐    │  ┌──────────┐
+                                 │  │ │ UC4: Distribute to Social           │◄───┼──┤  Zernio  │
+                                 │  │ │ (TikTok/Instagram posting)          │    │  │   API    │
+                                 │  │ └─────────────────────────────────────┘    │  └──────────┘
+                                 │  │                                            │
+                                 │  │ ┌─────────────────────────────────────┐    │  ┌──────────┐
+                                 │  └►│ UC5: Browse Prompt Library           │◄───┼──┤  Qdrant  │
+                                 │    │ (vector similarity search)          │    │  │ Vector DB│
+                                 │    └─────────────────────────────────────┘    │  └──────────┘
+                                 │                                               │
+                                 └───────────────────────────────────────────────┘
 ```
 
-### Use Case Details
+### 6.3 Use Case Details
 
-| UC | Actor | Precondition | Flow | Postcondition |
-|----|-------|-------------|------|---------------|
-| UC1 | Ad Manager | Authenticated, project exists | Configure settings → type brief → AI generates → outputs shown | Ad stored in S3 + DB |
-| UC2 | Ad Manager | Ad generated | Toggle compliance ON → system auto-checks → verdict shown | Compliance result recorded |
-| UC3 | Ad Manager | Ad is compliant | Click Publish → status flipped | Ad marked "published" |
-| UC4 | Ad Manager | Ad is published | Click Distribute → Zernio pushes | Post live on platform |
-| UC5 | Ad Manager | Qdrant ingested | Search or browse → select template → use in chat | Prompt fills chat input |
-| UC6 | Ad Manager | Authenticated | Create/delete projects/tasks → S3 media cleaned up | Data removed from DB + S3 |
+| UC | Name | Primary Actor | Precondition | Flow | Postcondition |
+|----|------|---------------|--------------|------|---------------|
+| UC1 | Generate Ad Creative | Content Creator | Authenticated, project exists | Configure target audience and platform → Type text brief → Dispatch media agents → Output results | Ad segments stored in S3, metadata recorded in DB |
+| UC2 | Check Compliance | Content Creator | Ad creative generated | Enable compliance mode → LangGraph retrieves policy rules → Executes multi-modal check → Show badge & verdict panel | Compliance record inserted, risk flags visualised |
+| UC3 | Review & Publish | Content Creator | Ad creative passes compliance or non-final | Click "Publish" button on canvas outputs | Ad status updated to "published" in DB |
+| UC4 | Distribute to Social | Content Creator | Ad status is "published" | Click "Distribute" → Choose platform → Call Zernio API → Post ad | Post ID stored, distributed_at timestamp recorded |
+| UC5 | Browse Prompt Library | Content Creator, Auditor | Qdrant DB initialized | Enter search keywords → Search vector DB → Return relevant prompt recipes | Prompts loaded into chat window for active use |
+| UC6 | Manage Projects & Assets | Project Owner | Authenticated | Create project or deleteTask → S3 cleanup triggered | Records deleted from DB; orphaned media files removed from S3 |
 
 
 ---
@@ -358,6 +387,218 @@ backend/
 └────────────────────────────────────────────────────────────────────┘
 ```
 
+
+---
+
+## 7.5 Database Entity-Relationship Diagram (ERD)
+
+The database schema of JusAds consists of 15 relational tables managed in Supabase (PostgreSQL). Below is the comprehensive Entity-Relationship Diagram showing all tables, attributes, constraints, and relationships.
+
+```mermaid
+erDiagram
+    users {
+        text email PK
+        boolean is_onboarded
+        timestamptz created_at
+    }
+
+    projects {
+        uuid id PK
+        text owner_email
+        text name
+        text description
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    project_members {
+        uuid id PK
+        uuid project_id FK
+        text email
+        text role
+        timestamptz invited_at
+    }
+
+    business_profiles {
+        uuid id PK
+        text owner_email UK
+        text company_name
+        text product_category
+        text product_description
+        text_array target_platforms
+        text_array target_markets
+        text logo_s3_key
+        boolean onboarding_complete
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    compliance_checks {
+        uuid id PK
+        text check_id UK
+        text user_email
+        uuid project_id FK
+        text media_type
+        text market
+        text ethnicity
+        text age_group
+        text platform
+        numeric risk_percentage
+        text status
+        jsonb result_json
+        text s3_upload_key
+        text s3_segmented_key
+        text s3_remix_key
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    violations {
+        uuid id PK
+        text check_id FK
+        integer violation_index
+        text type
+        text severity
+        text description
+        numeric start_time
+        numeric end_time
+        text clip_s3_key
+        timestamptz created_at
+    }
+
+    tasks {
+        uuid id PK
+        uuid project_id FK
+        text type
+        text status
+        text summary
+        text reference_id
+        jsonb pipeline_state
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    ad_policy_rules {
+        text id PK
+        text source
+        text regulator
+        text framework
+        text category
+        text rule_title
+        text rule_text
+        text applies_to
+        text enforcement
+        date effective_date
+        date last_updated
+        text tags
+        timestamptz created_at
+    }
+
+    personas {
+        bigint id PK
+        text market
+        text ethnicity
+        text age_group
+        jsonb persona_data
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    pipeline_progress {
+        uuid id PK
+        text check_id FK
+        text step_name
+        text status
+        text message
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    platform_rules {
+        uuid id PK
+        text platform
+        text media_type
+        text aspect_ratio
+        integer max_duration_seconds
+        integer max_file_size_mb
+        jsonb additional_rules
+        timestamptz created_at
+    }
+
+    target_personas {
+        uuid id PK
+        text country_code
+        text ethnicity
+        text age_group
+        text_array cultural_sensitivities
+        text_array preferred_languages
+        timestamptz created_at
+    }
+
+    storyboard_scenes {
+        uuid id PK
+        uuid project_id FK
+        text check_id FK
+        integer scene_index
+        numeric timestamp_start
+        numeric timestamp_end
+        text visual_prompt
+        text audio_script
+        text s3_anchor_image_key
+        text s3_raw_video_key
+        text status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    generated_ads {
+        uuid id PK
+        uuid project_id FK
+        uuid task_id FK
+        text media_type
+        text platform
+        text caption
+        text prompt_used
+        text s3_media_key
+        uuid parent_ad_id FK
+        text status
+        jsonb metadata
+        text compliance_status
+        jsonb compliance_result
+        text compliance_check_id
+        timestamptz distributed_at
+        text distribution_platform
+        text distribution_post_id
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    remediation_logs {
+        uuid id PK
+        text check_id FK
+        text agent_strategy
+        text modified_media_type
+        text previous_s3_key
+        text remediated_s3_key
+        integer quality_score
+        integer attempt_number
+        timestamptz created_at
+    }
+
+    users ||--o{ projects : "owns"
+    users ||--o{ project_members : "is member of"
+    users ||--o| business_profiles : "owns profile"
+    projects ||--o{ project_members : "contains"
+    projects ||--o{ compliance_checks : "contains"
+    projects ||--o{ tasks : "contains"
+    projects ||--o{ storyboard_scenes : "tracks"
+    projects ||--o{ generated_ads : "owns"
+    compliance_checks ||--o{ violations : "has"
+    compliance_checks ||--o{ pipeline_progress : "tracks status of"
+    compliance_checks ||--o{ remediation_logs : "triggers"
+    tasks ||--o{ generated_ads : "produces"
+    generated_ads ||--o{ generated_ads : "parent ad (self-reference)"
+```
 
 ---
 
@@ -564,6 +805,30 @@ backend/
 └─────────┘
 ```
 
+### 8.4 Compliance Pipeline (LangGraph Stages)
+
+```mermaid
+graph TD
+    A[Start: Compliance Check Request] --> B{Media Type?}
+    B -->|Text / Image| C[Retrieve Policy Rules & Personas]
+    B -->|Video / Audio| D[Transcribe Audio using Speech API / Whisper]
+    D --> C
+    C --> E[LangGraph Node: Main Compliance Brain]
+    E --> F[Run Multimodal Rule Checking via Gemini]
+    F --> G[LangGraph Node: Multi-Agent Judges]
+    G --> H[Run Bias & Persona Consistency Checks]
+    H --> I[LangGraph Node: Decision Router]
+    I --> J{Risk Severity?}
+    J -->|Low Risk| K[Status: Pass]
+    J -->|Medium Risk| L[Status: Remediate]
+    J -->|High Risk| M[Status: Critical Reject / Regen]
+    K --> N[Save Verdict & JSON results to Supabase]
+    L --> N
+    M --> N
+    N --> O[Emit SSE/WebSocket Update to Frontend]
+    O --> P[End Check]
+```
+
 
 ---
 
@@ -616,6 +881,45 @@ Browser          Frontend         Backend API       Embeddings        Qdrant
   │                │←────────────────│                  │               │
   │ show results   │                 │                  │               │
   │←───────────────│                 │                  │               │
+```
+
+### 9.3 Intelligent Auto-Remediation (AI Tool Router)
+
+```
+Browser          Frontend          Backend API        AI Router         Remediation Agent       S3 / DB
+  │                 │                   │                  │                     │                 │
+  │ click Remediate │                   │                  │                     │                 │
+  │────────────────►│                   │                  │                     │                 │
+  │                 │ POST /remediate   │                  │                     │                 │
+  │                 │──────────────────►│                  │                     │                 │
+  │                 │                   │ classify         │                     │                 │
+  │                 │                   │ severity & rules │                     │                 │
+  │                 │                   │─────────────────►│                     │                 │
+  │                 │                   │                  │ returns strategy    │                     │
+  │                 │                   │                  │ (e.g., Inpaint)     │                     │
+  │                 │                   │                  │◄────────────────────│                 │
+  │                 │                   │                  │                     │                 │
+  │                 │                   │                  │ dispatch_tool()     │                 │
+  │                 │                   │───────────────────────────────────────►│                 │
+  │                 │                   │                  │                     │ run edit/render │
+  │                 │                   │                  │                     │ (CapCut/Eleven) │
+  │                 │                   │                  │                     │───────────────┐ │
+  │                 │                   │                  │                     │               │ │
+  │                 │                   │                  │                     │◄──────────────┘ │
+  │                 │                   │                  │                     │                 │
+  │                 │                   │                  │                     │ upload new media│
+  │                 │                   │                  │                     │────────────────►│
+  │                 │                   │                  │                     │                 │
+  │                 │                   │                  │                     │ returns s3_key  │
+  │                 │                   │                  │                     │◄────────────────│
+  │                 │                   │                  │                     │                 │
+  │                 │                   │ log attempt &    │                     │                 │
+  │                 │                   │ update ad record │                     │                 │
+  │                 │                   │──────────────────┼─────────────────────┼────────────────►│
+  │                 │ JSON: {remediated}│                  │                     │                 │
+  │                 │◄──────────────────│                  │                     │                 │
+  │ show Before/After│                  │                  │                     │                 │
+  │◄────────────────│                  │                  │                     │                 │
 ```
 
 ---
