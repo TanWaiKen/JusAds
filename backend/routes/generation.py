@@ -81,9 +81,21 @@ class ExecuteVideoPlanRequest(BaseModel):
     skip_compliance: bool = False
 
 
+import asyncio
+
+# In-memory store for background generation tasks. Maps run_id → asyncio.Queue of SSE chunks.
+# When the client disconnects and reconnects, they poll the queue by run_id.
+_active_runs: dict[str, asyncio.Queue] = {}
+_run_complete: dict[str, bool] = {}
+
+
 @router.post("/projects/{project_id}/tasks/{task_id}/chat")
 async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRequest) -> StreamingResponse:
     """Send a message to the AI generation agent, streaming response text and returning the final state.
+
+    The generation runs as a BACKGROUND TASK — if the client disconnects mid-stream,
+    the pipeline continues running and persists results to Supabase. When the user
+    comes back, the frontend fetches the persisted generated_ads + pipeline_state.
 
     Delegates to the ``jusads_generation`` orchestrator (Req 1.5, 1.6), which emits the
     same SSE event shapes the frontend already parses (`{text}`, `{node,status,data}`,
@@ -104,16 +116,25 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
         "viewport": {"panX": 0, "panY": 0, "zoom": 1}
     }
 
-    async def event_generator():
-        # 1. Persist the user turn before generation begins (Req 6.3). On failure the
-        #    turn is enqueued for deferred retry inside the store and we surface an error
-        #    event without discarding it (Req 6.7) — generation still proceeds.
-        try:
-            create_chat_message(project_id, task_id, "user", body.message)
-        except ChatPersistenceError as pe:
-            logger.error("[SSE] User turn persistence failed: %s", pe)
-            yield f"data: {json.dumps({'error': f'chat persistence failed: {pe}'})}\n\n"
+    # Create a unique run_id for this generation
+    run_id = f"{project_id}_{task_id}_{uuid.uuid4().hex[:6]}"
+    queue: asyncio.Queue = asyncio.Queue()
+    _active_runs[run_id] = queue
+    _run_complete[run_id] = False
 
+    # Persist user turn BEFORE spawning background task
+    try:
+        create_chat_message(project_id, task_id, "user", body.message)
+    except ChatPersistenceError as pe:
+        logger.error("[SSE] User turn persistence failed: %s", pe)
+
+    # Background task: runs the full generation pipeline independently of the HTTP connection.
+    async def _run_generation_background():
+        """Execute generation in the background, pushing SSE chunks to the queue.
+
+        Persists pipeline_state incrementally after each media agent completes,
+        so even if the client disconnects, partial results are saved.
+        """
         final_state = None
         try:
             async for chunk in run_generation(
@@ -133,31 +154,74 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                 product_category=body.product_category,
                 gender=body.gender,
             ):
+                # Push chunk to queue for any listening SSE client
+                await queue.put(chunk)
+
+                # Persist pipeline_state incrementally (not just at end)
                 if "pipeline_state" in chunk:
                     try:
                         clean_json = chunk.replace("data: ", "").strip()
                         data = json.loads(clean_json)
                         if "pipeline_state" in data:
                             final_state = data["pipeline_state"]
+                            # Save intermediate state to DB
+                            _store.update_task_pipeline(
+                                project_id=project_id,
+                                task_id=task_id,
+                                status="in_progress",
+                                pipeline_state=final_state,
+                            )
                     except Exception as pe:
-                        logger.warning("[SSE] Error parsing state chunk: %s", pe)
+                        logger.warning("[BG] Error parsing/persisting state chunk: %s", pe)
 
-                yield chunk
         except Exception as err:
-            logger.error("[SSE] Stream generator encountered error: %s", err)
-            yield f"data: {json.dumps({'error': str(err)})}\n\n"
+            logger.error("[BG] Generation background task error: %s", err)
+            await queue.put(f"data: {json.dumps({'error': str(err)})}\n\n")
 
+        # Final persistence — mark as completed
         if final_state:
             try:
                 _store.update_task_pipeline(
                     project_id=project_id,
                     task_id=task_id,
                     status="completed",
-                    pipeline_state=final_state
+                    pipeline_state=final_state,
                 )
-                logger.info("[SSE] Persisted final generation pipeline state to Supabase.")
+                logger.info("[BG] Persisted final generation pipeline state to Supabase.")
             except Exception as se:
-                logger.error("[SSE] Failed to persist final state: %s", se)
+                logger.error("[BG] Failed to persist final state: %s", se)
+
+        # Signal completion
+        _run_complete[run_id] = True
+        await queue.put(None)  # Sentinel: generation done
+
+        # Cleanup after a delay (give client time to finish reading)
+        await asyncio.sleep(30)
+        _active_runs.pop(run_id, None)
+        _run_complete.pop(run_id, None)
+
+    # Spawn the background task — runs independently of this HTTP request
+    asyncio.create_task(_run_generation_background())
+
+    # SSE stream: reads from the queue and yields to the client.
+    # If client disconnects, the background task keeps running.
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(queue.get(), timeout=120)
+                except asyncio.TimeoutError:
+                    # Keep-alive ping so the connection isn't dropped by proxies
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                    continue
+
+                if chunk is None:
+                    # Background task finished
+                    break
+                yield chunk
+        except asyncio.CancelledError:
+            # Client disconnected — background task continues running
+            logger.info("[SSE] Client disconnected for run %s — background task continues", run_id)
 
     return StreamingResponse(
         event_generator(),
@@ -176,12 +240,7 @@ async def execute_video_plan_endpoint(
 ) -> StreamingResponse:
     """Render an approved Video V2 storyboard plan into the final video (SSE).
 
-    Second phase of the two-phase Video V2 flow: the chat endpoint returned a
-    storyboard + keyframes (`video_plan`) for review; when the user clicks
-    "Continue", the frontend posts the (possibly edited) plan here to run the
-    expensive Veo/ffmpeg step. Streams the same SSE shapes as `chat`
-    (`{node,status,data}` then `{pipeline_state}`), and persists the final
-    canvas state so the produced video shows on reload.
+    Runs as a BACKGROUND TASK — if client disconnects, rendering continues.
     """
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
@@ -194,7 +253,13 @@ async def execute_video_plan_endpoint(
         "nodes": [], "edges": [], "viewport": {"panX": 0, "panY": 0, "zoom": 1}
     }
 
-    async def event_generator():
+    run_id = f"v2_{project_id}_{task_id}_{uuid.uuid4().hex[:6]}"
+    queue: asyncio.Queue = asyncio.Queue()
+    _active_runs[run_id] = queue
+    _run_complete[run_id] = False
+
+    async def _run_v2_background():
+        """Background task for Video V2 execution."""
         final_state = None
         try:
             async for chunk in run_video_plan_execution(
@@ -204,17 +269,22 @@ async def execute_video_plan_endpoint(
                 current_state=current_pipeline_state,
                 skip_compliance=body.skip_compliance,
             ):
+                await queue.put(chunk)
+
                 if "pipeline_state" in chunk:
                     try:
                         data = json.loads(chunk.replace("data: ", "").strip())
                         if "pipeline_state" in data:
                             final_state = data["pipeline_state"]
+                            _store.update_task_pipeline(
+                                project_id=project_id, task_id=task_id,
+                                status="in_progress", pipeline_state=final_state,
+                            )
                     except Exception as pe:
-                        logger.warning("[SSE] Error parsing V2 state chunk: %s", pe)
-                yield chunk
+                        logger.warning("[BG-V2] Error parsing/persisting state: %s", pe)
         except Exception as err:
-            logger.error("[SSE] Video V2 execution error: %s", err)
-            yield f"data: {json.dumps({'error': str(err)})}\n\n"
+            logger.error("[BG-V2] Video V2 execution error: %s", err)
+            await queue.put(f"data: {json.dumps({'error': str(err)})}\n\n")
 
         if final_state:
             try:
@@ -222,9 +292,31 @@ async def execute_video_plan_endpoint(
                     project_id=project_id, task_id=task_id,
                     status="completed", pipeline_state=final_state,
                 )
-                logger.info("[SSE] Persisted final V2 pipeline state to Supabase.")
+                logger.info("[BG-V2] Persisted final V2 pipeline state.")
             except Exception as se:
-                logger.error("[SSE] Failed to persist final V2 state: %s", se)
+                logger.error("[BG-V2] Failed to persist final V2 state: %s", se)
+
+        _run_complete[run_id] = True
+        await queue.put(None)
+        await asyncio.sleep(30)
+        _active_runs.pop(run_id, None)
+        _run_complete.pop(run_id, None)
+
+    asyncio.create_task(_run_v2_background())
+
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(queue.get(), timeout=120)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                    continue
+                if chunk is None:
+                    break
+                yield chunk
+        except asyncio.CancelledError:
+            logger.info("[SSE-V2] Client disconnected — background task continues")
 
     return StreamingResponse(
         event_generator(),
