@@ -258,6 +258,7 @@ async def _generate_and_check(
     platform: str,
     reference_parts: list,
     skip_compliance: bool = False,
+    gen_context: dict = None,
 ) -> GeneratedAdRef:
     """Resolve rules, invoke the agent, and bridge to compliance for one media type.
 
@@ -306,9 +307,16 @@ async def _generate_and_check(
     else:
         # Every produced ad is submitted to compliance before it is presented as
         # final (Req 8.1). A failed generation still runs through the bridge, which
-        # records it as non-final.
+        # records it as non-final. Pass product context to prevent hallucination (C1 fix).
         try:
-            compliance = await run_compliance_for_ad(result, project_id=project_id)
+            _ctx = gen_context or {}
+            compliance = await run_compliance_for_ad(
+                result,
+                project_id=project_id,
+                market=_ctx.get("market"),
+                product_name=_ctx.get("product_name"),
+                product_category=_ctx.get("product_category"),
+            )
         except Exception as exc:  # noqa: BLE001 - compliance failure → non-final (Req 8.5)
             logger.error(
                 "[Orchestrator] Compliance bridge failed for %s ad: %s", media_type, exc
@@ -516,6 +524,7 @@ def _make_media_node(media_type: MediaType) -> Callable[[GenerationState], Await
                 task_id=state["task_id"],
                 platform=state["target_platform"],
                 reference_parts=[],
+                gen_context=state.get("gen_context") or {},
             )
         except MissingRuleError as exc:
             logger.warning("[Orchestrator] %s rejected (missing rule): %s", media_type, exc)

@@ -491,6 +491,15 @@ async def run_compliance_for_ad(
                 + (f" (Category: {product_category})" if product_category else "")
                 + ". Evaluate this ad for THIS product — do not flag content that matches the product."
             )
+        else:
+            # No product specified — tell the judge to evaluate what's visually shown,
+            # NOT to hallucinate a product from the business_profiles table.
+            state["user_prompt_context"] = (
+                "No specific product was provided by the user. "
+                "Evaluate the ad based on what is visually shown in the content. "
+                "Do NOT assume a product that isn't visible. "
+                "Focus on cultural, platform, and regulatory compliance only."
+            )
 
         try:
             from jusads_compliance.compliance_pipeline import compliance_pipeline

@@ -47,14 +47,27 @@ _KEYWORDS: dict[MediaType, tuple[str, ...]] = {
 _DECISION_PROMPT = """Analyze the user's advertisement request:
 "{user_message}"
 
-Decide which of the following channels are requested to be generated (you can select multiple):
-1. "text" (ad copy, captions, headlines)
-2. "image" (ad visual banner, poster)
-3. "audio" (radio, voiceover, sound byte)
-4. "video" (video ad, stitching image and voiceover)
+Decide which media outputs the user is EXPLICITLY asking you to CREATE/GENERATE.
 
-Return ONLY a JSON list of lowercase strings representing the selected media types.
-Example: ["text", "image"]
+IMPORTANT RULES:
+- The user MUST explicitly mention or imply they want you to GENERATE/CREATE/MAKE a specific media type.
+- Simply mentioning a concept (e.g., "my coffee shop") is NOT a request to generate anything.
+- The message MUST contain action words (generate, create, make, design, produce, write) OR explicit media type words (image, video, text, audio, poster, banner, clip, reel, caption, voiceover).
+- If the user is just chatting, asking questions, or describing something without requesting generation, return [].
+
+Media types:
+1. "text" — ONLY if they ask for: ad copy, captions, headlines, taglines, slogans, descriptions
+2. "image" — ONLY if they ask for: ad image, poster, banner, visual, graphic, picture, photo
+3. "audio" — ONLY if they ask for: radio ad, voiceover, sound, jingle, podcast ad, audio
+4. "video" — ONLY if they ask for: video ad, clip, reel, TikTok video, footage, video content
+
+Return ONLY a JSON list. Examples:
+- "Generate a TikTok video ad for my coffee" → ["video"]
+- "Create image and text ads for shoes" → ["text", "image"]
+- "I want to promote my restaurant" → [] (no specific media type requested)
+- "Make me a poster" → ["image"]
+- "Hi, how are you?" → []
+
 If nothing matches, return: []
 Do not return any other text."""
 
@@ -127,8 +140,32 @@ def _classify_with_gemini(user_message: str) -> list[MediaType] | None:
 
 
 def _classify_with_keywords(user_message: str) -> list[MediaType]:
-    """Deterministically classify the message using keyword matching."""
+    """Deterministically classify the message using keyword matching.
+
+    Requires BOTH a generation-intent signal AND a media type keyword.
+    Without an action word, media keywords alone don't trigger generation.
+    """
     lowered = user_message.lower()
+
+    # Must have at least one generation-intent action word
+    _ACTION_WORDS = (
+        "generate", "create", "make", "design", "produce", "write",
+        "build", "craft", "compose", "develop", "prepare", "give me",
+        "i want", "i need", "can you make", "please make",
+    )
+    has_action = any(action in lowered for action in _ACTION_WORDS)
+
+    # If no action intent AND no explicit media type word, return empty
+    if not has_action:
+        # Still allow if message explicitly names the media type with enough context
+        # e.g., "image ad for coffee" or "video for my brand"
+        explicit_media = any(
+            media_type in lowered
+            for media_type in ("image", "video", "audio", "text ad", "poster", "banner", "reel")
+        )
+        if not explicit_media:
+            return []
+
     detected: list[MediaType] = [
         media_type
         for media_type in _VALID_MEDIA_TYPES

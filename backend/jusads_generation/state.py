@@ -51,3 +51,5 @@ class GenerationState(TypedDict):
     pipeline_state: dict  # nodes/edges/viewport for the frontend
     # Streaming sink (events appended by nodes, drained by the route)
     events: list[dict]
+    # Generation settings (product context, market, etc.) for compliance bridge
+    gen_context: dict
