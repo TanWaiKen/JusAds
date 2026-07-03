@@ -47,12 +47,19 @@ os.makedirs(DRAFTS_DIR, exist_ok=True)
 # ─────────────────────────────────────────────────────────────────────────────
 
 try:
-    import pyJianYingDraft as jydraft
-    JYDRAFT_AVAILABLE = True
-    logger.info("[CapCut] pyJianYingDraft library loaded (draft generation available)")
+    import pycapcut as cc
+    CAPCUT_AVAILABLE = True
+    logger.info("[CapCut] pycapcut library loaded (CapCut draft generation available, %d transitions)",
+                len([x for x in dir(cc.TransitionType) if not x.startswith("_")]))
 except ImportError:
-    JYDRAFT_AVAILABLE = False
-    logger.warning("[CapCut] pyJianYingDraft not installed — draft features unavailable")
+    try:
+        import pyJianYingDraft as cc
+        CAPCUT_AVAILABLE = True
+        logger.info("[CapCut] pyJianYingDraft loaded as fallback")
+    except ImportError:
+        CAPCUT_AVAILABLE = False
+        cc = None
+        logger.warning("[CapCut] Neither pycapcut nor pyJianYingDraft installed — draft features unavailable")
 
 
 def create_capcut_draft(
@@ -61,11 +68,13 @@ def create_capcut_draft(
     height: int = 1920,
     fps: int = 30,
     draft_name: str = "remediation_draft",
+    capcut_drafts_folder: Optional[str] = None,
 ) -> Optional[dict]:
-    """Create a CapCut/JianYing draft from a source video.
+    """Create a CapCut-editable draft from a source video.
 
-    The draft can be opened in JianYing/CapCut desktop for rich editing
-    and final export with full effect support.
+    The draft can be opened directly in CapCut desktop for rich editing
+    (1120 transitions, text animations, effects, stickers, etc.).
+    User can then fine-tune the AI's edits and export at full quality.
 
     Args:
         video_path: Path to source video file.
@@ -73,12 +82,13 @@ def create_capcut_draft(
         height: Draft canvas height.
         fps: Frames per second.
         draft_name: Human-readable draft name.
+        capcut_drafts_folder: Path to CapCut's drafts folder. If None, uses temp.
 
     Returns:
-        Dict with draft_path, script_file reference, or None on failure.
+        Dict with draft_folder path, script reference, or None on failure.
     """
-    if not JYDRAFT_AVAILABLE:
-        logger.warning("[CapCut] pyJianYingDraft not available — cannot create draft")
+    if not CAPCUT_AVAILABLE:
+        logger.warning("[CapCut] pycapcut not available — cannot create draft")
         return None
 
     if not os.path.exists(video_path):
@@ -86,33 +96,37 @@ def create_capcut_draft(
         return None
 
     try:
-        script = jydraft.ScriptFile(width, height, fps, maintrack_adsorb=True)
+        # Use CapCut's drafts folder if provided, otherwise temp
+        drafts_path = capcut_drafts_folder or DRAFTS_DIR
+        draft_folder = cc.DraftFolder(drafts_path)
 
-        # Add a video track
-        script.add_track(jydraft.TrackType.video, "main_video")
+        # Create the draft
+        script = draft_folder.create_draft(draft_name, width, height, fps, allow_replace=True)
 
-        # Create video material + segment
+        # Add a main video track
+        script.add_track(cc.TrackType.video, "main_video")
+
+        # Get video duration and add segment
         duration = _get_video_duration(video_path)
-        dur_us = int((duration or 10) * jydraft.SEC)  # Convert to microseconds
+        dur_us = int((duration or 10) * 1_000_000)  # Convert seconds to microseconds
 
-        video_seg = jydraft.VideoSegment(
-            material=video_path,
-            target_timerange=jydraft.Timerange(0, dur_us),
+        video_seg = cc.VideoSegment(
+            video_path,
+            cc.Timerange(0, dur_us),
         )
         script.add_segment(video_seg, "main_video")
 
-        # Save draft to a folder
-        draft_folder_path = os.path.join(DRAFTS_DIR, draft_name)
-        os.makedirs(draft_folder_path, exist_ok=True)
-
-        draft_folder = jydraft.DraftFolder(draft_folder_path)
+        # Save the draft
         script.save()
 
-        logger.info("[CapCut] Draft created at: %s", draft_folder_path)
+        logger.info("[CapCut] Draft '%s' created at: %s", draft_name, drafts_path)
         return {
-            "draft_path": draft_folder_path,
+            "draft_folder": drafts_path,
+            "draft_name": draft_name,
             "script": script,
             "duration_us": dur_us,
+            "width": width,
+            "height": height,
         }
 
     except Exception as e:
@@ -120,64 +134,88 @@ def create_capcut_draft(
         return None
 
 
-def add_text_to_draft(
-    script: "jydraft.ScriptFile",
-    text: str,
-    start_sec: float = 0.0,
-    duration_sec: float = 3.0,
-    font_size: float = 12.0,
-    color: tuple = (1.0, 1.0, 1.0),
-    intro_animation: Optional[str] = None,
-    outro_animation: Optional[str] = None,
-) -> bool:
-    """Add styled text with animations to an existing draft.
+def create_multi_scene_draft(
+    scene_clips: list[str],
+    audio_path: Optional[str] = None,
+    subtitles_srt: Optional[str] = None,
+    draft_name: str = "ai_video_draft",
+    width: int = 1080,
+    height: int = 1920,
+    fps: int = 30,
+    capcut_drafts_folder: Optional[str] = None,
+    transition_type: str = "fade",
+    transition_duration_sec: float = 0.5,
+) -> Optional[dict]:
+    """Create a CapCut draft from multiple scene clips with transitions.
 
-    This uses pyJianYingDraft's rich text system which supports 451+
-    transitions and animated text intros/outros.
+    This is the dual-output companion to FFmpeg assembly: produces an editable
+    CapCut project the user can open, adjust, and export at full quality.
 
     Args:
-        script: The ScriptFile instance to add text to.
-        text: Text content to display.
-        start_sec: Start time in seconds.
-        duration_sec: Display duration in seconds.
-        font_size: Font size (JianYing units, ~8-30 typical).
-        color: RGB tuple (0.0-1.0 per channel).
-        intro_animation: Optional text intro animation name.
-        outro_animation: Optional text outro animation name.
+        scene_clips: List of paths to video/image files (one per scene).
+        audio_path: Optional voiceover/music audio file path.
+        subtitles_srt: Optional .srt file path for subtitles.
+        draft_name: Name for the draft.
+        width: Canvas width.
+        height: Canvas height.
+        fps: Frames per second.
+        capcut_drafts_folder: CapCut drafts folder path.
+        transition_type: Transition between scenes.
+        transition_duration_sec: Transition duration.
 
     Returns:
-        True on success, False on failure.
+        Dict with draft info, or None on failure.
     """
-    if not JYDRAFT_AVAILABLE:
-        return False
+    if not CAPCUT_AVAILABLE:
+        logger.warning("[CapCut] pycapcut not available — cannot create draft")
+        return None
 
     try:
-        start_us = int(start_sec * jydraft.SEC)
-        dur_us = int(duration_sec * jydraft.SEC)
+        drafts_path = capcut_drafts_folder or DRAFTS_DIR
+        draft_folder = cc.DraftFolder(drafts_path)
+        script = draft_folder.create_draft(draft_name, width, height, fps, allow_replace=True)
 
-        style = jydraft.TextStyle(
-            size=font_size,
-            color=color,
-            bold=True,
-            align=1,  # Center
-        )
+        # Add video track
+        script.add_track(cc.TrackType.video, "scenes")
 
-        text_seg = jydraft.TextSegment(
-            text=text,
-            timerange=jydraft.Timerange(start_us, dur_us),
-            style=style,
-        )
+        # Add each scene clip
+        for i, clip_path in enumerate(scene_clips):
+            if not os.path.exists(clip_path):
+                logger.warning("[CapCut] Scene clip not found, skipping: %s", clip_path)
+                continue
 
-        # Add text track if not exists, then add segment
-        script.add_track(jydraft.TrackType.text, "text_overlay")
-        script.add_segment(text_seg, "text_overlay")
+            duration = _get_video_duration(clip_path)
+            dur_us = int((duration or 5) * 1_000_000)
 
-        logger.info("[CapCut] Text added to draft: '%s' at %.1fs", text[:20], start_sec)
-        return True
+            seg = cc.VideoSegment(clip_path, cc.Timerange(0, dur_us))
+            script.add_segment(seg, "scenes")
+
+        # Add audio track if provided
+        if audio_path and os.path.exists(audio_path):
+            script.add_track(cc.TrackType.audio, "voiceover")
+            audio_dur = _get_video_duration(audio_path)  # ffprobe works for audio too
+            audio_dur_us = int((audio_dur or 30) * 1_000_000)
+            audio_seg = cc.AudioSegment(audio_path, cc.Timerange(0, audio_dur_us))
+            script.add_segment(audio_seg, "voiceover")
+
+        # Import SRT subtitles if provided
+        if subtitles_srt and os.path.exists(subtitles_srt):
+            script.import_srt(subtitles_srt, track_name="subtitles")
+
+        script.save()
+
+        logger.info("[CapCut] Multi-scene draft '%s' created with %d clips", draft_name, len(scene_clips))
+        return {
+            "draft_folder": drafts_path,
+            "draft_name": draft_name,
+            "scene_count": len(scene_clips),
+            "has_audio": bool(audio_path),
+            "has_subtitles": bool(subtitles_srt),
+        }
 
     except Exception as e:
-        logger.error("[CapCut] add_text_to_draft failed: %s", e)
-        return False
+        logger.error("[CapCut] Multi-scene draft creation failed: %s", e)
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -558,25 +596,25 @@ def _concat_videos(parts: list[str], output_path: str) -> dict:
 
 
 def get_available_transitions() -> list[str]:
-    """Return list of available pyJianYingDraft transition names (451+).
+    """Return list of available pyCapCut transition names (1120+).
 
     These are available for draft-based editing (opened in CapCut desktop).
     FFmpeg supports a smaller subset: fade, dissolve, wipeleft, wiperight, etc.
     """
-    if not JYDRAFT_AVAILABLE:
+    if not CAPCUT_AVAILABLE:
         return ["fade", "dissolve", "wipeleft", "wiperight"]
 
     try:
-        return [x for x in dir(jydraft.TransitionType) if not x.startswith("_")]
+        return [x for x in dir(cc.TransitionType) if not x.startswith("_")]
     except Exception:
         return ["fade", "dissolve", "wipeleft", "wiperight"]
 
 
 def get_available_text_intros() -> list[str]:
     """Return list of available text intro animation names."""
-    if not JYDRAFT_AVAILABLE:
+    if not CAPCUT_AVAILABLE:
         return []
     try:
-        return [x for x in dir(jydraft.TextIntro) if not x.startswith("_")]
+        return [x for x in dir(cc.TextIntro) if not x.startswith("_")]
     except Exception:
         return []

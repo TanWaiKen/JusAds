@@ -25,7 +25,8 @@ Pillow
 # TTS / Voice (audio remediation)
 elevenlabs
 
-# Video Editing (CapCut/JianYing draft generation)
+# Video Editing (CapCut draft generation + FFmpeg rendering)
+pycapcut
 pyJianYingDraft
 
 # Image Editing (Flux Kontext Pro fallback)
