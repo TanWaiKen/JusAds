@@ -116,15 +116,15 @@ def test_speed_ramp():
 
 
 def test_capcut_api_connection():
-    """Test if pyJianYingDraft is available and can create drafts."""
-    from jusads_compliance.capcut_client import JYDRAFT_AVAILABLE, get_available_transitions
-    print(f"  pyJianYingDraft available: {JYDRAFT_AVAILABLE}")
-    if JYDRAFT_AVAILABLE:
+    """Test if pyCapCut is available and can create drafts."""
+    from jusads_compliance.capcut_client import CAPCUT_AVAILABLE, get_available_transitions
+    print(f"  pyCapCut available: {CAPCUT_AVAILABLE}")
+    if CAPCUT_AVAILABLE:
         transitions = get_available_transitions()
         print(f"  Transitions available: {len(transitions)}")
         print(f"  Sample: {transitions[:5]}")
     else:
-        print("  NOTE: pyJianYingDraft not installed — draft features unavailable")
+        print("  NOTE: pycapcut not installed — draft features unavailable")
     return True
 
 
