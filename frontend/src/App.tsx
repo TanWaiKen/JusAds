@@ -7,6 +7,7 @@ import Home from "./pages/landing";
 import DashboardShell from "./pages/dashboard";
 import DashboardHome from "./pages/home";
 import NewProject from "./pages/newProject";
+import OnboardingPage from "./pages/onboarding";
 import DashboardProfile from "./pages/profile";
 import DashboardTrends from "./pages/trends";
 import DashboardAssets from "./pages/assets";
@@ -39,6 +40,7 @@ function App() {
               }
             >
               <Route index element={<DashboardHome />} />
+              <Route path="onboarding" element={<OnboardingPage />} />
               <Route path="new" element={<NewProject />} />
               <Route path="profile" element={<DashboardProfile />} />
               <Route path="assets" element={<DashboardAssets />} />

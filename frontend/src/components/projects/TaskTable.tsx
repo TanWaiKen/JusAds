@@ -22,6 +22,7 @@ interface TaskTableProps {
   currentPage: number;
   onPageChange: (page: number) => void;
   onSelectTask: (taskId: string) => void;
+  onDeleteTask: (taskId: string) => void;
 }
 
 export function TaskTable({
@@ -31,6 +32,7 @@ export function TaskTable({
   currentPage,
   onPageChange,
   onSelectTask,
+  onDeleteTask,
 }: TaskTableProps) {
   const tableRef = useRef<HTMLDivElement>(null);
 
@@ -111,7 +113,7 @@ export function TaskTable({
               </tr>
             ) : (
               paginatedTasks.map((task) => (
-                <TaskRow key={task.id} task={task} onSelect={onSelectTask} />
+                <TaskRow key={task.id} task={task} onSelect={onSelectTask} onDelete={onDeleteTask} />
               ))
             )}
           </tbody>

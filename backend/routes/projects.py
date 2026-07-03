@@ -12,8 +12,8 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
-from agent.supabase_client import SupabaseComplianceStore
-from agent.models import CreateTaskRequest, UpdatePipelineRequest, UpdateProjectRequest
+from shared.supabase_client import SupabaseComplianceStore
+from shared.models import CreateTaskRequest, UpdatePipelineRequest, UpdateProjectRequest
 
 logger = logging.getLogger(__name__)
 

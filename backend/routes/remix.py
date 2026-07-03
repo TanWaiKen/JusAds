@@ -18,7 +18,7 @@ import time as _time
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from agent.supabase_client import SupabaseComplianceStore
+from shared.supabase_client import SupabaseComplianceStore
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ async def remix_compliance(check_id: str):
 
 def _remix_text(violations, result_json, market, platform, ethnicity, age_group) -> dict:
     """Rewrite ad text to fix compliance violations."""
-    from agent.remix_tools import rewrite_text
+    from jusads_compliance.remix_tools import rewrite_text
 
     text_input = result_json.get("text_input", "") or result_json.get("explanation", "")
     rewrite_result = rewrite_text.invoke({
@@ -157,7 +157,7 @@ def _remix_text(violations, result_json, market, platform, ethnicity, age_group)
 
 def _remix_audio(check, violations, suggestion, result_json, market, platform, ethnicity, age_group) -> dict:
     """Rewrite transcript + generate replacement TTS audio."""
-    from agent.remix_tools import rewrite_text, remix_audio
+    from jusads_compliance.remix_tools import rewrite_text, remix_audio
 
     transcript = result_json.get("_transcript", {})
     transcript_text = transcript.get("transcript", "") if isinstance(transcript, dict) else ""
@@ -213,9 +213,9 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
       - CANNOT_FIX: product/concept is the violation, return guidance
       - EDIT: plan edit via AIDesigner, execute via Imagen 3.0 inpainting
     """
-    from agent.triage import triage_decide
-    from agent.ai_designer import plan_edit
-    from agent.models import TriageOutcome
+    from jusads_compliance.triage import triage_decide
+    from jusads_compliance.ai_designer import plan_edit
+    from shared.models import TriageOutcome
 
     def emit(event: dict) -> str:
         return f"data: {json.dumps(event)}\n\n"
@@ -302,7 +302,7 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
         yield emit({"type": "node_status", "node": "edit_image", "status": "running",
                     "description": "Editing image with AI..."})
 
-        from agent.remix_tools import edit_image
+        from jusads_compliance.remix_tools import edit_image
 
         edit_result = edit_image.invoke({
             "project_id": str(check.get("project_id", "default")),
@@ -323,7 +323,7 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
             # Upload to S3 if we have a local file
             s3_remix_url = None
             if output_path:
-                from agent.s3_client import S3MediaClient, build_s3_key
+                from shared.s3_client import S3MediaClient, build_s3_key
                 try:
                     s3_client = S3MediaClient()
                     user_id = check.get("user_email", "unknown")
@@ -346,7 +346,7 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
             bias_check = None
             if output_path:
                 try:
-                    from agent.remix_tools import check_edit_bias
+                    from jusads_compliance.remix_tools import check_edit_bias
                     # Get original image path for comparison
                     original_url = check.get("s3_upload_key", "")
                     if original_url:

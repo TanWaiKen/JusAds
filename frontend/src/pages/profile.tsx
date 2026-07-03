@@ -1,10 +1,20 @@
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { Mail, User as UserIcon, Shield, Globe, Calendar, LogOut } from "lucide-react";
+import { Mail, User as UserIcon, Shield, Globe, Calendar, LogOut, Building2, Package, MonitorPlay, Pencil } from "lucide-react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 
 gsap.registerPlugin(useGSAP);
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+
+interface BusinessProfile {
+  company_name: string;
+  product_category: string;
+  product_description: string;
+  target_platforms: string[];
+  target_markets: string[];
+}
 
 export default function DashboardProfile() {
   const { user, picture, logout } = useAuth();
@@ -23,24 +33,41 @@ export default function DashboardProfile() {
     ? new Date(user.expires_at * 1000).toLocaleString()
     : null;
 
+  // Business profile state
+  const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  useEffect(() => {
+    if (!email) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/profile/${encodeURIComponent(email)}`);
+        if (res.ok) {
+          setBusinessProfile(await res.json());
+        }
+      } catch {
+        // Non-fatal
+      } finally {
+        setLoadingProfile(false);
+      }
+    })();
+  }, [email]);
+
   // GSAP animation for profile elements
   useGSAP(() => {
     const tl = gsap.timeline({ defaults: { duration: 0.5, ease: "power3.out" } });
 
-    // Profile header reveal
     tl.from(".profile-header", {
       y: -15,
       autoAlpha: 0,
       duration: 0.6
     });
 
-    // Account label reveal
     tl.from(".account-label", {
       autoAlpha: 0,
       duration: 0.4
     }, "-=0.2");
 
-    // Profile rows staggered slide in
     tl.from(".info-row-item", {
       x: -20,
       autoAlpha: 0,
@@ -78,6 +105,50 @@ export default function DashboardProfile() {
             {email ?? "No email available"}
           </p>
         </div>
+      </div>
+
+      {/* ── Business Profile ──────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <h3 className="account-label text-code-sm uppercase font-bold tracking-wider text-text-caption">
+            Business Profile
+          </h3>
+          {businessProfile && (
+            <a
+              href="/dashboard/onboarding"
+              className="flex items-center gap-1 text-xs text-accent-blue hover:underline"
+            >
+              <Pencil size={12} />
+              Edit
+            </a>
+          )}
+        </div>
+
+        {loadingProfile ? (
+          <div className="rounded-[12px] border border-border-default bg-surface-card p-6">
+            <p className="text-sm text-text-muted animate-pulse">Loading business profile...</p>
+          </div>
+        ) : businessProfile ? (
+          <div className="rounded-[12px] border border-border-default bg-surface-card divide-y divide-gray-100 dark:divide-white/5 overflow-hidden card-shadow retina-border">
+            <InfoRow icon={<Building2 size={16} />} label="Company" value={businessProfile.company_name} />
+            <InfoRow icon={<Package size={16} />} label="Category" value={businessProfile.product_category} />
+            {businessProfile.product_description && (
+              <InfoRow icon={<Package size={16} />} label="Description" value={businessProfile.product_description} />
+            )}
+            <InfoRow icon={<MonitorPlay size={16} />} label="Platforms" value={businessProfile.target_platforms.join(", ")} />
+            <InfoRow icon={<Globe size={16} />} label="Markets" value={businessProfile.target_markets.join(", ")} />
+          </div>
+        ) : (
+          <div className="rounded-[12px] border border-dashed border-border-default bg-surface-card p-6 text-center">
+            <p className="text-sm text-text-muted mb-3">No business profile set up yet.</p>
+            <a
+              href="/dashboard/onboarding"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              Complete Setup
+            </a>
+          </div>
+        )}
       </div>
 
       {/* ── Account Details ───────────────────────────────────────────────── */}

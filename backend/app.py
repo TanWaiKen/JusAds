@@ -23,19 +23,29 @@ from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from agent.supabase_client import SupabaseComplianceStore
-from agent.s3_client import S3MediaClient
+from shared.supabase_client import SupabaseComplianceStore
+from shared.s3_client import S3MediaClient
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 from routes.compliance import router as compliance_router, init_compliance
 from routes.remix import router as remix_router, init_remix
 from routes.projects import router as projects_router, init_store as init_projects_store
 from routes.health import router as health_router, init_health
+from routes.profile import router as profile_router
 from routes.progress import router as progress_router
 from routes.generation import router as generation_router, init_generation
+from routes.files import router as files_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ── Startup secret check (Req 3.5, 3.6) ───────────────────────────────────────
+# Halt before serving any request when a required secret is missing. The check
+# logs the missing secret BY NAME ONLY and raises, preventing the app from
+# starting rather than serving in a broken state.
+from config import verify_required_secrets
+
+verify_required_secrets()
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="JusAds Compliance API")
@@ -90,6 +100,8 @@ app.include_router(projects_router)
 app.include_router(generation_router)
 app.include_router(health_router)
 app.include_router(progress_router)
+app.include_router(profile_router)
+app.include_router(files_router)
 
 # ── Static files (dev only) ──────────────────────────────────────────────────
 import os

@@ -1,13 +1,25 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
+import { toast } from "sonner";
 import type { PipelineState, NodeType } from "@/components/workspace/canvas/graphModel";
 import { useCanvasGraph } from "@/components/workspace/canvas/useCanvasGraph";
 import { usePipelineRunner } from "@/components/workspace/canvas/usePipelineRunner";
-import { NodeLibraryPanel } from "@/components/workspace/canvas/NodeLibraryPanel";
+import { savePipeline } from "@/services/taskApi";
 import { CanvasViewport } from "@/components/workspace/canvas/CanvasViewport";
 import { InspectorPanel } from "@/components/workspace/canvas/InspectorPanel";
 import { CanvasToolbar } from "@/components/workspace/canvas/CanvasToolbar";
 import { CanvasContextMenu } from "@/components/workspace/canvas/CanvasContextMenu";
 import { ChatbotPanel } from "@/components/workspace/canvas/ChatbotPanel";
+import { OutputGallery } from "@/components/workspace/canvas/OutputGallery";
+import { VideoPlanStoryboard } from "@/components/workspace/canvas/VideoPlanStoryboard";
+import { PromptRecommendations } from "@/components/prompt-search/PromptRecommendations";
+import { SettingsPanel } from "@/components/workspace/canvas/SettingsPanel";
+import type { GenerationSettings } from "@/components/workspace/canvas/SettingsPanel";
+import type { GeneratedAdView, VideoPlan } from "@/services/generationApi";
+import { executeVideoPlan } from "@/services/generationApi";
+
+gsap.registerPlugin(useGSAP);
 
 interface GenerationCanvasProps {
   projectId: string;
@@ -17,22 +29,99 @@ interface GenerationCanvasProps {
 
 export function GenerationCanvas({ projectId, taskId, initialState }: GenerationCanvasProps) {
   const { state, dispatch } = useCanvasGraph(initialState);
-  const [activeTab, setActiveTab] = useState<"chatbot" | "inspector">("chatbot");
+  const [activeTab, setActiveTab] = useState<"chatbot" | "outputs" | "inspector">("chatbot");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     nodeId: string;
   } | null>(null);
 
-  const { run, save, isRunning, isSaving } = usePipelineRunner({
+  // Lifted output state so both chat and the Outputs tab share it.
+  const [outputs, setOutputs] = useState<GeneratedAdView[]>([]);
+  const [videoPlan, setVideoPlan] = useState<VideoPlan | null>(null);
+  const [planRendering, setPlanRendering] = useState(false);
+
+  // Settings state (unified, drives the SettingsPanel)
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Load persisted settings from initialState if available (B4).
+  const loadedSettings = (() => {
+    if (!initialState) return {};
+    const raw = (initialState as unknown as Record<string, unknown>).generation_settings;
+    if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) return raw as Record<string, unknown>;
+    return {};
+  })();
+
+  const [settings, setSettings] = useState<GenerationSettings>({
+    targetPlatform: (loadedSettings.targetPlatform as GenerationSettings["targetPlatform"]) ?? "tiktok",
+    targetEthnicity: (loadedSettings.targetEthnicity as GenerationSettings["targetEthnicity"]) ?? "all",
+    ageGroup: (loadedSettings.ageGroup as GenerationSettings["ageGroup"]) ?? "all_ages",
+    gender: (loadedSettings.gender as GenerationSettings["gender"]) ?? "female",
+    market: (loadedSettings.market as GenerationSettings["market"]) ?? "malaysia",
+    language: (loadedSettings.language as GenerationSettings["language"]) ?? "auto",
+    productName: (typeof loadedSettings.productName === "string" ? loadedSettings.productName : "") as string,
+    productCategory: (typeof loadedSettings.productCategory === "string" ? loadedSettings.productCategory : "") as string,
+    complianceEnabled: loadedSettings.complianceEnabled !== false,
+    videoV2Enabled: loadedSettings.videoV2Enabled === true,
+  });
+
+  // Debounced auto-save of settings to pipeline_state.generation_settings (B4).
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const updateSettings = (patch: Partial<GenerationSettings>): void => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      // Debounce save (500ms after last change).
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        const pipelineWithSettings = {
+          ...state.pipeline,
+          generation_settings: next,
+        } as unknown as typeof state.pipeline;
+        savePipeline(projectId, taskId, pipelineWithSettings, "saved").catch(() => {});
+      }, 500);
+      return next;
+    });
+  };
+
+  // Video V2: handle the Continue button from the Outputs tab storyboard.
+  const handleContinuePlan = useCallback(async (approvedPlan: VideoPlan) => {
+    setPlanRendering(true);
+    try {
+      for await (const event of executeVideoPlan(
+        projectId, taskId, approvedPlan, !settings.complianceEnabled
+      )) {
+        if (event.pipeline_state) {
+          dispatch({ type: "SET_PIPELINE", pipeline: event.pipeline_state });
+        }
+        if (event.error) {
+          toast.error(`Video render error: ${event.error}`);
+        }
+      }
+      setVideoPlan(null);
+      toast.success("Video rendered successfully!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to render the video");
+    } finally {
+      setPlanRendering(false);
+    }
+  }, [projectId, taskId, settings.complianceEnabled, dispatch]);
+
+  const { save, isSaving } = usePipelineRunner({
     projectId,
     taskId,
     onStateUpdate: (pipeline) => dispatch({ type: "SET_PIPELINE", pipeline }),
   });
 
-  // Keyboard shortcuts
+  // Ctrl+S keyboard shortcut for saving
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        save(state.pipeline);
+      }
+
       if (e.key === "Delete" || e.key === "Backspace") {
         if (state.selectedNodeId) {
           dispatch({ type: "DELETE_NODE", nodeId: state.selectedNodeId });
@@ -41,13 +130,45 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [state.selectedNodeId, dispatch]);
+  }, [state.selectedNodeId, state.pipeline, dispatch, save]);
 
   const selectedNode = state.pipeline.nodes.find((n) => n.id === state.selectedNodeId) ?? null;
 
   const handleContextMenu = useCallback((nodeId: string, e: React.MouseEvent) => {
     setContextMenu({ x: e.clientX, y: e.clientY, nodeId });
   }, []);
+
+  const [panelWidth, setPanelWidth] = useState(380);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isPanelMaximized, setIsPanelMaximized] = useState(false);
+
+  const startResizing = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth >= 240 && newWidth <= 600) {
+        setPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
 
   const handleDuplicate = useCallback(
     (nodeId: string) => {
@@ -61,8 +182,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
 
   const handleConnect = useCallback(
     (_nodeId: string) => {
-      // Connect-to mode — user clicks another node to connect
-      // For simplicity, we just select the source node for now
+      // Connect-to mode placeholder
     },
     []
   );
@@ -77,22 +197,38 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   return (
     <div className="flex h-full flex-col">
       <CanvasToolbar
-        onRun={() => run(state.pipeline)}
-        onSave={() => save(state.pipeline)}
-        isRunning={isRunning}
         isSaving={isSaving}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
-      <div className="flex flex-1 overflow-hidden">
-        <NodeLibraryPanel />
+      <div className="relative flex flex-1 overflow-hidden">
         <CanvasViewport
           pipeline={state.pipeline}
           selectedNodeId={state.selectedNodeId}
           dispatch={dispatch}
           onContextMenu={handleContextMenu}
         />
-        
+
+        {/* Settings Panel (two-tab overlay) */}
+        {settingsOpen && (
+          <SettingsPanel
+            settings={settings}
+            onUpdate={updateSettings}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
+
         {/* Tabbed Right Panel */}
-        <div className="w-80 shrink-0 border-l bg-background flex flex-col h-full">
+        <div
+          style={{ width: isPanelMaximized ? "60%" : `${panelWidth}px` }}
+          className={`relative shrink-0 border-l bg-background flex flex-col h-full transition-[width] duration-200 ${isResizing ? "select-none" : ""}`}
+        >
+          {/* Resizer Handle */}
+          <div
+            onMouseDown={startResizing}
+            className={`absolute top-0 bottom-0 left-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors z-50 ${
+              isResizing ? "bg-primary" : "bg-transparent"
+            }`}
+          />
           <div className="flex border-b border-border text-xs font-semibold select-none bg-muted/20">
             <button
               onClick={() => setActiveTab("chatbot")}
@@ -105,6 +241,16 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
               Agent Chatbot
             </button>
             <button
+              onClick={() => setActiveTab("outputs")}
+              className={`flex-1 py-3 text-center border-b-2 transition-all cursor-pointer ${
+                activeTab === "outputs"
+                  ? "border-primary text-primary bg-background"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Outputs{outputs.length > 0 ? ` (${outputs.length})` : ""}
+            </button>
+            <button
               onClick={() => setActiveTab("inspector")}
               className={`flex-1 py-3 text-center border-b-2 transition-all cursor-pointer ${
                 activeTab === "inspector"
@@ -114,6 +260,13 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
             >
               Inspector
             </button>
+            <button
+              onClick={() => setIsPanelMaximized((prev) => !prev)}
+              className="px-3 py-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer border-b-2 border-transparent"
+              title={isPanelMaximized ? "Restore panel" : "Expand panel"}
+            >
+              {isPanelMaximized ? "⇥" : "⇤"}
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto">
             {activeTab === "chatbot" ? (
@@ -121,9 +274,76 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                 projectId={projectId}
                 taskId={taskId}
                 onStateUpdate={(pipeline) => dispatch({ type: "SET_PIPELINE", pipeline })}
+                targetPlatform={settings.targetPlatform}
+                complianceEnabled={settings.complianceEnabled}
+                videoV2Enabled={settings.videoV2Enabled}
+                targetEthnicity={settings.targetEthnicity}
+                generationOptions={{
+                  ageGroup: settings.ageGroup,
+                  market: settings.market,
+                  language: settings.language,
+                  productName: settings.productName,
+                  productCategory: settings.productCategory,
+                  gender: settings.gender,
+                }}
+                initialPipelineState={initialState}
+                onOutputsUpdate={setOutputs}
+                onVideoPlanUpdate={setVideoPlan}
               />
+            ) : activeTab === "outputs" ? (
+              <div className="flex flex-col h-full overflow-y-auto">
+                {videoPlan && (
+                  <div className="border-b p-3">
+                    <VideoPlanStoryboard
+                      plan={videoPlan}
+                      onContinue={handleContinuePlan}
+                      isRendering={planRendering}
+                    />
+                  </div>
+                )}
+                {outputs.length > 0 ? (
+                  <OutputGallery
+                    ads={outputs}
+                    isSidebar={true}
+                    projectId={projectId}
+                    taskId={taskId}
+                  />
+                ) : !videoPlan ? (
+                  <div className="p-4">
+                    <PromptRecommendations
+                      profile={{
+                        productName: settings.productName,
+                        productCategory: settings.productCategory,
+                        targetEthnicity: settings.targetEthnicity,
+                        platform: settings.targetPlatform || "tiktok",
+                        ageGroup: settings.ageGroup,
+                      }}
+                      onUse={(prompt) => {
+                        setActiveTab("chatbot");
+                        // The prompt will be injected into the chat input via a slight delay.
+                        setTimeout(() => {
+                          const chatInput = document.querySelector<HTMLTextAreaElement>('textarea[placeholder]');
+                          if (chatInput) {
+                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                              window.HTMLTextAreaElement.prototype, 'value'
+                            )?.set;
+                            nativeInputValueSetter?.call(chatInput, prompt);
+                            chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            chatInput.focus();
+                          }
+                        }, 100);
+                      }}
+                      maxCards={6}
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : (
-              <InspectorPanel node={selectedNode} />
+              <InspectorPanel
+                node={selectedNode}
+                onUpdateProps={(nodeId, updates) => dispatch({ type: "UPDATE_NODE_PROPS", nodeId, ...updates })}
+                onDelete={handleDelete}
+              />
             )}
           </div>
         </div>

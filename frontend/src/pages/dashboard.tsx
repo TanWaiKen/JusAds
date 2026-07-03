@@ -1,10 +1,13 @@
 import { useRef, useState, useEffect } from "react";
-import { Outlet } from "react-router";
+import { Outlet, useNavigate, useLocation } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import { Menu } from "lucide-react";
+import { Menu, Loader2 } from "lucide-react";
 import { Sidebar, SIDEBAR_WIDTH } from "@/components/layout/Sidebar";
 import type { SidebarHandle } from "@/components/layout/Sidebar";
+import { useAuth } from "@/hooks/useAuth";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 gsap.registerPlugin(useGSAP);
 
@@ -17,6 +20,11 @@ export default function DashboardShell() {
   const headerRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLElement>(null);
 
+  const { user, status } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+
   // Track desktop vs mobile
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
@@ -24,9 +32,51 @@ export default function DashboardShell() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // Onboarding gate check
+  useEffect(() => {
+    if (status === "loading") return;
+    if (status === "unauthenticated") {
+      setCheckingOnboarding(false);
+      return;
+    }
+
+    const email = user?.profile?.email;
+    if (!email) {
+      setCheckingOnboarding(false);
+      return;
+    }
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/profile/${email}/onboarding-status`);
+        if (res.ok) {
+          const data = await res.json();
+          const isOnboardingPath = location.pathname === "/dashboard/onboarding";
+          
+          if (!data.onboarding_complete) {
+            if (!isOnboardingPath) {
+              navigate("/dashboard/onboarding", { replace: true });
+            }
+          } else {
+            if (isOnboardingPath) {
+              navigate("/dashboard", { replace: true });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to check onboarding status:", err);
+      } finally {
+        setCheckingOnboarding(false);
+      }
+    };
+
+    checkStatus();
+  }, [user, status, location.pathname, navigate]);
+
   // Animate header entrance on mount
   useGSAP(
     () => {
+      if (!headerRef.current) return;
       gsap.from(".header-left", {
         y: -8,
         autoAlpha: 0,
@@ -34,8 +84,21 @@ export default function DashboardShell() {
         ease: "power2.out",
       });
     },
-    { scope: headerRef }
+    { scope: headerRef, dependencies: [checkingOnboarding, status] }
   );
+
+  if (status === "loading" || checkingOnboarding) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm font-medium text-muted-foreground animate-pulse">
+            Verifying profile setup status...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans">

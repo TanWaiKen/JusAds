@@ -160,20 +160,15 @@ export async function deleteTask(projectId: string, taskId: string): Promise<voi
 export async function sendChatWithAgent(
   projectId: string,
   taskId: string,
-  message: string
-): Promise<{ reply: string; pipeline_state: PipelineState }> {
-  const res = await fetch(
+  message: string,
+  referenceUrls: string[] = []
+): Promise<Response> {
+  return fetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/chat`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, reference_urls: referenceUrls }),
     }
   );
-
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
-
-  return res.json();
 }
