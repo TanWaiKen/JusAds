@@ -16,7 +16,7 @@ import {
   type VideoPlan,
   type GenerationOptions,
 } from "@/services/generationApi";
-import type { PipelineState } from "@/components/workspace/canvas/graphModel";
+import type { PipelineState, NodeType } from "@/components/workspace/canvas/graphModel";
 import {
   Send,
   Bot,
@@ -40,7 +40,7 @@ interface ChatbotPanelProps {
   onStateUpdate: (pipeline: PipelineState) => void;
   targetPlatform: TargetPlatform | null;
   complianceEnabled: boolean;
-  videoV2Enabled: boolean;
+  videoV3Enabled: boolean;
   targetEthnicity: TargetEthnicity;
   generationOptions: GenerationOptions;
   initialPipelineState?: PipelineState;
@@ -127,7 +127,7 @@ export function ChatbotPanel({
   onStateUpdate,
   targetPlatform,
   complianceEnabled,
-  videoV2Enabled,
+  videoV3Enabled,
   targetEthnicity,
   generationOptions,
   initialPipelineState,
@@ -135,9 +135,29 @@ export function ChatbotPanel({
   onVideoPlanUpdate,
 }: ChatbotPanelProps) {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
-  const [input, setInput] = useState("");
+  // Persist draft input + references in localStorage so they survive page navigation
+  const storageKey = `draft_${projectId}_${taskId}`;
+
+  const [input, setInput] = useState(() => {
+    try { return localStorage.getItem(`${storageKey}_input`) || ""; } catch { return ""; }
+  });
   const [loading, setLoading] = useState(false);
-  const [references, setReferences] = useState<{ filename: string; url: string }[]>([]);
+  const [references, setReferences] = useState<{ filename: string; url: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${storageKey}_refs`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  // Auto-save draft input to localStorage on change
+  useEffect(() => {
+    try { localStorage.setItem(`${storageKey}_input`, input); } catch {}
+  }, [input, storageKey]);
+
+  // Auto-save references to localStorage on change
+  useEffect(() => {
+    try { localStorage.setItem(`${storageKey}_refs`, JSON.stringify(references)); } catch {}
+  }, [references, storageKey]);
   const [uploading, setUploading] = useState(false);
   const [genStatus, setGenStatus] = useState<string | null>(null);
   const [streamError, setStreamError] = useState(false);
@@ -225,7 +245,7 @@ export function ChatbotPanel({
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 128)}px`;
     // Show picker when last char typed is @ and there are references to pick from
-    if (val.endsWith("@") && references.length > 0) {
+    if (val.includes("@") && references.length > 0) {
       setShowAtPicker(true);
     } else {
       setShowAtPicker(false);
@@ -270,6 +290,30 @@ export function ChatbotPanel({
         const persistedAds = await getGeneratedAds(projectId, taskId);
         if (!cancelled && persistedAds.length > 0) {
           setOutputs(persistedAds);
+
+          // If canvas has no nodes but we have persisted ads, rebuild nodes from ads.
+          // This handles the case where generation completed in the background after
+          // the user navigated away (background task fix).
+          const currentNodes = initialPipelineState?.nodes ?? [];
+          if (currentNodes.length === 0 && persistedAds.length > 0) {
+            const rebuiltNodes = persistedAds.map((ad, i) => ({
+              id: `node-${ad.mediaType}-${ad.adId || i}`,
+              type: ad.mediaType as NodeType,
+              x: 100 + (i % 3) * 220,
+              y: 100 + Math.floor(i / 3) * 200,
+              label: `${ad.mediaType.charAt(0).toUpperCase() + ad.mediaType.slice(1)} Agent`,
+              props: { compliance_status: ad.complianceStatus },
+              status: "done" as const,
+              output: ad.mediaType === "text" ? ad.caption : ad.publicUrl,
+              error: null,
+            }));
+            const rebuiltPipeline: PipelineState = {
+              nodes: rebuiltNodes,
+              edges: [],
+              viewport: { panX: 0, panY: 0, zoom: 1 },
+            };
+            onStateUpdate(rebuiltPipeline);
+          }
         }
 
         // Restore a persisted video_plan (storyboard) if one exists in pipeline_state (B3).
@@ -336,7 +380,7 @@ export function ChatbotPanel({
         refUrls,
         resolvedPlatform,
         !complianceEnabled,
-        videoV2Enabled,
+        videoV3Enabled,
         targetEthnicity,
         generationOptions
       )) {

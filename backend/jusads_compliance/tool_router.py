@@ -25,9 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Enumerations
+# Enumerations & Models
 # ─────────────────────────────────────────────────────────────────────────────
-
 
 class Severity(str, Enum):
     """Severity level for a remediation action."""
@@ -44,12 +43,18 @@ class RemediationTool(str, Enum):
     CAPCUT_SPEED_RAMP = "capcut_speed_ramp"
     CAPCUT_SCENE_REPLACE = "capcut_scene_replace"
     CAPCUT_TRANSITION = "capcut_transition"
+    OMNI_VIDEO_EDIT = "omni_video_edit"
     VEO_REGENERATE = "veo_regenerate"
 
     # Image tools
     INPAINT_AREA = "inpaint_area"
+    EDIT_IMAGE = "edit_image"
+    EDIT_IMAGE_REPLACE = "edit_image_replace"
+    RECONTEXT_IMAGE = "recontext_image"
+    RECONTEXT_BACKGROUND = "recontext_background"
     IMAGEN_CONSTRAINED = "imagen_constrained"
     IMAGEN_FULL_REGEN = "imagen_full_regen"
+    UPSCALE_IMAGE = "upscale_image"
 
     # Audio tools
     ELEVENLABS_DUB_SEGMENT = "elevenlabs_dub_segment"
@@ -61,11 +66,6 @@ class RemediationTool(str, Enum):
     GEMINI_REWRITE_PHRASE = "gemini_rewrite_phrase"
     GEMINI_FULL_REWRITE = "gemini_full_rewrite"
     GEMINI_NEW_COPY = "gemini_new_copy"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Pydantic models for structured output
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 class ToolSelection(BaseModel):
@@ -89,7 +89,7 @@ class RoutingDecision(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tool cost/speed metadata (used for fallback heuristic routing)
+# Tool cost/speed metadata (used for fallback routing)
 # ─────────────────────────────────────────────────────────────────────────────
 
 TOOL_METADATA: dict[str, dict] = {
@@ -99,9 +99,15 @@ TOOL_METADATA: dict[str, dict] = {
     "capcut_speed_ramp": {"cost": "low", "time_s": 5, "severity_max": "minor"},
     "capcut_scene_replace": {"cost": "medium", "time_s": 30, "severity_max": "moderate"},
     "capcut_transition": {"cost": "low", "time_s": 5, "severity_max": "minor"},
+    "omni_video_edit": {"cost": "medium", "time_s": 40, "severity_max": "moderate"},
     "veo_regenerate": {"cost": "high", "time_s": 120, "severity_max": "major"},
     # Image
     "inpaint_area": {"cost": "low", "time_s": 15, "severity_max": "minor"},
+    "edit_image": {"cost": "low", "time_s": 20, "severity_max": "minor"},
+    "edit_image_replace": {"cost": "low", "time_s": 20, "severity_max": "minor"},
+    "recontext_image": {"cost": "low", "time_s": 15, "severity_max": "minor"},
+    "recontext_background": {"cost": "low", "time_s": 15, "severity_max": "minor"},
+    "upscale_image": {"cost": "low", "time_s": 10, "severity_max": "minor"},
     "imagen_constrained": {"cost": "medium", "time_s": 30, "severity_max": "moderate"},
     "imagen_full_regen": {"cost": "high", "time_s": 45, "severity_max": "major"},
     # Audio
@@ -119,11 +125,11 @@ TOOL_METADATA: dict[str, dict] = {
 TOOL_PRIORITY: dict[str, dict[str, list[str]]] = {
     "video": {
         "minor": ["capcut_text_overlay", "capcut_trim", "capcut_speed_ramp", "capcut_transition"],
-        "moderate": ["capcut_scene_replace", "capcut_trim"],
-        "major": ["veo_regenerate"],
+        "moderate": ["omni_video_edit", "capcut_scene_replace", "capcut_trim"],
+        "major": ["omni_video_edit", "veo_regenerate"],
     },
     "image": {
-        "minor": ["inpaint_area"],
+        "minor": ["inpaint_area", "edit_image", "recontext_image", "edit_image_replace", "recontext_background", "upscale_image"],
         "moderate": ["imagen_constrained"],
         "major": ["imagen_full_regen"],
     },
@@ -164,7 +170,7 @@ Given a compliance violation report, classify the severity and select the CHEAPE
 3. Multiple minor tools can combine (e.g., trim + text overlay)
 4. MAJOR is last resort — only when the content concept itself is the violation
 5. For audio: if only 1-2 words need changing → dub_segment. If tone/accent wrong → voice_clone_reread. If content is fundamentally wrong → new_vo.
-6. For video: if subtitle/CTA wrong → text_overlay. If a segment is non-compliant → trim or scene_replace. If entire video concept is wrong → veo_regenerate.
+6. For video: if subtitle/CTA wrong → text_overlay. If a segment is non-compliant → trim or scene_replace. If you need to edit elements/characters/objects in the video while preserving motion → omni_video_edit. If entire video concept is wrong → veo_regenerate.
 
 ## Compliance Violations:
 {violations_json}
@@ -236,6 +242,7 @@ async def route_remediation(
         RoutingDecision with selected tools and strategy.
     """
     from shared.clients import gemini as gemini_client
+    from shared.config import MODEL_TEXT
 
     if not gemini_client:
         logger.warning("[ToolRouter] Gemini unavailable — falling back to heuristic routing")
@@ -264,7 +271,7 @@ async def route_remediation(
         from google.genai import types as genai_types
 
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 response_mime_type="application/json",

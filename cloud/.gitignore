@@ -1,0 +1,5 @@
+# Never commit real secrets
+.env.production
+
+# Certbot data (generated on server)
+certbot/

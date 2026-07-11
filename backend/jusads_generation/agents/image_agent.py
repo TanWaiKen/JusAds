@@ -1,11 +1,11 @@
-"""
+﻿"""
 image_agent.py
-──────────────
-Image_Agent — the independent Media Agent that generates ad visuals (Req 5.1).
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Image_Agent â€” the independent Media Agent that generates ad visuals (Req 5.1).
 
-Workflow: Gemini prompt refinement → Gemini native image generation at the
-resolved ``rules.aspect_ratio`` / ``rules.max_dimension`` (Req 7.1) → ``.jpg``
-uploaded to S3 → a ``generated_ads`` row.
+Workflow: Gemini prompt refinement â†’ Gemini native image generation at the
+resolved ``rules.aspect_ratio`` / ``rules.max_dimension`` (Req 7.1) â†’ ``.jpg``
+uploaded to S3 â†’ a ``generated_ads`` row.
 
 The agent implements the shared :func:`generate` contract from ``base.py`` and
 lives in its own module. It never imports any other Media Agent, so it can
@@ -25,6 +25,7 @@ from typing import Optional
 from PIL import Image, ImageDraw
 
 from shared.clients import gemini, supabase
+from shared.config import MODEL_TEXT
 from shared.s3_client import upload_file_public
 
 from ..platform_rules import PlatformRule
@@ -57,19 +58,19 @@ def _refine_prompt(brief: str, guide: str, has_reference: bool = False) -> str:
     """Refine a raw brief into a detailed commercial image prompt via Gemini.
 
     When ``has_reference`` is True, the refinement is instructed to build on the
-    uploaded reference image(s) — preserving their subject, colors, and
-    composition — rather than inventing an unrelated scene (Test 4 feedback).
+    uploaded reference image(s) â€” preserving their subject, colors, and
+    composition â€” rather than inventing an unrelated scene (Test 4 feedback).
 
     Falls back to the raw ``brief`` on any failure so generation can proceed
     (Req 3.2).
     """
     reference_clause = (
         (
-            "\n\nIMPORTANT — REFERENCE PROVIDED: The user has attached one or more "
+            "\n\nIMPORTANT â€” REFERENCE PROVIDED: The user has attached one or more "
             "reference images. Your prompt MUST build on them: preserve the main "
             "subject/product, its colors, materials, and overall composition from "
             "the reference. Describe the scene as a refined, on-brand version of "
-            "what is shown in the reference — do not invent an unrelated subject."
+            "what is shown in the reference â€” do not invent an unrelated subject."
         )
         if has_reference
         else ""
@@ -97,7 +98,7 @@ Output ONLY the image prompt text (max 80 words), nothing else."""
 
     try:
         refine_resp = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=refine_prompt,
         )
         visual_prompt = refine_resp.text.strip()
@@ -295,8 +296,18 @@ async def generate(
         task_id,
     )
 
+    # GoogleSearch for visual trend context (graceful degradation on failure)
+    from jusads_generation.search_tools import search_creative_context, derive_search_query
+
+    search_query = derive_search_query(brief=brief, market="malaysia", theme=f"{platform} visual ad")
+    search_context = await search_creative_context(query=search_query, market="malaysia")
+
     guide = load_guide("image")
-    visual_prompt = _refine_prompt(brief, guide, has_reference=bool(reference_parts))
+    enriched_brief = brief
+    if search_context:
+        enriched_brief = f"{brief}\n\n[MARKET CONTEXT]: {search_context[:500]}"
+
+    visual_prompt = _refine_prompt(enriched_brief, guide, has_reference=bool(reference_parts))
 
     generated_path: Optional[str] = None
     s3_key = f"generated_ads/{project_id}/{task_id}/image_{uuid.uuid4().hex[:6]}.jpg"
@@ -364,3 +375,4 @@ async def generate(
                 os.unlink(generated_path)
             except Exception:
                 pass
+

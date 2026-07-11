@@ -41,7 +41,8 @@ Close-up of a complete single shoe
 Constraint: All detail shots must perfectly match the main character and their clothing. Materials should look realistic with clean details, suitable for character wardrobe modeling reference.
 
 Overall Style Requirements:
-Minimalist, professional, realistic, unified, clean, and high-end. It should resemble a professional character design board, a fashion design reference image, or a 3D character modeling reference page. Character edges must be sharp, clothing silhouettes clearly defined, hair strands natural, skin delicate, and materials accurately represented. Ample negative space in the layout, looking like an official asset created by a professional art team.
+Photorealistic, real photography, fashion catalog style, realistic human model, unified, clean, and high-end. It must look like a real photo turnaround sheet of a real human being. Character edges must be sharp, clothing silhouettes clearly defined, hair strands natural, skin delicate with realistic texture, and materials accurately represented. Ample negative space in the layout.
+Strict Style Prohibitions (MANDATORY): DO NOT generate anime, 2D illustration, manga, cartoon, sketch, 3D render, drawing, vector art, CGI, or painting. The output MUST be a real photograph of a real human.
 
 Character Setting:
 [INSERT CHARACTER APPEARANCE DESCRIPTION HERE]

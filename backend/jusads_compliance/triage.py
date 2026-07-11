@@ -122,11 +122,19 @@ def triage_decide(
     localization_plan: str,
     platform: str,
     market: str,
+    confidence: str = "high",
 ) -> TriageResult:
     """Determine remix outcome without calling AI models.
 
     Pure-logic triage: returns exactly one of COMPLIANT, EDIT, CANNOT_FIX.
-    Raises ValueError for invalid inputs.
+
+    Decision tree:
+      1. Confidence low/medium → CANNOT_FIX (escalate to human review)
+      2. Platform ban → CANNOT_FIX
+      3. Product/concept is the violation → CANNOT_FIX
+      4. Any violations exist → EDIT (not compliant, needs fixing)
+      5. Risk score ≥ 60% → EDIT (not compliant)
+      6. Otherwise → COMPLIANT (user can still review suggestions)
 
     Args:
         risk_percentage: Integer in [0, 100].
@@ -135,6 +143,7 @@ def triage_decide(
         localization_plan: Localization guidance string.
         platform: One of {"tiktok", "meta", "instagram", "general"}.
         market: One of {"malaysia", "singapore"}.
+        confidence: AI confidence level — one of {"high", "medium", "low"}.
 
     Returns:
         TriageResult with outcome, reasoning, guidance, and platform_ban fields.
@@ -157,16 +166,20 @@ def triage_decide(
             f"market must be one of {VALID_MARKETS}, got {market!r}"
         )
 
-    # ── Step 1: Check if already compliant ────────────────────────────────
-    if risk_percentage < 20 and len(violations) == 0:
+    # ── Step 1: Confidence below threshold → escalate to human ────────────
+    if confidence in ("low", "medium"):
         return TriageResult(
-            outcome=TriageOutcome.COMPLIANT,
-            reasoning="Risk below threshold with no violations",
-            guidance="",
+            outcome=TriageOutcome.CANNOT_FIX,
+            reasoning=f"AI evaluation confidence is '{confidence}', escalating to human review",
+            guidance=(
+                f"The AI confidence in this evaluation is '{confidence}'. "
+                f"This content has been escalated for manual human review "
+                f"and user acceptance testing before any action is taken."
+            ),
             platform_ban=False,
         )
 
-    # ── Step 2: Check platform-level product ban (early exit) ─────────────
+    # ── Step 2: Platform-level product ban (early exit) ───────────────────
     product_type = _extract_product_type(violations, localization_plan)
     if _is_platform_banned(product_type, platform, market):
         return TriageResult(
@@ -180,7 +193,7 @@ def triage_decide(
             platform_ban=True,
         )
 
-    # ── Step 3: Check if product itself is the violation ──────────────────
+    # ── Step 3: Product/concept itself is the violation ───────────────────
     if _product_is_violation(violations, localization_plan):
         return TriageResult(
             outcome=TriageOutcome.CANNOT_FIX,
@@ -189,10 +202,28 @@ def triage_decide(
             platform_ban=False,
         )
 
-    # ── Step 4: Violations are localized and fixable ──────────────────────
+    # ── Step 4: Any violations → not compliant, needs editing ─────────────
+    if len(violations) > 0:
+        return TriageResult(
+            outcome=TriageOutcome.EDIT,
+            reasoning=f"{len(violations)} compliance violation(s) detected",
+            guidance="",
+            platform_ban=False,
+        )
+
+    # ── Step 5: High risk score → not compliant ───────────────────────────
+    if risk_percentage >= 40:
+        return TriageResult(
+            outcome=TriageOutcome.EDIT,
+            reasoning=f"Risk score {risk_percentage}% exceeds 40% threshold",
+            guidance="",
+            platform_ban=False,
+        )
+
+    # ── Step 6: Low risk, no violations, high confidence → COMPLIANT ─────
     return TriageResult(
-        outcome=TriageOutcome.EDIT,
-        reasoning="Violations are localized to specific regions",
+        outcome=TriageOutcome.COMPLIANT,
+        reasoning="Risk below threshold with no violations and high confidence",
         guidance="",
         platform_ban=False,
     )

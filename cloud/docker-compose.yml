@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../cloud/Dockerfile.backend
+    container_name: jusads-backend
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    volumes:
+      - backend-assets:/app/assets
+    networks:
+      - internal
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../cloud/Dockerfile.frontend
+      args:
+        VITE_API_BASE: ""
+    container_name: jusads-frontend
+    restart: unless-stopped
+    networks:
+      - internal
+    expose:
+      - "80"
+
+  nginx:
+    image: nginx:alpine
+    container_name: jusads-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - internal
+
+volumes:
+  backend-assets:
+
+networks:
+  internal:
+    driver: bridge

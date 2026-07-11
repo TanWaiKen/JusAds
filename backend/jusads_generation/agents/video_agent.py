@@ -1,10 +1,10 @@
-"""
+﻿"""
 video_agent.py
-──────────────
-Video_Agent — one of the four independent Media Agents (Req 5.1).
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Video_Agent â€” one of the four independent Media Agents (Req 5.1).
 
 Generates a video ad **fully independently** (Req 5.3) using Google Veo 3.0
-for real dynamic video generation. No fallback — if Veo is not configured or
+for real dynamic video generation. No fallback â€” if Veo is not configured or
 fails, the agent fails loudly with a clear error so developers can diagnose
 the issue immediately.
 
@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 from shared.clients import gemini, supabase
+from shared.config import MODEL_TEXT
 from shared.s3_client import upload_file_public
 from config import VERTEX_PROJECT_ID
 
@@ -38,13 +39,13 @@ from .base import AgentResult, load_guide
 
 logger = logging.getLogger(__name__)
 
-# ── Duration constants ────────────────────────────────────────────────────────
+# â”€â”€ Duration constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _DEFAULT_DURATION = 8.0
 # Veo minimum is 5 seconds.
 _VEO_MIN_DURATION = 5
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _resolve_duration(rules: dict) -> float:
@@ -81,7 +82,7 @@ Requirements:
 - High contrast, vibrant, product-focused composition
 - Culturally appropriate for Southeast Asian markets (Malaysia/Singapore), modest presentation
 - Include cinematic details: lighting, camera angle, movement direction, pacing
-- Do NOT mention text overlays, logos, or UI elements — only the visual scene
+- Do NOT mention text overlays, logos, or UI elements â€” only the visual scene
 
 Reference guidelines: {guide[:400]}
 
@@ -89,7 +90,7 @@ Output ONLY the video scene prompt (max 100 words)."""
 
     try:
         resp = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=refine_prompt,
         )
         return resp.text.strip()
@@ -98,7 +99,7 @@ Output ONLY the video scene prompt (max 100 words)."""
         return brief
 
 
-# ─── Veo Video Generation ─────────────────────────────────────────────────────
+# â”€â”€â”€ Veo Video Generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def _generate_veo_video(
@@ -113,7 +114,7 @@ async def _generate_veo_video(
     blocked.
     """
     if not VERTEX_PROJECT_ID:
-        logger.warning("[VideoAgent] VERTEX_PROJECT_ID not set — skipping Veo.")
+        logger.warning("[VideoAgent] VERTEX_PROJECT_ID not set â€” skipping Veo.")
         return None
 
     def _blocking_veo_call() -> Optional[bytes]:
@@ -186,7 +187,7 @@ async def _generate_veo_video(
     return veo_path
 
 
-# ─── Voiceover Generation ─────────────────────────────────────────────────────
+# â”€â”€â”€ Voiceover Generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _generate_voiceover(brief: str, duration: float, work_dir: Path) -> Optional[str]:
@@ -196,12 +197,12 @@ def _generate_voiceover(brief: str, duration: float, work_dir: Path) -> Optional
     narration track (voiceover). SFX generation is skipped.
     """
     from shared.elevenlabs_utils import generate_tts
-    from config import DEFAULT_VOICE
+    from config import get_voice
 
     # Script a short, punchy voiceover line via Gemini.
     try:
         vo_resp = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=(
                 f"Write ONE short, punchy voiceover line (max 20 words) for a commercial "
                 f"video ad about: {brief}. Output only the line, no quotes."
@@ -213,8 +214,9 @@ def _generate_voiceover(brief: str, duration: float, work_dir: Path) -> Optional
         vo_text = brief[:120]
 
     vo_path = str(work_dir / "voiceover.mp3")
-    voice_id = DEFAULT_VOICE["voice_id"]
-    lang_code = DEFAULT_VOICE.get("lang", "ms")
+    voice_entry = get_voice("malaysia", "malay", "female")
+    voice_id = voice_entry["voice_id"]
+    lang_code = voice_entry.get("lang", "ms")
 
     ok = generate_tts(vo_text, vo_path, voice_id=voice_id, language_code=lang_code)
     if ok:
@@ -224,7 +226,7 @@ def _generate_voiceover(brief: str, duration: float, work_dir: Path) -> Optional
     return None
 
 
-# ─── Voiceover Merge ──────────────────────────────────────────────────────────
+# â”€â”€â”€ Voiceover Merge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _merge_voiceover(video_path: str, vo_path: str, out_path: str) -> bool:
@@ -256,7 +258,7 @@ def _merge_voiceover(video_path: str, vo_path: str, out_path: str) -> bool:
         return False
 
 
-# ─── Supabase Recording ──────────────────────────────────────────────────────
+# â”€â”€â”€ Supabase Recording â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _record_generated_ad(
@@ -296,7 +298,7 @@ def _record_generated_ad(
         return None
 
 
-# ─── Public contract ──────────────────────────────────────────────────────────
+# â”€â”€â”€ Public contract â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def generate(
@@ -329,6 +331,17 @@ async def generate(
         An :class:`AgentResult` describing the generated (or failed) output.
     """
     logger.info("[VideoAgent] Starting video generation for '%s'", platform)
+
+    # GoogleSearch for video style trends (graceful degradation on failure)
+    from jusads_generation.search_tools import search_creative_context, derive_search_query
+
+    search_query = derive_search_query(brief=brief, market="malaysia", theme=f"{platform} short video ad reel")
+    search_context = await search_creative_context(query=search_query, market="malaysia")
+
+    enriched_brief = brief
+    if search_context:
+        enriched_brief = f"{brief}\n\n[VIDEO TREND CONTEXT]: {search_context[:400]}"
+
     work_dir: Optional[Path] = None
     final_video_path: Optional[str] = None
 
@@ -336,14 +349,14 @@ async def generate(
         work_dir = Path(tempfile.mkdtemp(prefix="video_ad_"))
         aspect_ratio = rules.get("aspect_ratio", "9:16") if rules else "9:16"
 
-        # Veo is REQUIRED — no fallback. Fail loudly if not configured.
+        # Veo is REQUIRED â€” no fallback. Fail loudly if not configured.
         if not VERTEX_PROJECT_ID:
             raise RuntimeError(
                 "VERTEX_PROJECT_ID is not configured. Video generation requires Google Veo. "
                 "Set VERTEX_PROJECT_ID in backend/.env to enable video generation."
             )
 
-        # ── Generate video via Veo 3.0 ────────────────────────────────────────
+        # â”€â”€ Generate video via Veo 3.0 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         veo_duration = _resolve_veo_duration(rules)
         visual_prompt = _build_visual_prompt(brief, rules)
         logger.info("[VideoAgent] Visual prompt for Veo: %s", visual_prompt[:120])
@@ -361,7 +374,7 @@ async def generate(
                 "GCP credentials, and that the Veo API is enabled in your project."
             )
 
-        # Veo succeeded — now add voiceover narration on top
+        # Veo succeeded â€” now add voiceover narration on top
         logger.info("[VideoAgent] Veo video ready. Generating voiceover narration...")
         vo_path = _generate_voiceover(brief, float(veo_duration), work_dir)
 
@@ -370,16 +383,16 @@ async def generate(
             if _merge_voiceover(veo_video_path, vo_path, merged_path):
                 final_video_path = merged_path
             else:
-                # Merge failed — use Veo video without VO (still has Veo audio)
+                # Merge failed â€” use Veo video without VO (still has Veo audio)
                 final_video_path = veo_video_path
         else:
-            # No VO generated — Veo video with its own audio is still good
+            # No VO generated â€” Veo video with its own audio is still good
             final_video_path = veo_video_path
 
         if not final_video_path or not os.path.exists(final_video_path):
             raise RuntimeError("Video generation produced no output file.")
 
-        # ── Upload to S3 ──────────────────────────────────────────────────────
+        # â”€â”€ Upload to S3 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         s3_key = f"generated_ads/{project_id}/{task_id}/video_{uuid.uuid4().hex[:6]}.mp4"
         try:
             s3_url = upload_file_public(final_video_path, s3_key)
@@ -387,7 +400,7 @@ async def generate(
             logger.warning("[VideoAgent] S3 upload failed, using fallback URL: %s", e)
             s3_url = f"https://mock-bucket.s3.amazonaws.com/{s3_key}"
 
-        # ── Record success (Req 5.4) ──────────────────────────────────────────
+        # â”€â”€ Record success (Req 5.4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         duration = _resolve_duration(rules)
         ad_id = _record_generated_ad(
             project_id=project_id,
@@ -442,3 +455,4 @@ async def generate(
         if work_dir is not None:
             import shutil
             shutil.rmtree(work_dir, ignore_errors=True)
+

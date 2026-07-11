@@ -122,10 +122,10 @@ export default function OnboardingPage() {
   return (
     <div
       ref={containerRef}
-      className="min-h-screen relative flex items-center justify-center p-6 bg-gradient-to-tr from-blue-50/50 via-background to-pink-50/50 dark:from-blue-950/20 dark:via-background dark:to-pink-950/20 font-hanken overflow-x-hidden"
+      className="min-h-screen relative flex items-center justify-center p-6 bg-[#ffffff] dark:bg-[#0a0a0f] font-sans overflow-x-hidden"
     >
       {/* Paper Grain Texture Layer */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none z-30 opacity-[0.04] mix-blend-overlay" xmlns="http://www.w3.org/2000/svg">
+      <svg className="absolute inset-0 w-full h-full pointer-events-none z-30 opacity-[0.03] mix-blend-overlay" xmlns="http://www.w3.org/2000/svg">
         <filter id="paperEmboss">
           <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise" />
           <feDiffuseLighting in="noise" lightingColor="#ffffff" surfaceScale="2">
@@ -139,9 +139,7 @@ export default function OnboardingPage() {
       <div className="w-full max-w-2xl relative z-10 space-y-6">
         
         {/* Main Onboarding Wrapper Card */}
-        <div className="onboard-card relative bg-surface-card border border-border-default rounded-2xl p-8 shadow-xl overflow-hidden retina-border">
-          {/* Top visual glow bar from landing page Hero style */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 via-pink-500 to-cyan-400" />
+        <div className="onboard-card relative bg-[#ffffff] dark:bg-[#111116] rounded-lg p-8 overflow-hidden shadow-retina border border-border-default">
           
           {/* Header */}
           <div className="text-center mb-8 mt-2">
@@ -156,8 +154,8 @@ export default function OnboardingPage() {
           <div className="space-y-6">
             {/* Company Name */}
             <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-semibold text-text-heading">
-                <Building2 size={16} className="text-[#0080FF]" />
+              <label className="flex items-center gap-2 text-sm font-medium text-text-heading">
+                <Building2 size={16} className="text-accent-blue" />
                 Company Name *
               </label>
               <input
@@ -165,14 +163,14 @@ export default function OnboardingPage() {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 placeholder="e.g., GlowSkin Malaysia"
-                className="w-full rounded-lg border border-border-default bg-background px-4 py-2.5 text-sm text-text-heading placeholder:text-text-caption focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-md border border-border-default bg-background px-4 py-2.5 text-sm text-text-heading placeholder:text-text-caption focus:outline-none focus:ring-2 focus:ring-accent-blue/20 focus:border-accent-blue transition-premium"
               />
             </div>
 
             {/* Product Category */}
             <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-semibold text-text-heading">
-                <Package size={16} className="text-[#FF1493]" />
+              <label className="flex items-center gap-2 text-sm font-medium text-text-heading">
+                <Package size={16} className="text-accent-pink" />
                 Product Category *
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -181,9 +179,9 @@ export default function OnboardingPage() {
                     key={cat}
                     type="button"
                     onClick={() => setProductCategory(cat)}
-                    className={`px-3 py-2 rounded-lg text-xs font-semibold tracking-tight transition-all border cursor-pointer ${
+                    className={`px-3 py-2 rounded-md text-xs font-medium tracking-tight transition-premium border cursor-pointer ${
                       productCategory === cat
-                        ? "bg-[#0080FF] text-white border-[#0080FF] shadow-sm"
+                        ? "bg-accent-blue text-white border-accent-blue shadow-sm"
                         : "bg-surface-inset text-text-body hover:bg-surface-inset/80 border-border-subtle hover:text-text-heading"
                     }`}
                   >
@@ -196,14 +194,14 @@ export default function OnboardingPage() {
                 onChange={(e) => setProductDescription(e.target.value)}
                 placeholder="Briefly describe what you sell (optional — helps AI understand context better)"
                 rows={2}
-                className="w-full rounded-lg border border-border-default bg-background px-4 py-2.5 text-sm text-text-heading placeholder:text-text-caption focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full rounded-md border border-border-default bg-background px-4 py-2.5 text-sm text-text-heading placeholder:text-text-caption focus:outline-none focus:ring-2 focus:ring-accent-blue/20 focus:border-accent-blue transition-premium resize-none"
               />
             </div>
 
             {/* Target Platforms */}
             <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-semibold text-text-heading">
-                <MonitorPlay size={16} className="text-[#00FFFF]" />
+              <label className="flex items-center gap-2 text-sm font-medium text-text-heading">
+                <MonitorPlay size={16} className="text-accent-blue" />
                 Where do you advertise? *
               </label>
               <p className="text-xs text-text-caption">
@@ -217,9 +215,9 @@ export default function OnboardingPage() {
                       key={platform}
                       type="button"
                       onClick={() => togglePlatform(platform)}
-                      className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
+                      className={`px-3 py-2 rounded-md text-xs font-medium transition-premium border cursor-pointer ${
                         isSelected
-                          ? "bg-black dark:bg-white text-white dark:text-black border-black dark:border-white shadow-sm"
+                          ? "bg-[#171717] dark:bg-white text-white dark:text-[#171717] border-[#171717] dark:border-white shadow-sm"
                           : "bg-surface-inset text-text-body hover:bg-surface-inset/80 border-border-subtle hover:text-text-heading"
                       }`}
                     >
@@ -232,8 +230,8 @@ export default function OnboardingPage() {
 
             {/* Target Markets */}
             <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-semibold text-text-heading">
-                <Globe size={16} className="text-emerald-500" />
+              <label className="flex items-center gap-2 text-sm font-medium text-text-heading">
+                <Globe size={16} className="text-accent-blue" />
                 Target Markets *
               </label>
               <div className="flex flex-wrap gap-2">
@@ -244,9 +242,9 @@ export default function OnboardingPage() {
                       key={market.code}
                       type="button"
                       onClick={() => toggleMarket(market.code)}
-                      className={`px-4 py-2 rounded-lg text-xs font-semibold tracking-wider uppercase transition-all border cursor-pointer ${
+                      className={`px-4 py-2 rounded-md text-xs font-medium tracking-wider uppercase transition-premium border cursor-pointer ${
                         isSelected
-                          ? "bg-gradient-to-r from-blue-600 to-pink-500 text-white border-transparent shadow-sm"
+                          ? "bg-accent-blue text-white border-accent-blue shadow-sm"
                           : "bg-surface-inset text-text-body hover:bg-surface-inset/80 border-border-subtle hover:text-text-heading"
                       }`}
                     >
@@ -263,7 +261,7 @@ export default function OnboardingPage() {
                 type="button"
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="inline-flex items-center gap-2 bg-black hover:bg-neutral-900 active:scale-[0.98] text-white border-[1.5px] border-black dark:bg-white dark:text-black dark:border-white dark:hover:bg-gray-100 px-5 py-3 rounded-[6px] text-xs font-bold uppercase tracking-wider transition-premium brutalist-shadow-black dark:shadow-none disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="inline-flex items-center gap-2 bg-[#171717] hover:bg-neutral-800 active:scale-[0.98] text-white dark:bg-white dark:text-[#171717] dark:hover:bg-gray-100 px-5 py-2.5 rounded-md text-xs font-medium uppercase tracking-wider transition-premium disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm"
               >
                 {isSubmitting ? "Saving Profile..." : "Complete Setup"}
                 <ArrowRight size={14} />

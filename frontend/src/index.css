@@ -112,8 +112,8 @@
   --border-subtle: #f0f0f0;
 
   /* Semantic accent tokens */
-  --accent-blue: #0080FF;
-  --accent-pink: #FF1493;
+  --accent-blue: #0a72ef;
+  --accent-pink: #de1d8d;
   --accent-emerald: #10b981;
   --accent-amber: #f59e0b;
   --accent-error: #ef4444;
@@ -121,7 +121,7 @@
   /* Semantic input tokens */
   --input-bg: #f9fafb;
   --input-border: #e5e7eb;
-  --input-focus: #0080FF;
+  --input-focus: #0a72ef;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -376,8 +376,8 @@ code {
   --border-subtle: rgba(255, 255, 255, 0.05);
 
   /* Semantic accent tokens (dark) */
-  --accent-blue: #4DA6FF;
-  --accent-pink: #FF69B4;
+  --accent-blue: #0070f3;
+  --accent-pink: #de1d8d;
   --accent-emerald: #34d399;
   --accent-amber: #fbbf24;
   --accent-error: #f87171;
@@ -385,7 +385,7 @@ code {
   /* Semantic input tokens (dark) */
   --input-bg: rgba(255, 255, 255, 0.05);
   --input-border: rgba(255, 255, 255, 0.1);
-  --input-focus: #4DA6FF;
+  --input-focus: #0070f3;
 }
 
 @layer base {

@@ -85,9 +85,12 @@ export default function DashboardAssets() {
   useGSAP(
     () => {
       if (assets.length > 0) {
-        gsap.from(".asset-card", {
+        gsap.fromTo(".asset-card", {
           y: 16,
           autoAlpha: 0,
+        }, {
+          y: 0,
+          autoAlpha: 1,
           stagger: 0.06,
           duration: 0.4,
           ease: "power2.out",

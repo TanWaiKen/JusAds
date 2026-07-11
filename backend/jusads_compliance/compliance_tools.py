@@ -1,6 +1,6 @@
-"""
+﻿"""
 compliance_tools.py
-───────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Compliance checking tools for text, image, audio, and video ads.
 Queries rules and personas from Supabase (direct DB queries).
 """
@@ -14,6 +14,7 @@ from google.genai import types
 from langchain_core.tools import tool
 
 from shared.clients import gemini
+from shared.config import MODEL_TEXT
 from jusads_compliance.rules_client import get_all_rules_and_persona
 from jusads_compliance.prompts import (
     UNIFIED_OUTPUT_TEMPLATE,
@@ -67,7 +68,7 @@ def check_text_compliance(text: str, market: str, platform: str, ethnicity: str,
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
@@ -88,7 +89,7 @@ def check_image_compliance(image_path: str, market: str, platform: str, ethnicit
 
     # Pre-scan: describe the image content
     prescan = gemini.models.generate_content(
-        model="gemini-2.5-flash",
+        model=MODEL_TEXT,
         contents=[types.Content(role="user", parts=[
             types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
             types.Part.from_text(text=IMAGE_PRESCAN_PROMPT),
@@ -109,7 +110,7 @@ def check_image_compliance(image_path: str, market: str, platform: str, ethnicit
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=[types.Content(role="user", parts=[
                 types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                 types.Part.from_text(text=prompt),
@@ -182,7 +183,7 @@ def check_audio_compliance(audio_path: str, market: str, platform: str, ethnicit
         # Fallback: use Gemini for transcription
         try:
             transcribe_response = gemini.models.generate_content(
-                model="gemini-2.5-flash",
+                model=MODEL_TEXT,
                 contents=[types.Content(role="user", parts=[
                     types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
                     types.Part.from_text(text=(
@@ -228,7 +229,7 @@ def check_audio_compliance(audio_path: str, market: str, platform: str, ethnicit
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=[types.Content(role="user", parts=[
                 types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
                 types.Part.from_text(text=prompt),
@@ -254,7 +255,7 @@ def check_video_compliance(video_path: str, market: str, platform: str, ethnicit
 
     # Pre-scan: describe the video content
     prescan = gemini.models.generate_content(
-        model="gemini-2.5-flash",
+        model=MODEL_TEXT,
         contents=[types.Content(role="user", parts=[
             types.Part.from_bytes(data=video_bytes, mime_type=mime_type),
             types.Part.from_text(text=VIDEO_PRESCAN_PROMPT),
@@ -275,7 +276,7 @@ def check_video_compliance(video_path: str, market: str, platform: str, ethnicit
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=[types.Content(role="user", parts=[
                 types.Part.from_bytes(data=video_bytes, mime_type=mime_type),
                 types.Part.from_text(text=prompt),
@@ -394,7 +395,7 @@ def segment_violations(image_path: str, high_risk_indicators: list):
     draw = ImageDraw.Draw(overlay)
     for i, det in enumerate(detections):
         label_color = tuple(colors[i % len(colors)][:3]) + (255,)
-        draw.text((10, 10 + i * 18), f"■ {det['label']}", fill=label_color)
+        draw.text((10, 10 + i * 18), f"â–  {det['label']}", fill=label_color)
 
     os.makedirs("assets/results", exist_ok=True)
     # Always save as PNG since the overlay is RGBA (JPEG doesn't support transparency)
@@ -415,7 +416,7 @@ def segment_violations_clipseg(image_path: str, high_risk_indicators: list):
     """Segment non-compliant regions using CLIPSeg (text-to-segmentation).
 
     Flow:
-      1. Gemini converts high_risk_indicators → short visual prompts for CLIPSeg
+      1. Gemini converts high_risk_indicators â†’ short visual prompts for CLIPSeg
       2. CLIPSeg segments the image using all prompts
       3. Union all prompt masks into a single binary mask
       4. Save overlay visualization
@@ -438,7 +439,7 @@ def segment_violations_clipseg(image_path: str, high_risk_indicators: list):
     image = Image.open(image_path).convert("RGB")
     w, h = image.size
 
-    # Step 1: Gemini converts indicators → visual prompts
+    # Step 1: Gemini converts indicators â†’ visual prompts
     prompt_text = f"""Convert these compliance violation indicators into short visual descriptions
 that a segmentation model can use to find the violating regions in an image.
 
@@ -457,7 +458,7 @@ RULES:
 Return ONLY a JSON array: ["prompt 1", "prompt 2", ...]"""
 
     response = gemini.models.generate_content(
-        model="gemini-2.5-flash",
+        model=MODEL_TEXT,
         contents=prompt_text,
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
@@ -533,8 +534,8 @@ def extract_violation_clips(video_path: str, violations_timeline: list):
     for v in violations_timeline:
         if isinstance(v, str):
             # Parse "[SS-SS] description" or "[MM:SS-MM:SS] description"
-            sec_match = re.search(r"\[(\d+\.?\d*)\s*[-–]\s*(\d+\.?\d*)\]", v)
-            mmss_match = re.search(r"\[(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})\]", v)
+            sec_match = re.search(r"\[(\d+\.?\d*)\s*[-â€“]\s*(\d+\.?\d*)\]", v)
+            mmss_match = re.search(r"\[(\d{1,2}):(\d{2})\s*[-â€“]\s*(\d{1,2}):(\d{2})\]", v)
             if mmss_match:
                 start = int(mmss_match.group(1)) * 60 + int(mmss_match.group(2))
                 end = int(mmss_match.group(3)) * 60 + int(mmss_match.group(4))
@@ -605,7 +606,7 @@ def extract_violation_clips(video_path: str, violations_timeline: list):
         except Exception as e:
             logger.error(f"Failed to extract clip {i}: {e}")
 
-    logger.info(f"Merged {len(parsed)} violations → {len(merged)} segments → {len(clips)} clips")
+    logger.info(f"Merged {len(parsed)} violations â†’ {len(merged)} segments â†’ {len(clips)} clips")
     return {"clips": clips, "merged_count": len(merged), "original_count": len(parsed)}
 
 

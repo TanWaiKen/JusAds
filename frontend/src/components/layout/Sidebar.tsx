@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldCheck,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -50,6 +51,7 @@ interface SidebarProps {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const navItems: NavItem[] = [
+  { label: "Create", icon: Sparkles, to: "/dashboard/project/__PROJECT__/easy" },
   { label: "Assets", icon: ImageIcon, to: "/dashboard/assets" },
   { label: "Trends", icon: TrendingUp, to: "/dashboard/trends" },
 ];
@@ -221,30 +223,39 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
         {/* Nav Links */}
         <nav className="px-3 py-5" aria-label="Main navigation">
           <ul className="flex flex-col gap-1">
-            {navItems.map(({ label, icon: Icon, to, badge }) => (
-              <li key={to}>
-                <NavLink
-                  to={to}
-                  onClick={() => { if (!isDesktop) handleClose(); }}
-                  className={({ isActive }) =>
-                    [
-                      "nav-item flex items-center gap-3 rounded-xl px-3.5 py-3 text-label-ui font-semibold transition-all duration-200",
-                      isActive
-                        ? "bg-accent-blue/10 text-accent-blue shadow-xs"
-                        : "text-text-body hover:text-text-heading hover:bg-surface-inset",
-                    ].join(" ")
-                  }
-                >
-                  <Icon size={18} aria-hidden="true" strokeWidth={2.2} />
-                  <span className="grow">{label}</span>
-                  {badge && (
-                    <span className="rounded-full bg-surface-inset px-2 py-[2px] text-[10px] uppercase font-bold tracking-wider text-text-caption">
-                      {badge}
-                    </span>
-                  )}
-                </NavLink>
-              </li>
-            ))}
+            {navItems
+              .filter(({ to }) => {
+                // Hide project-scoped items when no project is active
+                if (to.includes("__PROJECT__") && !activeProjectId) return false;
+                return true;
+              })
+              .map(({ label, icon: Icon, to, badge }) => {
+                const resolvedTo = to.replace("__PROJECT__", activeProjectId ?? "");
+                return (
+                  <li key={to}>
+                    <NavLink
+                      to={resolvedTo}
+                      onClick={() => { if (!isDesktop) handleClose(); }}
+                      className={({ isActive }) =>
+                        [
+                          "nav-item flex items-center gap-3 rounded-xl px-3.5 py-3 text-label-ui font-semibold transition-all duration-200",
+                          isActive
+                            ? "bg-accent-blue/10 text-accent-blue shadow-xs"
+                            : "text-text-body hover:text-text-heading hover:bg-surface-inset",
+                        ].join(" ")
+                      }
+                    >
+                      <Icon size={18} aria-hidden="true" strokeWidth={2.2} />
+                      <span className="grow">{label}</span>
+                      {badge && (
+                        <span className="rounded-full bg-surface-inset px-2 py-[2px] text-[10px] uppercase font-bold tracking-wider text-text-caption">
+                          {badge}
+                        </span>
+                      )}
+                    </NavLink>
+                  </li>
+                );
+              })}
           </ul>
         </nav>
 

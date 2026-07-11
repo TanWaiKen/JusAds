@@ -54,14 +54,13 @@ export default function DashboardShell() {
           const isOnboardingPath = location.pathname === "/dashboard/onboarding";
           
           if (!data.onboarding_complete) {
+            // First-time user: force them to onboard
             if (!isOnboardingPath) {
               navigate("/dashboard/onboarding", { replace: true });
             }
-          } else {
-            if (isOnboardingPath) {
-              navigate("/dashboard", { replace: true });
-            }
           }
+          // If already onboarded and on onboarding page — let them stay (they're editing).
+          // Only first-time users get forced to onboard; returning users can access it freely.
         }
       } catch (err) {
         console.error("Failed to check onboarding status:", err);
@@ -77,9 +76,12 @@ export default function DashboardShell() {
   useGSAP(
     () => {
       if (!headerRef.current) return;
-      gsap.from(".header-left", {
+      gsap.fromTo(".header-left", {
         y: -8,
         autoAlpha: 0,
+      }, {
+        y: 0,
+        autoAlpha: 1,
         duration: 0.4,
         ease: "power2.out",
       });

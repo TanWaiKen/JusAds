@@ -35,6 +35,9 @@ from routes.profile import router as profile_router
 from routes.progress import router as progress_router
 from routes.generation import router as generation_router, init_generation
 from routes.files import router as files_router
+from routes.capcut_draft import router as capcut_draft_router
+from routes.trends import router as trends_router
+from routes.statistics import router as statistics_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -102,6 +105,9 @@ app.include_router(health_router)
 app.include_router(progress_router)
 app.include_router(profile_router)
 app.include_router(files_router)
+app.include_router(capcut_draft_router)
+app.include_router(trends_router)
+app.include_router(statistics_router)
 
 # ── Static files (dev only) ──────────────────────────────────────────────────
 import os

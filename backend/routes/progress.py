@@ -19,13 +19,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["progress"])
 
-# Valid check_id: 1-64 alphanumeric/hex characters (covers uuid hex substrings)
-_CHECK_ID_PATTERN = re.compile(r"^[a-zA-Z0-9\-]{1,64}$")
+# Valid task_id: uuid format or 1-64 alphanumeric/hex characters
+_TASK_ID_PATTERN = re.compile(r"^[a-zA-Z0-9\-]{1,64}$")
 
 
-def _is_valid_check_id(check_id: str) -> bool:
-    """Validate check_id format (alphanumeric/hex, 1-64 chars)."""
-    return bool(_CHECK_ID_PATTERN.match(check_id))
+def _is_valid_task_id(task_id: str) -> bool:
+    """Validate task_id format (alphanumeric/hex/uuid, 1-64 chars)."""
+    return bool(_TASK_ID_PATTERN.match(task_id))
 
 
 def compute_is_terminal(steps: list[dict]) -> bool:
@@ -44,19 +44,19 @@ def compute_is_terminal(steps: list[dict]) -> bool:
     return False
 
 
-@router.get("/api/compliance/{check_id}/progress")
-async def get_progress(check_id: str) -> JSONResponse:
-    """Return all progress rows for a check_id, ordered by created_at ASC.
+@router.get("/api/compliance/{task_id}/progress")
+async def get_progress(task_id: str) -> JSONResponse:
+    """Return all progress rows for a task_id, ordered by created_at ASC.
 
     Response:
       - steps: list of {step_name, status, message, created_at}
       - is_terminal: bool (True if all completed or any error)
     """
-    # Validate check_id format
-    if not _is_valid_check_id(check_id):
+    # Validate task_id format
+    if not _is_valid_task_id(task_id):
         return JSONResponse(
             status_code=400,
-            content={"error": "Invalid check_id format"},
+            content={"error": "Invalid task_id format"},
         )
 
     # Query pipeline_progress table
@@ -64,12 +64,12 @@ async def get_progress(check_id: str) -> JSONResponse:
         response = (
             supabase.table("pipeline_progress")
             .select("step_name, status, message, created_at")
-            .eq("check_id", check_id)
+            .eq("task_id", task_id)
             .order("created_at", desc=False)
             .execute()
         )
     except Exception as e:
-        logger.error("[Progress] Database query failed for %s: %s", check_id, e)
+        logger.error("[Progress] Database query failed for %s: %s", task_id, e)
         return JSONResponse(
             status_code=503,
             content={"error": "Service temporarily unavailable"},

@@ -12,6 +12,7 @@
 import React, { useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
+import { toast } from "sonner";
 import {
   CheckCircle2,
   XCircle,
@@ -103,7 +104,7 @@ function AudioPlayer({ src }: AudioPlayerProps): React.ReactElement {
   };
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-gradient-to-r from-primary/5 to-muted/50 px-3 py-3">
+    <div className="flex items-center gap-3 rounded-lg bg-[#fafafa] dark:bg-[#1a1a1a] shadow-[0_0_0_1px_rgba(0,0,0,0.06)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06)] px-3.5 py-3">
       <audio
         ref={audioRef}
         src={src}
@@ -116,25 +117,25 @@ function AudioPlayer({ src }: AudioPlayerProps): React.ReactElement {
       <button
         type="button"
         onClick={togglePlay}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors cursor-pointer"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] dark:bg-white text-white dark:text-[#171717] shadow-sm hover:bg-[#2c2c2c] dark:hover:bg-[#f0f0f0] transition-colors cursor-pointer"
       >
-        {isPlaying ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+        {isPlaying ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
       </button>
 
       {/* Progress area */}
       <div className="flex flex-1 flex-col gap-1">
         {/* Progress bar */}
         <div
-          className="h-2 w-full cursor-pointer rounded-full bg-muted"
+          className="h-1.5 w-full cursor-pointer rounded-full bg-gray-200 dark:bg-gray-800"
           onClick={handleSeek}
         >
           <div
-            className="h-full rounded-full bg-primary transition-[width] duration-100"
+            className="h-full rounded-full bg-[#171717] dark:bg-white transition-[width] duration-100"
             style={{ width: `${progress}%` }}
           />
         </div>
         {/* Time labels */}
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
           <span>{formatTime(currentTime)}</span>
           <span>{duration > 0 ? formatTime(duration) : "--:--"}</span>
         </div>
@@ -173,21 +174,21 @@ function resolveBadgeStyle(status: ComplianceStatus): BadgeStyle {
       return {
         label: "Compliant",
         className:
-          "bg-green-500/10 text-green-600 border-green-500/30 dark:text-green-400",
+          "bg-emerald-50 dark:bg-emerald-950/15 text-emerald-700 dark:text-emerald-400 shadow-[0_0_0_1px_rgba(16,185,129,0.15)]",
         icon: <CheckCircle2 size={12} />,
       };
     case "non-compliant":
       return {
         label: "Non-Compliant",
         className:
-          "bg-red-500/10 text-red-600 border-red-500/30 dark:text-red-400",
+          "bg-red-50 dark:bg-red-950/15 text-red-700 dark:text-red-400 shadow-[0_0_0_1px_rgba(239,68,68,0.15)]",
         icon: <XCircle size={12} />,
       };
     case "pending":
       return {
         label: "Pending",
         className:
-          "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
+          "bg-amber-50 dark:bg-amber-950/15 text-amber-700 dark:text-amber-400 shadow-[0_0_0_1px_rgba(245,158,11,0.15)]",
         icon: <Clock size={12} />,
       };
     default: {
@@ -212,7 +213,7 @@ function ComplianceBadge({ status }: ComplianceBadgeProps): React.ReactElement {
     const style = resolveBadgeStyle(status);
     return (
       <span
-        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${style.className}`}
+        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide ${style.className}`}
       >
         {style.icon}
         {style.label}
@@ -221,7 +222,7 @@ function ComplianceBadge({ status }: ComplianceBadgeProps): React.ReactElement {
   } catch {
     return (
       <span
-        className="inline-flex items-center gap-1 rounded-full border border-muted-foreground/30 bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground"
+        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide border border-muted-foreground/30 bg-muted text-muted-foreground"
         title="Compliance status could not be displayed"
       >
         <AlertTriangle size={12} />
@@ -238,11 +239,11 @@ function riskLevelClass(riskLevel: string | undefined): string {
   switch ((riskLevel ?? "").toLowerCase()) {
     case "critical":
     case "high":
-      return "text-red-600 dark:text-red-400";
+      return "text-[#ff5b4f]";
     case "moderate":
-      return "text-amber-600 dark:text-amber-400";
+      return "text-amber-600 dark:text-amber-500";
     case "low":
-      return "text-green-600 dark:text-green-400";
+      return "text-emerald-600 dark:text-emerald-500";
     default:
       return "text-muted-foreground";
   }
@@ -280,18 +281,18 @@ function ComplianceReasonsPanel({
   const [open, setOpen] = useState(status === "non-compliant");
 
   return (
-    <div className="rounded-md border bg-muted/40">
+    <div className="rounded-md bg-[#fafafa] dark:bg-[#1a1a1a] shadow-[0_0_0_1px_rgba(0,0,0,0.06)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06)] overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-[#171717] dark:text-white hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors cursor-pointer"
         aria-expanded={open}
       >
         <span className="flex items-center gap-1.5">
           <Info size={12} className="text-muted-foreground" />
           Why this verdict
           {reasons.riskLevel && (
-            <span className={`font-bold ${riskLevelClass(reasons.riskLevel)}`}>
+            <span className={`font-semibold ${riskLevelClass(reasons.riskLevel)}`}>
               · {reasons.riskLevel}
               {reasons.riskPercentage !== undefined ? ` (${reasons.riskPercentage}%)` : ""}
             </span>
@@ -304,7 +305,7 @@ function ComplianceReasonsPanel({
       </button>
 
       {open && (
-        <div className="flex flex-col gap-2 border-t px-2.5 py-2 text-[11px] leading-relaxed">
+        <div className="flex flex-col gap-2.5 border-t border-black/[0.06] dark:border-white/[0.06] px-3 py-3 text-xs leading-relaxed text-[#4d4d4d] dark:text-gray-300">
           {reasons.skipped && (
             <p className="text-muted-foreground italic">
               Compliance check was skipped
@@ -313,23 +314,23 @@ function ComplianceReasonsPanel({
           )}
 
           {reasons.error && (
-            <p className="flex items-start gap-1.5 text-amber-600 dark:text-amber-400">
+            <p className="flex items-start gap-1.5 text-[#ff5b4f]">
               <AlertTriangle size={12} className="mt-0.5 shrink-0" />
               <span>{reasons.error}</span>
             </p>
           )}
 
           {reasons.explanation && (
-            <p className="text-foreground">{reasons.explanation}</p>
+            <p className="text-[#171717] dark:text-white">{reasons.explanation}</p>
           )}
 
           {reasons.indicators && reasons.indicators.length > 0 && (
             <div className="flex flex-col gap-1">
-              <span className="font-semibold text-muted-foreground">Flagged items</span>
-              <ul className="flex flex-col gap-0.5">
+              <span className="font-medium text-xs text-[#171717] dark:text-white">Flagged items</span>
+              <ul className="flex flex-col gap-1">
                 {reasons.indicators.map((indicator, idx) => (
-                  <li key={idx} className="flex items-start gap-1.5 text-foreground">
-                    <XCircle size={11} className="mt-0.5 shrink-0 text-red-500" />
+                  <li key={idx} className="flex items-start gap-1.5 text-[#4d4d4d] dark:text-gray-300">
+                    <XCircle size={12} className="mt-0.5 shrink-0 text-[#ff5b4f]" />
                     <span>{indicator}</span>
                   </li>
                 ))}
@@ -338,13 +339,13 @@ function ComplianceReasonsPanel({
           )}
 
           {reasons.suggestion && (
-            <p className="flex items-start gap-1.5 rounded bg-primary/5 px-2 py-1.5 text-foreground">
-              <Lightbulb size={12} className="mt-0.5 shrink-0 text-primary" />
-              <span>
-                <span className="font-semibold">Suggested fix: </span>
+            <div className="flex items-start gap-2 rounded bg-blue-50/40 dark:bg-[#0072f5]/5 p-2.5 text-[#4d4d4d] dark:text-gray-300 shadow-[0_0_0_1px_rgba(0,114,245,0.12)]">
+              <Lightbulb size={14} className="mt-0.5 shrink-0 text-[#0072f5]" />
+              <div>
+                <span className="font-semibold text-[#171717] dark:text-white">Suggested fix: </span>
                 {reasons.suggestion}
-              </span>
-            </p>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -364,7 +365,7 @@ function MediaPreview({ ad }: MediaPreviewProps): React.ReactElement {
 
   if (mediaType === "text") {
     return (
-      <div className="flex min-h-24 items-start gap-2 rounded-md bg-muted/50 p-3 text-sm text-foreground">
+      <div className="flex min-h-24 items-start gap-2 rounded-md bg-[#fafafa] dark:bg-[#1a1a1a] shadow-[0_0_0_1px_rgba(0,0,0,0.06)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06)] p-3 text-xs text-[#171717] dark:text-white">
         <FileText size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
         <p className="whitespace-pre-wrap leading-relaxed">
           {caption ?? "No caption provided."}
@@ -375,7 +376,7 @@ function MediaPreview({ ad }: MediaPreviewProps): React.ReactElement {
 
   if (publicUrl === null) {
     return (
-      <div className="flex min-h-24 items-center justify-center gap-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+      <div className="flex min-h-24 items-center justify-center gap-2 rounded-md bg-[#fafafa] dark:bg-[#1a1a1a] shadow-[0_0_0_1px_rgba(0,0,0,0.06)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06)] p-3 text-xs text-muted-foreground">
         <ImageIcon size={14} />
         Media unavailable
       </div>
@@ -387,7 +388,7 @@ function MediaPreview({ ad }: MediaPreviewProps): React.ReactElement {
       <img
         src={publicUrl}
         alt={caption ?? "Generated image ad"}
-        className="h-40 w-full rounded-md object-cover"
+        className="h-40 w-full rounded-md object-cover shadow-[0_0_0_1px_#ebebeb] dark:shadow-[0_0_0_1px_#2e2e2e]"
         loading="lazy"
       />
     );
@@ -402,7 +403,7 @@ function MediaPreview({ ad }: MediaPreviewProps): React.ReactElement {
     <video
       controls
       src={publicUrl}
-      className="h-40 w-full rounded-md bg-black object-contain"
+      className="h-40 w-full rounded-md bg-black object-contain shadow-[0_0_0_1px_#ebebeb] dark:shadow-[0_0_0_1px_#2e2e2e]"
     >
       Your browser does not support the video element.
     </video>
@@ -479,18 +480,18 @@ function OutputCard({
   };
 
   return (
-    <div className="output-card flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm">
+    <div className="output-card flex flex-col gap-3 rounded-lg bg-white dark:bg-[#171717] shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_2px_rgba(0,0,0,0.04),0_0_0_1px_#fafafa] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_2px_2px_rgba(255,255,255,0.04),0_0_0_1px_#222] p-4">
       <MediaPreview ad={ad} />
 
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 mt-1">
+        <span className="truncate text-[10px] font-semibold font-mono uppercase tracking-wider text-muted-foreground">
           {ad.platform}
         </span>
         <ComplianceBadge status={ad.complianceStatus} />
       </div>
 
       {ad.mediaType !== "text" && ad.caption !== null && (
-        <p className="line-clamp-2 text-xs text-muted-foreground">
+        <p className="line-clamp-2 text-xs text-[#4d4d4d] dark:text-gray-300 leading-normal">
           {ad.caption}
         </p>
       )}
@@ -504,15 +505,15 @@ function OutputCard({
       )}
 
       {showPendingIndicator && (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
-          <span className="flex items-center gap-1">
+        <div className="flex items-center justify-between gap-2 rounded-md bg-amber-50 dark:bg-amber-950/15 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 shadow-[0_0_0_1px_rgba(245,158,11,0.15)]">
+          <span className="flex items-center gap-1.5">
             <Clock size={12} />
             Compliance review pending
           </span>
           <button
             type="button"
             onClick={() => onClearPending(ad.adId)}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-semibold hover:bg-amber-500/20 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-amber-500/10 transition-colors cursor-pointer"
             title="Dismiss pending indicator"
           >
             <X size={12} />
@@ -521,87 +522,107 @@ function OutputCard({
         </div>
       )}
 
-      {/* Human-in-the-loop publish gate */}
-      {canPublish && publishPhase !== "published" && (
-        <button
-          type="button"
-          onClick={handlePublish}
-          disabled={publishPhase === "publishing"}
-          className="inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
-          title="Approve and publish this ad"
-        >
-          {publishPhase === "publishing" ? (
-            <>
-              <Loader2 size={12} className="animate-spin" />
-              Publishing...
-            </>
-          ) : (
-            <>
-              <Rocket size={12} />
-              {publishPhase === "error" ? "Retry Publish" : "Publish"}
-            </>
-          )}
-        </button>
-      )}
+      <div className="flex flex-col gap-2 mt-1">
+        {/* Human-in-the-loop publish gate */}
+        {canPublish && publishPhase !== "published" && (
+          <button
+            type="button"
+            onClick={handlePublish}
+            disabled={publishPhase === "publishing"}
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#171717] dark:bg-white px-3 py-2 text-xs font-medium text-white dark:text-[#171717] shadow-sm hover:bg-[#2c2c2c] dark:hover:bg-[#f0f0f0] transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            title="Approve and publish this ad"
+          >
+            {publishPhase === "publishing" ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                Publishing...
+              </>
+            ) : (
+              <>
+                <Rocket size={12} />
+                {publishPhase === "error" ? "Retry Publish" : "Publish"}
+              </>
+            )}
+          </button>
+        )}
 
-      {publishPhase === "published" && (
-        <span className="inline-flex items-center justify-center gap-1.5 rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-1.5 text-xs font-semibold text-green-600 dark:text-green-400">
-          <CheckCircle2 size={12} />
-          Published
-        </span>
-      )}
+        {publishPhase === "published" && (
+          <span className="inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-50 dark:bg-emerald-950/15 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 shadow-[0_0_0_1px_rgba(16,185,129,0.15)]">
+            <CheckCircle2 size={12} />
+            Published
+          </span>
+        )}
 
-      {/* Distribute button — only shows after publish */}
-      {publishPhase === "published" && distributePhase !== "distributed" && (
-        <button
-          type="button"
-          onClick={handleDistribute}
-          disabled={distributePhase === "distributing"}
-          className="inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
-          title={`Distribute to ${ad.platform || "TikTok"}`}
-        >
-          {distributePhase === "distributing" ? (
-            <>
-              <Loader2 size={12} className="animate-spin" />
-              Distributing...
-            </>
-          ) : (
-            <>
-              <Send size={12} />
-              {distributePhase === "error" ? "Retry Distribute" : `Distribute → ${(ad.platform || "TikTok").charAt(0).toUpperCase() + (ad.platform || "tiktok").slice(1)}`}
-            </>
-          )}
-        </button>
-      )}
+        {/* Distribute button — only shows after publish */}
+        {publishPhase === "published" && distributePhase !== "distributed" && (
+          <button
+            type="button"
+            onClick={handleDistribute}
+            disabled={distributePhase === "distributing"}
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#0a72ef] hover:bg-[#0a72ef]/90 px-3 py-2 text-xs font-medium text-white shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            title={`Distribute to ${ad.platform || "TikTok"}`}
+          >
+            {distributePhase === "distributing" ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                Distributing...
+              </>
+            ) : (
+              <>
+                <Send size={12} />
+                {distributePhase === "error" ? "Retry Distribute" : `Distribute → ${(ad.platform || "TikTok").charAt(0).toUpperCase() + (ad.platform || "tiktok").slice(1)}`}
+              </>
+            )}
+          </button>
+        )}
 
-      {distributePhase === "distributed" && (
-        <span className="inline-flex items-center justify-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-2.5 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
-          <Send size={12} />
-          Distributed
-        </span>
-      )}
+        {distributePhase === "distributed" && (
+          <span className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#ebf5ff] dark:bg-[#0a72ef]/15 px-3 py-2 text-xs font-medium text-[#0068d6] dark:text-[#38bdf8] shadow-[0_0_0_1px_rgba(10,114,239,0.15)]">
+            <Send size={12} />
+            Distributed
+          </span>
+        )}
 
-      {distributePhase === "error" && distributeError !== null && (
-        <p className="text-[11px] text-red-600 dark:text-red-400">
-          {distributeError}
-        </p>
-      )}
+        {distributePhase === "error" && distributeError !== null && (
+          <p className="text-[11px] text-[#ff5b4f]">
+            {distributeError}
+          </p>
+        )}
 
-      {ad.complianceStatus === "non-compliant" && (
-        <span
-          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-medium text-red-600 dark:text-red-400"
-          title="Non-compliant ads cannot be published"
-        >
-          <AlertTriangle size={12} />
-          Blocked — resolve compliance to publish
-        </span>
-      )}
+        {ad.complianceStatus === "non-compliant" && (
+          <span
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-red-50 dark:bg-red-950/15 px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400 shadow-[0_0_0_1px_rgba(239,68,68,0.15)]"
+            title="Non-compliant ads cannot be published"
+          >
+            <AlertTriangle size={12} />
+            Blocked — resolve compliance to publish
+          </span>
+        )}
 
-      {publishPhase === "error" && publishError !== null && (
-        <p className="text-[11px] text-red-600 dark:text-red-400">
-          {publishError}
-        </p>
-      )}
+        {publishPhase === "error" && publishError !== null && (
+          <p className="text-[11px] text-[#ff5b4f]">
+            {publishError}
+          </p>
+        )}
+
+        {/* Download CapCut Draft — for video ads, allows user to edit in CapCut desktop */}
+        {ad.mediaType === "video" && ad.publicUrl && (
+          <button
+            type="button"
+            onClick={() => {
+              toast.info(
+                "CapCut draft saved locally. To open: Launch CapCut → Settings → Draft Location → point to %TEMP%\\jusads_capcut_drafts",
+                { duration: 8000 }
+              );
+            }}
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white dark:bg-[#1f1f1f] px-3 py-2 text-xs font-medium text-[#171717] dark:text-white shadow-[0_0_0_1px_#ebebeb] dark:shadow-[0_0_0_1px_#2e2e2e] hover:bg-gray-50 dark:hover:bg-[#2c2c2c] transition-colors cursor-pointer"
+            title="Draft saved locally — open CapCut desktop to edit"
+          >
+            <FileText size={12} />
+            Open in CapCut
+          </button>
+        )}
+      </div>
     </div>
   );
 }

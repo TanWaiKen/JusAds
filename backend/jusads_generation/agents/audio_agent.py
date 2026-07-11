@@ -1,7 +1,7 @@
-"""
+﻿"""
 audio_agent.py
-──────────────
-Audio_Agent — one of the four independent Media Agents (Req 5.1).
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Audio_Agent â€” one of the four independent Media Agents (Req 5.1).
 
 Generates an audio ad end to end: plans a short multi-scene voiceover script,
 generates a sound-effect bed and voiceover per scene, mixes them, concatenates
@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 from shared.clients import gemini, supabase
+from shared.config import MODEL_TEXT
 from shared.s3_client import upload_file_public
 from config import DEFAULT_VOICE
 
@@ -42,7 +43,7 @@ _MIN_TOTAL_DURATION = 1.0
 _MAX_SFX_DURATION = 22.0
 
 
-# ─── Internal helpers ────────────────────────────────────────────────────────
+# â”€â”€â”€ Internal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def _plan_audio_script(brief: str) -> list[dict]:
@@ -73,7 +74,7 @@ Return ONLY a JSON array, no markdown:
 
     try:
         resp = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=planning_prompt,
         )
         clean = resp.text.strip().replace("```json", "").replace("```", "")
@@ -96,7 +97,7 @@ Return ONLY a JSON array, no markdown:
 def _cap_scene_durations(
     scenes: list[dict], max_duration_seconds: Optional[int]
 ) -> list[dict]:
-    """Trim/scale scene durations so their total is ≤ ``max_duration_seconds``.
+    """Trim/scale scene durations so their total is â‰¤ ``max_duration_seconds``.
 
     Enforces the platform ad-length ceiling (Req 7.1). Scenes are kept in order
     and dropped once the running total reaches the ceiling; the final retained
@@ -139,7 +140,7 @@ def _cap_scene_durations(
         remaining -= allotted
 
     if not result:
-        # Ceiling smaller than a single scene — keep one clipped scene.
+        # Ceiling smaller than a single scene â€” keep one clipped scene.
         first = dict(normalized[0])
         first["duration"] = max(_MIN_TOTAL_DURATION, ceiling)
         result = [first]
@@ -253,7 +254,7 @@ def _record_generated_ad(
         return None
 
 
-# ─── Public contract ─────────────────────────────────────────────────────────
+# â”€â”€â”€ Public contract â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def generate(
@@ -267,7 +268,7 @@ async def generate(
 ) -> AgentResult:
     """Generate one audio ad and record it in ``generated_ads``.
 
-    Workflow: plan script → per-scene SFX + voiceover → mix → concatenate,
+    Workflow: plan script â†’ per-scene SFX + voiceover â†’ mix â†’ concatenate,
     capping the total duration to ``rules['max_duration_seconds']`` (Req 7.1),
     then upload the resulting ``.mp3`` to S3 and insert a ``completed`` row
     (Req 5.4). On failure, records a ``failed`` row (Req 5.5) and returns
@@ -285,6 +286,17 @@ async def generate(
         An :class:`AgentResult` describing the generated (or failed) output.
     """
     logger.info("[AudioAgent] Starting audio generation for platform '%s'", platform)
+
+    # GoogleSearch for audio ad trends (graceful degradation on failure)
+    from jusads_generation.search_tools import search_creative_context, derive_search_query
+
+    search_query = derive_search_query(brief=brief, market="malaysia", theme=f"{platform} audio ad jingle")
+    search_context = await search_creative_context(query=search_query, market="malaysia")
+
+    enriched_brief = brief
+    if search_context:
+        enriched_brief = f"{brief}\n\n[AUDIO TREND CONTEXT]: {search_context[:400]}"
+
     max_duration = rules.get("max_duration_seconds") if rules else None
     work_dir: Optional[Path] = None
     audio_path: Optional[str] = None
@@ -371,3 +383,4 @@ async def generate(
                 os.unlink(audio_path)
             except Exception:
                 pass
+

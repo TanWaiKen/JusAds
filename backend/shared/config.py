@@ -14,12 +14,35 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 # Load .env from backend/ directory
-load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 # ── Google Vertex AI / Gemini ─────────────────────────────────────────────────
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
-LLM_MODEL_ID = os.environ.get("LLM_MODEL_ID", "gemini-2.0-flash")
+LLM_MODEL_ID = "gemini-3.0-flash"
+
+# ── Model Registry (centralised model IDs) ────────────────────────────────────
+# Chat Model (Cheaper)
+MODEL_TEXT = "gemini-3.0-flash"
+# Video Inpainting / Video editing
+MODEL_VIDEO = "gemini-omni-flash-preview"
+# Image Generation
+MODEL_IMAGE_CREATIVE = "gemini-3.1-flash-lite-image"
+# Scene Extraction
+MODEL_SCENE_EXTRACTION = "image-4.0"
+# Multimodal Analysis / Image Analysis
+MODEL_IMAGE_ANALYSIS = "gemini-3.5-flash"
+# Voice Model
+MODEL_VOICE = "eleven_multilingual_v2"
+# Image Inpainting
+MODEL_INPAINT = "imagen-3.0-capability-002"
+
+
+# ── PredictHQ (Events Calendar) ───────────────────────────────────────────────
+PREDICTHQ_API_KEY = os.environ.get("PREDICTHQ_API_KEY", "")
+
+# ── Tavily Control ────────────────────────────────────────────────────────────
+TAVILY_ENABLED = os.environ.get("TAVILY_ENABLED", "true").lower() == "true"
 
 # ── AWS Credentials & S3 ──────────────────────────────────────────────────────
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
@@ -36,40 +59,53 @@ FLUXAI_API_KEY = os.environ.get("FLUXAI_API_KEY", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
-# ── ElevenLabs Voice IDs ──────────────────────────────────────────────────────
-ELEVENLABS_VOICE_MY_MS_MALE = os.environ.get("ELEVENLABS_VOICE_MY_MS_MALE", "jvcMcno3QtjOzGtfpjoI")
-ELEVENLABS_VOICE_MY_MS_FEMALE = os.environ.get("ELEVENLABS_VOICE_MY_MS_FEMALE", "qAJVXEQ6QgjOQ25KuoU8")
+# ── ElevenLabs Voice Lookup (from Supabase brand_voices table) ────────────────
+# Voice IDs are stored in the brand_voices table and fetched at runtime.
+# A simple in-process cache avoids repeated DB round-trips.
 
-ELEVENLABS_VOICE_MY_EN_CHI_MALE = os.environ.get("ELEVENLABS_VOICE_MY_EN_CHI_MALE", "O8ykjWKd0RjX6e5EyDuE")
-ELEVENLABS_VOICE_MY_EN_CHI_FEMALE = os.environ.get("ELEVENLABS_VOICE_MY_EN_CHI_FEMALE", "FUu5jJAN31dt6KeE1fk2")
-ELEVENLABS_VOICE_MY_ZH_MALE = os.environ.get("ELEVENLABS_VOICE_MY_ZH_MALE", "8igW4g37ydZ0LysAbCNs")
-ELEVENLABS_VOICE_MY_ZH_FEMALE = os.environ.get("ELEVENLABS_VOICE_MY_ZH_FEMALE", "c2b7tErUjk7k5Zkyd4Uu")
-ELEVENLABS_VOICE_MY_YUE = os.environ.get("ELEVENLABS_VOICE_MY_YUE", "S9m1yQMfk6zSu0QQdGqR")
+_voice_cache: dict = {}
 
-ELEVENLABS_VOICE_MY_EN_IND_MALE = os.environ.get("ELEVENLABS_VOICE_MY_EN_IND_MALE", "rgltZvTfiMmgWweZhh7n")
-ELEVENLABS_VOICE_MY_EN_IND_FEMALE = os.environ.get("ELEVENLABS_VOICE_MY_EN_IND_FEMALE", "xPVEa1fRos3Rlvw7i1XC")
 
-ELEVENLABS_VOICE_SG_EN_MALE = os.environ.get("ELEVENLABS_VOICE_SG_EN_MALE", "aSXZu6bgEOS8MXVRzjPi")
-ELEVENLABS_VOICE_SG_EN_FEMALE = os.environ.get("ELEVENLABS_VOICE_SG_EN_FEMALE", "ljEOxtzNoGEa58anWyea")
-ELEVENLABS_VOICE_SG_ZH_MALE = os.environ.get("ELEVENLABS_VOICE_SG_ZH_MALE", "aSXZu6bgEOS8MXVRzjPi")
-ELEVENLABS_VOICE_SG_ZH_FEMALE = os.environ.get("ELEVENLABS_VOICE_SG_ZH_FEMALE", "br5zxCrqmrANOZvHTTrb")
+def get_voice(market: str, ethnicity: str, gender: str = "female") -> dict:
+    """Look up voice_id and language_code from the brand_voices table.
 
-# ── Voice Configuration Mapping ──────────────────────────────────────────────
-# Maps (market, ethnicity, gender) tuples to ElevenLabs voice_id and language code.
-# Used by the Audio Remixer to select the appropriate voice for TTS generation.
-VOICE_CONFIG = {
-    ("malaysia", "malay", "male"): {"voice_id": ELEVENLABS_VOICE_MY_MS_MALE, "lang": "ms"},
-    ("malaysia", "malay", "female"): {"voice_id": ELEVENLABS_VOICE_MY_MS_FEMALE, "lang": "ms"},
-    ("malaysia", "chinese", "male"): {"voice_id": ELEVENLABS_VOICE_MY_ZH_MALE, "lang": "zh"},
-    ("malaysia", "chinese", "female"): {"voice_id": ELEVENLABS_VOICE_MY_ZH_FEMALE, "lang": "zh"},
-    ("malaysia", "indian", "male"): {"voice_id": ELEVENLABS_VOICE_MY_EN_IND_MALE, "lang": "en"},
-    ("malaysia", "indian", "female"): {"voice_id": ELEVENLABS_VOICE_MY_EN_IND_FEMALE, "lang": "en"},
-    ("singapore", "chinese", "male"): {"voice_id": ELEVENLABS_VOICE_SG_EN_MALE, "lang": "en"},
-    ("singapore", "chinese", "female"): {"voice_id": ELEVENLABS_VOICE_SG_EN_FEMALE, "lang": "en"},
-}
+    Returns ``{"voice_id": "...", "lang": "..."}`` or the hardcoded fallback
+    if the DB is unreachable or no matching row exists.
+    """
+    cache_key = (market.lower(), ethnicity.lower(), gender.lower())
 
-# Fallback voice when no exact (market, ethnicity, gender) match exists
-DEFAULT_VOICE = {"voice_id": ELEVENLABS_VOICE_MY_MS_FEMALE, "lang": "ms"}
+    # Return from cache if available
+    if cache_key in _voice_cache:
+        return _voice_cache[cache_key]
+
+    # Query Supabase
+    try:
+        from shared.clients import supabase as _sb
+        if _sb:
+            resp = (
+                _sb.table("brand_voices")
+                .select("voice_id, language_code")
+                .eq("market", cache_key[0])
+                .eq("ethnicity", cache_key[1])
+                .eq("gender", cache_key[2])
+                .eq("status", "active")
+                .limit(1)
+                .execute()
+            )
+            if resp.data:
+                row = resp.data[0]
+                result = {"voice_id": row["voice_id"], "lang": row.get("language_code", "ms")}
+                _voice_cache[cache_key] = result
+                return result
+    except Exception as e:
+        logger.warning("[Config] brand_voices DB lookup failed, using fallback: %s", e)
+
+    # Hardcoded fallback — MY Malay Female
+    return {"voice_id": "qAJVXEQ6QgjOQ25KuoU8", "lang": "ms"}
+
+
+# Convenience constant for code that just needs a safe default
+DEFAULT_VOICE = {"voice_id": "qAJVXEQ6QgjOQ25KuoU8", "lang": "ms"}
 
 
 # ── Zernio Distribution API ───────────────────────────────────────────────────

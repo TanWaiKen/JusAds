@@ -10,8 +10,9 @@ import numpy as np
 from PIL import Image
 from google.genai import types
 from shared.clients import gemini, elevenlabs
+from shared.config import MODEL_TEXT
 from jusads_compliance.prompts import SCULPT_PROMPT_TEMPLATE
-from config import VOICE_CONFIG, DEFAULT_VOICE
+from config import get_voice
 from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ def _make_binary_mask(segmented_path: str, original_path: str) -> str:
     """Compare segmented overlay vs original to produce a binary mask.
 
     The segmented image is the original with a colored overlay on violation regions.
-    We diff the two to find where the overlay is → that becomes the mask.
+    We diff the two to find where the overlay is â†’ that becomes the mask.
 
     White = edit region (where overlay was painted), Black = keep unchanged.
     """
@@ -52,7 +53,7 @@ def _make_binary_mask(segmented_path: str, original_path: str) -> str:
 
 
 
-# ── Platform style mappings ───────────────────────────────────────────────────
+# â”€â”€ Platform style mappings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _PLATFORM_STYLES = {
     "general": {
         "description": "General advertising: professional, appealing, brand-appropriate",
@@ -120,7 +121,7 @@ def _build_sculpt_prompt(
     )
 
     response = gemini.models.generate_content(
-        model="gemini-2.5-flash",
+        model=MODEL_TEXT,
         contents=prompt_input,
     )
     sculpt_prompt = response.text.strip()
@@ -128,7 +129,7 @@ def _build_sculpt_prompt(
     return sculpt_prompt
 
 
-# ── Edit mode decision ────────────────────────────────────────────────────────
+# â”€â”€ Edit mode decision â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _EDIT_MODES = {
     "EDIT_MODE_INPAINT_REMOVAL": "Remove the non-compliant content from the masked region entirely.",
@@ -142,7 +143,7 @@ def _decide_edit_mode(sculpt_prompt: str, feedback: str = "") -> tuple[str, str]
     """Read the SCULPT prompt and decide the best Imagen edit mode + inpainting prompt.
 
     SCULPT already contains violations, platform, audience and style context,
-    so we feed it directly — no need to rebuild context here.
+    so we feed it directly â€” no need to rebuild context here.
 
     Returns:
         (edit_mode, inpaint_prompt)
@@ -169,7 +170,7 @@ Return ONLY a JSON object:
 {{"edit_mode": "EDIT_MODE_INPAINT_INSERTION", "inpaint_prompt": "..."}}"""
 
     response = gemini.models.generate_content(
-        model="gemini-2.5-flash",
+        model=MODEL_TEXT,
         contents=prompt,
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
@@ -178,10 +179,10 @@ Return ONLY a JSON object:
     inpaint_prompt = result.get("inpaint_prompt", "")
 
     if edit_mode not in _EDIT_MODES:
-        logger.warning(f"Unknown edit mode '{edit_mode}' — defaulting to INPAINT_INSERTION")
+        logger.warning(f"Unknown edit mode '{edit_mode}' â€” defaulting to INPAINT_INSERTION")
         edit_mode = "EDIT_MODE_INPAINT_INSERTION"
 
-    logger.info(f"Decided — mode: {edit_mode} | prompt: {inpaint_prompt}")
+    logger.info(f"Decided â€” mode: {edit_mode} | prompt: {inpaint_prompt}")
     return edit_mode, inpaint_prompt
 
 
@@ -212,7 +213,7 @@ def edit_image(
         project_id: The project UUID.
         task_id: The task UUID.
         image_path: Path to the original source image.
-        segmented_path: Path to the segmentation overlay image (CLIPSeg output) — used as the edit mask.
+        segmented_path: Path to the segmentation overlay image (CLIPSeg output) â€” used as the edit mask.
         violations: List of compliance violation descriptions.
         market: Target market.
         platform: Target platform.
@@ -234,9 +235,8 @@ def edit_image(
     task = get_task(project_id, task_id)
     if not task:
         raise RuntimeError(f"Task {task_id} not found in project {project_id}")
-    check_id = task.get("reference_id")
     compliance = task.get("compliance", {}) or {}
-    user_id = compliance.get("user_email") or project_id
+    user_id = project_id
 
     # Extract localization_plan from compliance result_json if not passed explicitly
     if not localization_plan:
@@ -248,20 +248,20 @@ def edit_image(
     if not s3_upload_url:
         raise FileNotFoundError("s3_upload_key not found in task compliance data")
     logger.info(f"Downloading original image from S3: {s3_upload_url}")
-    image_path = os.path.join(tempfile.gettempdir(), f"original_{check_id}.png")
+    image_path = os.path.join(tempfile.gettempdir(), f"original_{task_id}.png")
     urllib.request.urlretrieve(s3_upload_url, image_path)
 
     s3_segmented_url = compliance.get("s3_segmented_key", "")
     if not s3_segmented_url:
         raise FileNotFoundError("s3_segmented_key not found in task compliance data")
     logger.info(f"Downloading segmented mask from S3: {s3_segmented_url}")
-    segmented_path = os.path.join(tempfile.gettempdir(), f"segmented_{check_id}.png")
+    segmented_path = os.path.join(tempfile.gettempdir(), f"segmented_{task_id}.png")
     urllib.request.urlretrieve(s3_segmented_url, segmented_path)
 
     output_filename = f"edited_{int(time.time())}_{os.path.basename(image_path)}"
     output_path = os.path.join(tempfile.gettempdir(), output_filename)
 
-    logger.info(f"Task context - check_id={check_id}, localization_plan: {localization_plan[:80] if localization_plan else 'none'}")
+    logger.info(f"Task context - task_id={task_id}, localization_plan: {localization_plan[:80] if localization_plan else 'none'}")
 
     # Step 1: Convert segmented overlay -> binary mask (compare with original)
     mask_path = _make_binary_mask(segmented_path, image_path)
@@ -332,7 +332,7 @@ def edit_image(
             if attempt < MAX_ATTEMPTS:
                 reason = quality_result.get("feedback", "Quality insufficient")
                 refine = gemini.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model=MODEL_TEXT,
                     contents=(
                         f"Image edit scored {quality_score}/100. Reason: {reason}\n"
                         f"Rewrite this Imagen inpainting prompt to improve it (max 60 words):\n{inpaint_prompt}"
@@ -360,7 +360,7 @@ def edit_image(
             asset_type="remixed",
             username=user_id,
             project_id=project_id,
-            check_id=check_id or task_id,
+            check_id=task_id,
             filename=output_filename,
         )
         s3_url = upload_file_public(output_path, s3_remix_key)
@@ -369,10 +369,10 @@ def edit_image(
         logger.warning(f"S3 upload failed (saved locally): {e}")
 
     # Step 6: Persist to Supabase
-    if check_id and s3_remix_key:
+    if s3_remix_key:
         try:
-            update_check(check_id, status="remediated", s3_remix_key=s3_remix_key)
-            logger.info(f"Updated check {check_id} -> remediated")
+            update_check(task_id, status="remediated", s3_remix_key=s3_remix_key)
+            logger.info(f"Updated task {task_id} -> remediated")
         except Exception as e:
             logger.warning(f"Supabase update failed: {e}")
 
@@ -442,7 +442,7 @@ RULES:
 - The image MUST be culturally appropriate for {market} ({ethnicity} audience)
 - AVOID all violations listed above
 - Preserve the ad concept but make it compliant
-- For modest markets: show product on mannequins, flat-lay, or packaging — NOT on models in revealing clothing
+- For modest markets: show product on mannequins, flat-lay, or packaging â€” NOT on models in revealing clothing
 - Professional advertising quality, high resolution
 - Max 75 words for the prompt
 - Positive description only (what TO show, not what to avoid)
@@ -451,7 +451,7 @@ Return ONLY the image generation prompt text."""
 
     try:
         prompt_response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=prompt_request,
         )
         generation_prompt = prompt_response.text.strip()
@@ -496,7 +496,7 @@ def _detect_language(text: str) -> str:
     """Detect the language of the input text using Gemini."""
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=f"""Identify the language of this text. Return ONLY the language name (e.g. "English", "Bahasa Melayu", "Mandarin", "Tamil", "Cantonese").
                         Text: {text}""",
         )
@@ -562,7 +562,7 @@ def rewrite_text(
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
@@ -590,7 +590,7 @@ def rewrite_text(
                 f'{{"rewritten_text": "adjusted text", "changes_made": {json.dumps(result.get("changes_made", []))}}}'
             )
             retry_response = gemini.models.generate_content(
-                model="gemini-2.5-flash",
+                model=MODEL_TEXT,
                 contents=retry_prompt,
                 config=types.GenerateContentConfig(response_mime_type="application/json"),
             )
@@ -615,11 +615,11 @@ def rewrite_text(
         logger.error(f"Text rewrite failed: {e}")
         return {
             "rewritten_text": text,
-            "changes_made": [f"Error: Gemini call failed — {str(e)}. Original text returned unchanged."],
+            "changes_made": [f"Error: Gemini call failed â€” {str(e)}. Original text returned unchanged."],
         }
 
 
-# ── Audio Remediation ─────────────────────────────────────────────────────────
+# â”€â”€ Audio Remediation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _get_audio_duration(audio_path: str) -> float:
@@ -676,7 +676,7 @@ def _extract_audio_segment(audio_path: str, start: float, end: float, output_pat
 
 
 def _trim_or_pad_audio(audio_path: str, target_duration: float, output_path: str) -> bool:
-    """Trim or pad an audio file to match target duration within ±0.2s tolerance.
+    """Trim or pad an audio file to match target duration within Â±0.2s tolerance.
 
     If the audio is longer than target, it is trimmed.
     If it is shorter, silence is padded at the end.
@@ -716,7 +716,7 @@ def _trim_or_pad_audio(audio_path: str, target_duration: float, output_path: str
             output_path,
         ]
     else:
-        # Pad: audio is too short — add silence at end
+        # Pad: audio is too short â€” add silence at end
         pad_duration = target_duration - current_duration
         cmd = [
             "ffmpeg", "-y",
@@ -814,13 +814,12 @@ def remix_audio(
             "original_path": audio_path,
             "tool": "remix_audio",
         }
-    logger.info(f"Extracted segment ({start_time}s–{end_time}s) → {segment_path}")
+    logger.info(f"Extracted segment ({start_time}sâ€“{end_time}s) â†’ {segment_path}")
 
-    # Step 2: Select voice ID from VOICE_CONFIG
-    voice_key = (market.lower(), ethnicity.lower(), gender.lower())
-    voice_config = VOICE_CONFIG.get(voice_key, DEFAULT_VOICE)
+    # Step 2: Select voice ID from brand_voices DB
+    voice_config = get_voice(market, ethnicity, gender)
     voice_id = voice_config["voice_id"]
-    logger.info(f"Selected voice: {voice_key} → {voice_id} (fallback={voice_key not in VOICE_CONFIG})")
+    logger.info(f"Selected voice: ({market}, {ethnicity}, {gender}) â†’ {voice_id}")
 
     # Step 3: Generate replacement audio via ElevenLabs TTS
     output_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="remix_audio_")
@@ -833,7 +832,7 @@ def remix_audio(
 
         if is_video_context:
             # Step 5: Use ElevenLabs dubbing API with lip-sync for video context
-            logger.info("Video context detected — using ElevenLabs dubbing API with lip-sync.")
+            logger.info("Video context detected â€” using ElevenLabs dubbing API with lip-sync.")
             try:
                 dub_result = elevenlabs.dubbing.create(
                     source_url=audio_path,
@@ -894,7 +893,7 @@ def remix_audio(
                 else:
                     for chunk in audio_response:
                         f.write(chunk)
-            logger.info(f"TTS audio generated → {output_path}")
+            logger.info(f"TTS audio generated â†’ {output_path}")
 
     except Exception as e:
         logger.error(f"ElevenLabs TTS generation failed: {e}")
@@ -907,7 +906,7 @@ def remix_audio(
             "tool": "remix_audio",
         }
 
-    # Step 4: Trim or pad output to match original segment duration (±0.2s tolerance)
+    # Step 4: Trim or pad output to match original segment duration (Â±0.2s tolerance)
     adjusted_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="adjusted_")
     adjusted_tmp.close()
     adjusted_path = adjusted_tmp.name
@@ -923,7 +922,7 @@ def remix_audio(
             f"actual={final_duration:.2f}s, within_tolerance={duration_within_tolerance}"
         )
     else:
-        # Trim/pad failed — use raw TTS output and note mismatch
+        # Trim/pad failed â€” use raw TTS output and note mismatch
         duration_within_tolerance = False
         logger.warning("Duration trim/pad failed, using raw TTS output.")
 
@@ -932,7 +931,7 @@ def remix_audio(
         os.remove(segment_path)
 
     logger.info(
-        f"Audio remix complete — voice_id={voice_id}, "
+        f"Audio remix complete â€” voice_id={voice_id}, "
         f"duration_match={duration_within_tolerance}, output={output_path}"
     )
     return {
@@ -944,7 +943,7 @@ def remix_audio(
 
 @tool
 def check_edit_quality(original_path, edited_path):
-    """Compare original vs edited image — check if edit looks natural."""
+    """Compare original vs edited image â€” check if edit looks natural."""
     import mimetypes
 
     orig_b64 = _to_base64(original_path)
@@ -983,7 +982,7 @@ def check_edit_quality(original_path, edited_path):
         return {"error": str(e)}
 
 
-# ── Lightweight Bias Check ────────────────────────────────────────────────────
+# â”€â”€ Lightweight Bias Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def check_edit_bias(
@@ -992,7 +991,7 @@ def check_edit_bias(
     """Lightweight, single-pass bias and hallucination check on an edited image.
 
     Uses Gemini Flash (NOT Pro) to flag only egregious issues.
-    This is NOT a @tool — it's called directly from the remix route handler.
+    This is NOT a @tool â€” it's called directly from the remix route handler.
 
     Args:
         original_path: Path to the original image.
@@ -1031,7 +1030,7 @@ Return passed=true if no egregious bias or hallucination issues found."""
         edit_mime = mimetypes.guess_type(edited_path)[0] or "image/png"
 
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=[types.Content(parts=[
                 types.Part.from_text(text="ORIGINAL:"),
                 types.Part.from_bytes(data=base64.b64decode(orig_b64), mime_type=orig_mime),
@@ -1054,11 +1053,11 @@ Return passed=true if no egregious bias or hallucination issues found."""
 
     except Exception as e:
         # Fail-open: bias check failure should not block the edit result
-        logger.warning("[LightBiasCheck] Gemini call failed — fail-open: %s", e)
+        logger.warning("[LightBiasCheck] Gemini call failed â€” fail-open: %s", e)
         return {"passed": True, "issues": [], "confidence": 0.0}
 
 
-# ── Video Composition Helpers ─────────────────────────────────────────────────
+# â”€â”€ Video Composition Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _get_video_duration(file_path: str) -> float:
@@ -1204,16 +1203,16 @@ def compose_video(
     # Track partial remediation warnings
     for fv in failed_visual:
         warnings.append(
-            f"Visual segment {fv.get('start', '?')}s-{fv.get('end', '?')}s failed — keeping original"
+            f"Visual segment {fv.get('start', '?')}s-{fv.get('end', '?')}s failed â€” keeping original"
         )
     for fa in failed_audio:
         warnings.append(
-            f"Audio segment {fa.get('start', '?')}s-{fa.get('end', '?')}s failed — keeping original"
+            f"Audio segment {fa.get('start', '?')}s-{fa.get('end', '?')}s failed â€” keeping original"
         )
 
     # If no remediations succeeded, return original video with warning
     if not successful_visual and not successful_audio:
-        logger.warning("No remediations succeeded — returning original video.")
+        logger.warning("No remediations succeeded â€” returning original video.")
         warnings.append("No remediations succeeded; original video returned unchanged.")
         return {
             "output_path": video_path,
@@ -1240,7 +1239,7 @@ def compose_video(
     segments_replaced = 0
 
     try:
-        # ── Step 1: Split original video into segments at edit points ─────────
+        # â”€â”€ Step 1: Split original video into segments at edit points â”€â”€â”€â”€â”€â”€â”€â”€â”€
         # Collect all visual edit boundaries to determine split points
         edit_points = [0.0]
         for ve in successful_visual:
@@ -1255,7 +1254,7 @@ def compose_video(
         for ve in successful_visual:
             visual_lookup[(ve["start"], ve["end"])] = ve
 
-        # ── Step 2: Build segment list — replace visual segments with remediated clips ──
+        # â”€â”€ Step 2: Build segment list â€” replace visual segments with remediated clips â”€â”€
         segment_files: list[str] = []
 
         for i in range(len(edit_points) - 1):
@@ -1278,13 +1277,13 @@ def compose_video(
                         f"with {replacement_path}"
                     )
                 else:
-                    # Replacement file missing — fall back to original
+                    # Replacement file missing â€” fall back to original
                     logger.warning(
                         f"Replacement file not found: {replacement_path}. "
                         f"Keeping original for {seg_start:.2f}s-{seg_end:.2f}s"
                     )
                     warnings.append(
-                        f"Replacement file missing for {seg_start:.2f}s-{seg_end:.2f}s — keeping original"
+                        f"Replacement file missing for {seg_start:.2f}s-{seg_end:.2f}s â€” keeping original"
                     )
                     seg_output = os.path.join(temp_dir, f"seg_{i:03d}.mp4")
                     if _extract_video_segment(video_path, seg_start, seg_end, seg_output):
@@ -1292,7 +1291,7 @@ def compose_video(
                     else:
                         warnings.append(f"Failed to extract fallback segment {seg_start:.2f}s-{seg_end:.2f}s")
             else:
-                # No visual edit for this range — extract original segment
+                # No visual edit for this range â€” extract original segment
                 seg_output = os.path.join(temp_dir, f"seg_{i:03d}.mp4")
                 if _extract_video_segment(video_path, seg_start, seg_end, seg_output):
                     segment_files.append(seg_output)
@@ -1308,7 +1307,7 @@ def compose_video(
                 "tool": "compose_video",
             }
 
-        # ── Step 4: Concatenate all segments preserving codec/resolution/fps ──
+        # â”€â”€ Step 4: Concatenate all segments preserving codec/resolution/fps â”€â”€
         if len(segment_files) == 1:
             concatenated_path = segment_files[0]
         else:
@@ -1362,7 +1361,7 @@ def compose_video(
                     "tool": "compose_video",
                 }
 
-        # ── Step 3: Overlay remediated audio at correct timestamps ─────────────
+        # â”€â”€ Step 3: Overlay remediated audio at correct timestamps â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if successful_audio:
             # Build FFmpeg filter_complex for audio overlay
             input_args = ["-y", "-i", concatenated_path]
@@ -1437,7 +1436,7 @@ def compose_video(
                     if result.returncode != 0:
                         logger.error(f"Audio overlay failed: {result.stderr[:500]}")
                         # Fall through: use concatenated video without audio overlay
-                        warnings.append("Audio overlay failed — using video without audio edits")
+                        warnings.append("Audio overlay failed â€” using video without audio edits")
                         import shutil
                         shutil.copy2(concatenated_path, output_path)
             else:
@@ -1445,7 +1444,7 @@ def compose_video(
                 import shutil
                 shutil.copy2(concatenated_path, output_path)
         else:
-            # No audio edits — copy concatenated video to output path
+            # No audio edits â€” copy concatenated video to output path
             import shutil
             shutil.copy2(concatenated_path, output_path)
 
@@ -1459,7 +1458,7 @@ def compose_video(
             }
 
         logger.info(
-            f"Video composition complete — output={output_path}, "
+            f"Video composition complete â€” output={output_path}, "
             f"segments_replaced={segments_replaced}, warnings={len(warnings)}"
         )
         return {
@@ -1478,7 +1477,7 @@ def compose_video(
     except FileNotFoundError:
         logger.error("FFmpeg not found. Ensure FFmpeg is installed and on PATH.")
         return {
-            "error": "FFmpeg not found — ensure FFmpeg is installed and on PATH",
+            "error": "FFmpeg not found â€” ensure FFmpeg is installed and on PATH",
             "original_path": video_path,
             "tool": "compose_video",
         }
@@ -1499,7 +1498,8 @@ def compose_video(
             pass
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main — test runner for edit_image
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Main â€” test runner for edit_image
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 

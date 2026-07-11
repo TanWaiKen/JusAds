@@ -21,7 +21,7 @@ import urllib.request
 from typing import Optional
 
 from shared.clients import elevenlabs, supabase
-from shared.config import VOICE_CONFIG, DEFAULT_VOICE
+from shared.config import get_voice, DEFAULT_VOICE
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,8 @@ async def clone_brand_voice(
 def get_brand_voice(project_id: str) -> Optional[dict]:
     """Retrieve the stored brand voice for a project.
 
+    Priority: custom clone for the project > global catalog voice.
+
     Returns:
         Dict with voice_id, name, etc. or None if no clone exists.
     """
@@ -116,23 +118,64 @@ def get_brand_voice(project_id: str) -> Optional[dict]:
         return None
 
     try:
+        # First try: project-specific custom clone
         response = (
             supabase.table("brand_voices")
             .select("*")
             .eq("project_id", project_id)
             .eq("status", "active")
+            .eq("is_custom_clone", True)
             .limit(1)
             .execute()
         )
         rows = response.data or []
         if rows:
-            logger.info("[VoiceCloneManager] Found existing voice for project %s", project_id)
+            logger.info("[VoiceCloneManager] Found custom clone for project %s", project_id)
             return rows[0]
         return None
 
     except Exception as e:
         logger.error("[VoiceCloneManager] Failed to retrieve voice: %s", e)
         return None
+
+
+def get_global_voices(market: str = "", ethnicity: str = "", gender: str = "") -> list[dict]:
+    """Retrieve available global catalog voices, optionally filtered.
+
+    These are pre-loaded voices available to all users (project_id IS NULL).
+
+    Args:
+        market: Optional filter by market.
+        ethnicity: Optional filter by ethnicity.
+        gender: Optional filter by gender.
+
+    Returns:
+        List of voice dicts from the global catalog.
+    """
+    if not supabase:
+        return []
+
+    try:
+        query = (
+            supabase.table("brand_voices")
+            .select("*")
+            .is_("project_id", "null")
+            .eq("status", "active")
+        )
+
+        if market:
+            query = query.eq("market", market.lower())
+        if ethnicity:
+            query = query.eq("ethnicity", ethnicity.lower())
+        if gender:
+            query = query.eq("gender", gender.lower())
+
+        response = query.execute()
+        return response.data or []
+
+    except Exception as e:
+        logger.error("[VoiceCloneManager] Failed to list global voices: %s", e)
+        return []
 
 
 def delete_brand_voice(project_id: str) -> bool:
@@ -297,26 +340,27 @@ def _resolve_voice_id(
 
     Priority:
       1. Explicit voice_id parameter
-      2. Project's brand voice clone
-      3. VOICE_CONFIG (market, ethnicity, gender)
-      4. DEFAULT_VOICE
+      2. Project's custom brand voice clone
+      3. Global catalog voice (by market/ethnicity/gender)
+      4. DEFAULT_VOICE fallback
     """
     # 1. Explicit
     if explicit_voice_id:
         return explicit_voice_id
 
-    # 2. Brand voice clone
+    # 2. Brand voice clone (custom)
     if project_id:
         brand_voice = get_brand_voice(project_id)
         if brand_voice and brand_voice.get("voice_id"):
-            logger.info("[VoiceCloneManager] Using brand voice clone for project %s", project_id)
+            logger.info("[VoiceCloneManager] Using custom clone for project %s", project_id)
             return brand_voice["voice_id"]
 
-    # 3. VOICE_CONFIG lookup
-    config_key = (market.lower(), ethnicity.lower(), gender.lower())
-    voice_entry = VOICE_CONFIG.get(config_key)
-    if voice_entry:
-        return voice_entry["voice_id"]
+    # 3. Global catalog lookup
+    global_voices = get_global_voices(market=market, ethnicity=ethnicity, gender=gender)
+    if global_voices:
+        logger.info("[VoiceCloneManager] Using global catalog voice: %s", global_voices[0].get("voice_name"))
+        return global_voices[0]["voice_id"]
 
-    # 4. Default
-    return DEFAULT_VOICE["voice_id"]
+    # 4. Hardcoded fallback
+    voice_entry = get_voice(market, ethnicity, gender)
+    return voice_entry["voice_id"]

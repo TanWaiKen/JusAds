@@ -1,10 +1,10 @@
-"""
+﻿"""
 text_agent.py
-─────────────
-Text_Caption_Agent — the independent Media Agent that generates ad copy /
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Text_Caption_Agent â€” the independent Media Agent that generates ad copy /
 captions (Req 5.1).
 
-Workflow: Gemini copy → ``.txt`` uploaded to S3 → a ``generated_ads`` row.
+Workflow: Gemini copy â†’ ``.txt`` uploaded to S3 â†’ a ``generated_ads`` row.
 
 The agent implements the shared :func:`generate` contract from ``base.py`` and
 lives in its own module. It never imports any other Media Agent, so it can
@@ -23,6 +23,7 @@ import uuid
 from typing import Optional
 
 from shared.clients import gemini, supabase
+from shared.config import MODEL_TEXT
 from shared.s3_client import upload_file_public
 
 from ..platform_rules import PlatformRule
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 MEDIA_TYPE = "text"
 
 
-def _build_caption(brief: str) -> str:
+def _build_caption(brief: str, search_context: str = "") -> str:
     """Generate ad copy for ``brief`` via Gemini, falling back on any error.
 
     Wraps the Gemini call in ``try/except`` so a model or parsing failure
@@ -42,6 +43,7 @@ def _build_caption(brief: str) -> str:
 
     Args:
         brief: The user's campaign brief / prompt.
+        search_context: Optional market research context from GoogleSearch.
 
     Returns:
         The generated (or fallback) ad caption text.
@@ -49,11 +51,19 @@ def _build_caption(brief: str) -> str:
     guide = load_guide("text")
     logger.info("[TextAgent] Running copy generation...")
 
+    market_context_section = ""
+    if search_context:
+        market_context_section = f"""
+[MARKET CONTEXT — use as inspiration, not verbatim]:
+{search_context[:1000]}
+---"""
+
     ai_prompt = f"""You are a compliance-aware creative Copywriting Agent.
 Reference the following Tool Guide for guidelines:
 ---
 {guide}
 ---
+{market_context_section}
 
 Write a short, engaging advertisement caption/copy based on this user prompt:
 "{brief}"
@@ -69,7 +79,7 @@ Return ONLY the raw JSON block without markdown formatting."""
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=ai_prompt,
         )
         resp_text = response.text.strip().replace("```json", "").replace("```", "")
@@ -150,7 +160,7 @@ async def generate(
         task_id: Owning task id.
         platform: The resolved, validated target platform.
         rules: Resolved platform sizing rules (unused for text beyond platform
-            attribution; sizing is a caption-length convention — Req 7.1).
+            attribution; sizing is a caption-length convention â€” Req 7.1).
         reference_parts: Optional multimodal reference parts (unused for copy).
 
     Returns:
@@ -163,7 +173,13 @@ async def generate(
         task_id,
     )
 
-    caption = _build_caption(brief)
+    # GoogleSearch for creative context (graceful degradation on failure)
+    from jusads_generation.search_tools import search_creative_context, derive_search_query
+
+    search_query = derive_search_query(brief=brief, market="malaysia")
+    search_context = await search_creative_context(query=search_query, market="malaysia")
+
+    caption = _build_caption(brief, search_context=search_context)
 
     # Write the copy to a local temp file for S3 upload.
     tmp_path: Optional[str] = None
@@ -230,3 +246,4 @@ async def generate(
                 os.unlink(tmp_path)
             except Exception:
                 pass
+

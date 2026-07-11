@@ -30,14 +30,14 @@ class SupabaseComplianceStore:
     def insert_check(self, record):
         return create_check(record)
 
-    def update_check_status(self, check_id, status, **fields):
-        return update_check(check_id, status, **fields)
+    def update_check_status(self, task_id, status, **fields):
+        return update_check(task_id, status, **fields)
 
     def get_history(self, user_id, page=1, page_size=20):
         return list_checks(user_id, page, page_size)
 
-    def insert_violations(self, check_id, violations):
-        return create_violations(check_id, violations)
+    def insert_violations(self, task_id, violations):
+        return create_violations(task_id, violations)
 
     def create_project(self, user_id, name, task_type=None):
         return create_project(user_id, name)
@@ -48,8 +48,8 @@ class SupabaseComplianceStore:
     def get_project_checks(self, project_id):
         return list_checks_by_project(project_id)
 
-    def create_task(self, project_id, task_type, status, summary, reference_id=None, pipeline_state=None):
-        return create_task(project_id, task_type, status, summary, reference_id, pipeline_state)
+    def create_task(self, project_id, task_type, status, summary, pipeline_state=None):
+        return create_task(project_id, task_type, status, summary, pipeline_state)
 
     def list_tasks(self, project_id):
         return list_tasks(project_id)
@@ -190,28 +190,41 @@ def create_check(record: CheckRecord) -> bool:
     """Insert a compliance check record. Returns True on success."""
     try:
         data = record.model_dump()
+        data["task_id"] = str(data["task_id"])
         data["project_id"] = str(data["project_id"])
         data["created_at"] = data["created_at"].isoformat()
         data["updated_at"] = data["updated_at"].isoformat()
         supabase.table("compliance_checks").insert(data).execute()
-        logger.info("Inserted check: %s", record.check_id)
+        logger.info("Inserted check for task_id: %s", record.task_id)
         return True
     except Exception as e:
-        logger.error("Failed to insert check %s: %s", record.check_id, e)
+        logger.error("Failed to insert check for task_id %s: %s", record.task_id, e)
         return False
 
 
 def list_checks(user_id: str, page: int = 1, page_size: int = 20) -> HistoryResponse:
-    """Paginated compliance check history for a user."""
+    """Paginated compliance check history for a user (via project ownership)."""
     page = max(1, page)
     page_size = max(1, min(100, page_size))
     offset = (page - 1) * page_size
 
     try:
+        # Get user's project IDs first
+        proj_resp = (
+            supabase.table("projects")
+            .select("id")
+            .eq("owner_email", user_id)
+            .execute()
+        )
+        project_ids = [str(r["id"]) for r in (proj_resp.data or [])]
+
+        if not project_ids:
+            return HistoryResponse(records=[], total=0, page=page, page_size=page_size)
+
         count_response = (
             supabase.table("compliance_checks")
             .select("*", count="exact")
-            .eq("user_email", user_id)
+            .in_("project_id", project_ids)
             .execute()
         )
         total = count_response.count if count_response.count is not None else 0
@@ -219,7 +232,7 @@ def list_checks(user_id: str, page: int = 1, page_size: int = 20) -> HistoryResp
         response = (
             supabase.table("compliance_checks")
             .select("*")
-            .eq("user_email", user_id)
+            .in_("project_id", project_ids)
             .order("created_at", desc=True)
             .range(offset, offset + page_size - 1)
             .execute()
@@ -235,7 +248,7 @@ def list_checks_by_project(project_id: str) -> list[dict]:
     """List compliance checks for a project (newest first, max 50)."""
     response = (
         supabase.table("compliance_checks")
-        .select("check_id, media_type, market, risk_percentage, status, created_at")
+        .select("task_id, media_type, market, risk_percentage, status, created_at")
         .eq("project_id", project_id)
         .order("created_at", desc=True)
         .limit(50)
@@ -244,7 +257,7 @@ def list_checks_by_project(project_id: str) -> list[dict]:
     return response.data or []
 
 
-def update_check(check_id: str, status: str, **fields) -> bool:
+def update_check(task_id: str, status: str, **fields) -> bool:
     """Update a compliance check's status and optional fields."""
     try:
         update_data = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
@@ -253,11 +266,11 @@ def update_check(check_id: str, status: str, **fields) -> bool:
             if hasattr(value, "hex"):
                 update_data[key] = str(value)
 
-        supabase.table("compliance_checks").update(update_data).eq("check_id", check_id).execute()
-        logger.info("Updated check %s -> status: %s", check_id, status)
+        supabase.table("compliance_checks").update(update_data).eq("task_id", task_id).execute()
+        logger.info("Updated check %s -> status: %s", task_id, status)
         return True
     except Exception as e:
-        logger.error("Failed to update check %s: %s", check_id, e)
+        logger.error("Failed to update check %s: %s", task_id, e)
         return False
 
 
@@ -266,7 +279,7 @@ def update_check(check_id: str, status: str, **fields) -> bool:
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-def create_violations(check_id: str, violations: list[dict]) -> bool:
+def create_violations(task_id: str, violations: list[dict]) -> bool:
     """Bulk insert violations for a compliance check.
 
     Each dict should have: violation_index, type, severity.
@@ -278,7 +291,7 @@ def create_violations(check_id: str, violations: list[dict]) -> bool:
     try:
         rows = [
             {
-                "check_id": check_id,
+                "task_id": task_id,
                 "violation_index": v.get("violation_index"),
                 "type": v.get("type"),
                 "severity": v.get("severity"),
@@ -289,10 +302,10 @@ def create_violations(check_id: str, violations: list[dict]) -> bool:
             for v in violations
         ]
         supabase.table("violations").insert(rows).execute()
-        logger.info("Inserted %d violations for check %s", len(rows), check_id)
+        logger.info("Inserted %d violations for task %s", len(rows), task_id)
         return True
     except Exception as e:
-        logger.error("Failed to insert violations for check %s: %s", check_id, e)
+        logger.error("Failed to insert violations for task %s: %s", task_id, e)
         return False
 
 
@@ -306,7 +319,6 @@ def create_task(
     task_type: str,
     status: str,
     summary: str,
-    reference_id: str | None = None,
     pipeline_state: dict | None = None,
 ) -> dict:
     """Create a task row. Returns the inserted row dict (id as string)."""
@@ -316,8 +328,6 @@ def create_task(
         "status": status,
         "summary": summary,
     }
-    if reference_id is not None:
-        data["reference_id"] = reference_id
     if pipeline_state is not None:
         data["pipeline_state"] = pipeline_state
 
@@ -342,29 +352,28 @@ def list_tasks(project_id: str) -> list[dict]:
         )
         rows = response.data or []
 
-        # Collect reference_ids for compliance tasks to batch-fetch metadata
-        ref_ids = [r["reference_id"] for r in rows if r.get("type") == "compliance" and r.get("reference_id")]
+        # Collect task IDs for compliance tasks to batch-fetch metadata
+        compliance_task_ids = [str(r["id"]) for r in rows if r.get("type") == "compliance"]
 
         compliance_meta: dict[str, dict] = {}
-        if ref_ids:
+        if compliance_task_ids:
             try:
                 meta_resp = (
                     supabase.table("compliance_checks")
-                    .select("check_id, market, ethnicity, age_group, platform, media_type")
-                    .in_("check_id", ref_ids)
+                    .select("task_id, market, ethnicity, age_group, platform, media_type")
+                    .in_("task_id", compliance_task_ids)
                     .execute()
                 )
                 for m in (meta_resp.data or []):
-                    compliance_meta[m["check_id"]] = m
+                    compliance_meta[str(m["task_id"])] = m
             except Exception as e:
                 logger.warning("[list_tasks] Failed to fetch compliance metadata: %s", e)
 
         for row in rows:
             row["id"] = str(row["id"])
             # Attach compliance metadata if available
-            ref = row.get("reference_id")
-            if ref and ref in compliance_meta:
-                meta = compliance_meta[ref]
+            if row["id"] in compliance_meta:
+                meta = compliance_meta[row["id"]]
                 row["market"] = meta.get("market")
                 row["ethnicity"] = meta.get("ethnicity")
                 row["age_group"] = meta.get("age_group")
@@ -394,8 +403,8 @@ def get_task(project_id: str, task_id: str) -> dict | None:
         task = rows[0]
         task["id"] = str(task["id"])
 
-        if task["type"] == "compliance" and task.get("reference_id"):
-            task["compliance"] = _get_compliance_enrichment(task["reference_id"])
+        if task["type"] == "compliance":
+            task["compliance"] = _get_compliance_enrichment(task_id)
             # Expose S3 URLs at top level for frontend convenience
             task["s3_upload_key"] = task["compliance"].get("s3_upload_key")
             task["s3_segmented_key"] = task["compliance"].get("s3_segmented_key")
@@ -434,8 +443,7 @@ def delete_task(project_id: str, task_id: str) -> bool:
     ``generated_ads/{project_id}/{task_id}/`` (generated ads and uploaded chat
     references), so that prefix is purged before the DB row is removed. S3
     cleanup is best-effort — a purge failure is logged but never blocks the DB
-    deletion. Compliance uploads are keyed by ``check_id`` (not ``task_id``) and
-    are therefore not task-scoped; they are cleaned up at project deletion.
+    deletion. Compliance uploads are also task-scoped and cascade-deleted via DB.
 
     Args:
         project_id: The owning project id.
@@ -470,7 +478,7 @@ def delete_task(project_id: str, task_id: str) -> bool:
 def health_check() -> bool:
     """Quick connectivity check against Supabase."""
     try:
-        supabase.table("compliance_checks").select("check_id").limit(1).execute()
+        supabase.table("compliance_checks").select("task_id").limit(1).execute()
         return True
     except Exception:
         return False
@@ -479,8 +487,8 @@ def health_check() -> bool:
 # ─── Private helpers ──────────────────────────────────────────────────────────
 
 
-def _get_compliance_enrichment(reference_id: str) -> dict:
-    """Fetch compliance_checks + violations for a task's reference_id."""
+def _get_compliance_enrichment(task_id: str) -> dict:
+    """Fetch compliance_checks + violations for a task_id."""
     empty = {
         "risk_percentage": None,
         "status": "pending",
@@ -500,13 +508,13 @@ def _get_compliance_enrichment(reference_id: str) -> dict:
         check_resp = (
             supabase.table("compliance_checks")
             .select("risk_percentage, status, market, ethnicity, age_group, platform, "
-                    "s3_upload_key, s3_segmented_key, s3_remix_key, result_json, check_id, media_type")
-            .eq("check_id", reference_id)
+                    "s3_upload_key, s3_segmented_key, s3_remix_key, result_json, task_id, media_type")
+            .eq("task_id", task_id)
             .execute()
         )
         check_rows = check_resp.data or []
     except Exception as e:
-        logger.error("compliance_checks lookup failed for %s: %s", reference_id, e)
+        logger.error("compliance_checks lookup failed for %s: %s", task_id, e)
         return empty
 
     if not check_rows:
@@ -518,12 +526,12 @@ def _get_compliance_enrichment(reference_id: str) -> dict:
         viol_resp = (
             supabase.table("violations")
             .select("*")
-            .eq("check_id", reference_id)
+            .eq("task_id", task_id)
             .execute()
         )
         violations = viol_resp.data or []
     except Exception as e:
-        logger.error("violations lookup failed for %s: %s", reference_id, e)
+        logger.error("violations lookup failed for %s: %s", task_id, e)
         violations = []
 
     return {

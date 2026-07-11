@@ -1,0 +1,38 @@
+# Frontend Production Dockerfile — multi-stage build
+# Stage 1: Build the React app
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+# Copy source and build
+COPY . .
+
+# VITE_API_BASE is empty string so frontend calls /api/ (same origin via Nginx)
+ARG VITE_API_BASE=""
+ENV VITE_API_BASE=${VITE_API_BASE}
+
+RUN npm run build
+
+# Stage 2: Serve with Nginx
+FROM nginx:alpine
+
+# Copy built assets
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# SPA fallback — serve index.html for all routes
+RUN printf 'server {\n\
+    listen 80;\n\
+    root /usr/share/nginx/html;\n\
+    index index.html;\n\
+    location / {\n\
+        try_files $uri $uri/ /index.html;\n\
+    }\n\
+}\n' > /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

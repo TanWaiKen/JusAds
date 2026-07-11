@@ -1,52 +1,56 @@
 # ── JusAds Backend Dependencies ───────────────────────────────────────────────
 
 # API Framework
-fastapi
-uvicorn
+fastapi==0.137.0
+uvicorn==0.49.0
 mangum  # Lambda adapter for FastAPI (ASGI → API Gateway)
-python-multipart
-python-dotenv
+python-multipart==0.0.32
+python-dotenv==1.2.2
 
 # Google AI / Vertex AI
-google-genai
-google-cloud-speech
-google-cloud-aiplatform
+google-genai==2.8.0
 
 # LangGraph / LangChain (agent pipeline orchestration)
-langgraph
-langchain-core
+langgraph==1.2.5
+langchain-core==1.4.7
 
 # Segmentation (SAM 2 for violation region detection)
-torch
-torchvision
-transformers
-Pillow
-numpy
+torch==2.12.0
+torchvision==0.27.0
+transformers==5.12.0
+Pillow==12.2.0
+numpy==2.4.6
 
 # TTS / Voice (audio remediation)
-elevenlabs
+elevenlabs==2.52.0
 
 # Video Editing (CapCut draft generation + FFmpeg rendering)
-pycapcut
-pyJianYingDraft
+pycapcut==0.0.3
+pyJianYingDraft==0.2.7  # fallback for pycapcut (same author, Chinese version)
 
 # Image Editing (Flux Kontext Pro fallback)
-requests
+requests==2.34.2
 
 # Search / Vector DB
-tavily-python
-qdrant-client
+tavily-python==0.7.26
+qdrant-client==1.18.0
+
+# Social Distribution
+zernio-sdk==1.4.198
 
 # AWS (transcription legacy fallback)
-boto3
+boto3==1.43.29
 
 # Data validation
-pydantic
+pydantic==2.13.4
 
 # Supabase (structured data persistence)
-supabase
+supabase==2.31.0
 
 # Testing
 pytest
 hypothesis
 pydub
+
+# Apify (Online Trending Analytics Tools)
+apify_client==3.0.4

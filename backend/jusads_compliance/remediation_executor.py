@@ -265,6 +265,11 @@ def _execute_tool(
         point = timeline[0].get("start", 3.0) if timeline else 3.0
         return add_transition(input_path, point, "fade", 0.5)
 
+    elif tool_name == "omni_video_edit":
+        # AI-powered video-to-video editing / character change via gemini-omni-flash-preview
+        instruction = target if target else "Edit the video to be compliant"
+        return _execute_omni_video_edit(input_path, instruction)
+
     elif tool_name == "veo_regenerate":
         # Full video regeneration — expensive, last resort
         return {"error": "Veo regeneration not yet implemented in executor (use generation pipeline)"}
@@ -541,3 +546,87 @@ def _cleanup_temp(*paths: str) -> None:
                 os.remove(path)
             except OSError:
                 pass
+
+
+def _execute_omni_video_edit(input_path: str, instruction: str, additional_references: Optional[list[str]] = None) -> dict:
+    """Execute video-to-video editing via Gemini Omni Flash Preview REST API, supporting both video and image references."""
+    import base64
+    import tempfile
+    import requests
+    import google.auth
+    import google.auth.transport.requests
+    from shared.config import VERTEX_PROJECT_ID, MODEL_VIDEO
+
+    try:
+        credentials, project_id = google.auth.default()
+        auth_req = google.auth.transport.requests.Request()
+        credentials.refresh(auth_req)
+        token = credentials.token
+        proj_id = VERTEX_PROJECT_ID or project_id
+        if not token or not proj_id:
+            return {"error": "Failed to authenticate with Vertex AI"}
+
+        # Build multi-modal inputs
+        inputs = []
+
+        # 1. Primary Video
+        with open(input_path, "rb") as f:
+            video_bytes = f.read()
+        video_b64 = base64.b64encode(video_bytes).decode("utf-8")
+        inputs.append({"type": "video", "data": video_b64, "mime_type": "video/mp4"})
+
+        # 2. Optional additional image/video references
+        if additional_references:
+            for ref_path in additional_references:
+                if ref_path and os.path.exists(ref_path):
+                    with open(ref_path, "rb") as f:
+                        ref_bytes = f.read()
+                    ref_b64 = base64.b64encode(ref_bytes).decode("utf-8")
+                    ext = os.path.splitext(ref_path)[1].lower()
+                    if ext in (".png", ".jpg", ".jpeg"):
+                        mime = f"image/{ext[1:] if ext != '.jpg' else 'jpeg'}"
+                        inputs.append({"type": "image", "data": ref_b64, "mime_type": mime})
+                        logger.info("[Executor] Appended image reference: %s", ref_path)
+                    elif ext in (".mp4", ".mov", ".avi"):
+                        inputs.append({"type": "video", "data": ref_b64, "mime_type": "video/mp4"})
+                        logger.info("[Executor] Appended video reference: %s", ref_path)
+
+        # 3. Instruction
+        inputs.append({"type": "text", "text": instruction})
+
+        request_body = {
+            "model": MODEL_VIDEO or "gemini-omni-flash-preview",
+            "input": inputs
+        }
+
+        url = f"https://aiplatform.googleapis.com/v1beta1/projects/{proj_id}/locations/global/interactions"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8"
+        }
+
+        logger.info("[Executor] Sending video edit request to Omni interactions endpoint...")
+        response = requests.post(url, json=request_body, headers=headers)
+        if response.status_code != 200:
+            return {"error": f"Interactions API returned status {response.status_code}: {response.text}"}
+
+        res_json = response.json()
+
+        # Parse the video from steps
+        steps = res_json.get("steps", [])
+        for step in steps:
+            content_list = step.get("content", [])
+            for content in content_list:
+                if content.get("type") == "video" and "data" in content:
+                    out_bytes = base64.b64decode(content["data"])
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    tmp.write(out_bytes)
+                    tmp.close()
+                    logger.info("[Executor] Omni video edit successful. Saved to %s", tmp.name)
+                    return {"output_path": tmp.name, "operation": "omni_video_edit"}
+
+        return {"error": "No video was returned by the Omni model"}
+
+    except Exception as e:
+        logger.error("[Executor] Omni video edit crashed: %s", e)
+        return {"error": f"Omni video edit failed: {e}"}

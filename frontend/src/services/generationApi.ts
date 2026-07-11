@@ -147,7 +147,7 @@ export async function sendChat(
   referenceUrls: string[] = [],
   targetPlatform?: TargetPlatform,
   skipCompliance?: boolean,
-  videoV2?: boolean,
+  videoV3?: boolean,
   targetEthnicity?: TargetEthnicity,
   options?: GenerationOptions
 ): Promise<Response> {
@@ -161,7 +161,7 @@ export async function sendChat(
         reference_urls: referenceUrls,
         target_platform: targetPlatform ?? DEFAULT_PLATFORM,
         skip_compliance: skipCompliance ?? false,
-        video_v2: videoV2 ?? false,
+        video_v3: videoV3 ?? false,
         target_ethnicity: targetEthnicity ?? "all",
         age_group: options?.ageGroup ?? "all_ages",
         market: options?.market ?? "malaysia",
@@ -282,7 +282,7 @@ export async function* streamChat(
   referenceUrls: string[] = [],
   targetPlatform?: TargetPlatform,
   skipCompliance?: boolean,
-  videoV2?: boolean,
+  videoV3?: boolean,
   targetEthnicity?: TargetEthnicity,
   options?: GenerationOptions
 ): AsyncGenerator<SSEEvent> {
@@ -293,7 +293,7 @@ export async function* streamChat(
     referenceUrls,
     targetPlatform,
     skipCompliance,
-    videoV2,
+    videoV3,
     targetEthnicity,
     options
   );
@@ -514,6 +514,70 @@ export function mapComplianceBadge(backendStatus: string): ComplianceStatus {
     default:
       return "pending";
   }
+}
+
+// ─── Guided Generation ───────────────────────────────────────────────────────
+
+/**
+ * Submit a guided generation request and return the raw streaming `Response`.
+ *
+ * Used by the guided form flow: after creating a task and navigating to the
+ * canvas, this function POSTs the structured form data with `guided_mode: true`
+ * to the chat endpoint. The backend assembles the fixed prompt from guided
+ * inputs before passing to the orchestrator.
+ */
+export async function submitGuidedGeneration(
+  projectId: string,
+  taskId: string,
+  designType: string,
+  guidedInputs: Record<string, string>,
+  referenceUrls: string[] = []
+): Promise<Response> {
+  const response = await fetch(
+    `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/chat`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `Generate ${designType} for ${guidedInputs.product_name || "product"}`,
+        guided_mode: true,
+        design_type: designType,
+        guided_inputs: guidedInputs,
+        reference_urls: referenceUrls,
+        target_platform: guidedInputs.platform || undefined,
+        product_name: guidedInputs.product_name || undefined,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Guided generation error: ${response.status} ${response.statusText}`);
+  }
+
+  return response;
+}
+
+/**
+ * Submit a guided generation request and iterate its parsed SSE events.
+ *
+ * Convenience wrapper combining `submitGuidedGeneration` with `parseSSEStream`
+ * for consumers that want to `for await` over well-typed events.
+ */
+export async function* streamGuidedGeneration(
+  projectId: string,
+  taskId: string,
+  designType: string,
+  guidedInputs: Record<string, string>,
+  referenceUrls: string[] = []
+): AsyncGenerator<SSEEvent> {
+  const response = await submitGuidedGeneration(
+    projectId,
+    taskId,
+    designType,
+    guidedInputs,
+    referenceUrls
+  );
+  yield* parseSSEStream(response);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

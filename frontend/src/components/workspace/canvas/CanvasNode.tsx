@@ -3,8 +3,9 @@
  * Displays type color, label, input/output ports, status indicator, and selection ring.
  */
 
-import { Trash2 } from "lucide-react";
-import type { CanvasNode as CanvasNodeType, NodeStatus } from "@/components/workspace/canvas/graphModel";
+import { useState } from "react";
+import { Trash2, Download, Eye, X } from "lucide-react";
+import type { CanvasNode as CanvasNodeType, NodeStatus, NodeType } from "@/components/workspace/canvas/graphModel";
 
 interface CanvasNodeProps {
   node: CanvasNodeType;
@@ -16,6 +17,54 @@ interface CanvasNodeProps {
   onPortDragStart: (nodeId: string, portType: "output") => void;
   onPortDrop: (nodeId: string, portType: "input") => void;
   onContextMenu: (nodeId: string, e: React.MouseEvent) => void;
+}
+
+/** Node types that support asset download. */
+const DOWNLOADABLE_TYPES: ReadonlySet<NodeType> = new Set(["image", "video", "audio"]);
+
+/** Default file extensions per media type. */
+const DEFAULT_EXTENSIONS: Record<string, string> = {
+  image: "png",
+  video: "mp4",
+  audio: "mp3",
+};
+
+/**
+ * Extracts a file extension from a URL path, falling back to the default for the node type.
+ */
+function getExtensionFromUrl(url: string, nodeType: string): string {
+  try {
+    const pathname = new URL(url).pathname;
+    const lastDot = pathname.lastIndexOf(".");
+    if (lastDot !== -1) {
+      const ext = pathname.slice(lastDot + 1).toLowerCase();
+      // Only accept reasonable extensions (2-5 chars, no query params)
+      if (ext.length >= 2 && ext.length <= 5 && /^[a-z0-9]+$/.test(ext)) {
+        return ext;
+      }
+    }
+  } catch {
+    // URL parsing failed — use default
+  }
+  return DEFAULT_EXTENSIONS[nodeType] ?? "bin";
+}
+
+/**
+ * Triggers a browser download for the given asset URL.
+ */
+function handleAssetDownload(node: CanvasNodeType): void {
+  if (!node.output) return;
+  const extension = getExtensionFromUrl(node.output, node.type);
+  const shortId = node.id.slice(-6);
+  const filename = `${node.type}_${shortId}.${extension}`;
+
+  const anchor = document.createElement("a");
+  anchor.href = node.output;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
 }
 
 const NODE_COLORS: Record<string, string> = {
@@ -47,8 +96,10 @@ export function CanvasNode({
   onPortDrop,
   onContextMenu,
 }: CanvasNodeProps) {
+  const [showPreview, setShowPreview] = useState(false);
   const colorClass = NODE_COLORS[node.type] ?? "bg-gray-500";
   const statusClass = STATUS_INDICATORS[node.status];
+  const isDownloadable = node.status === "done" && DOWNLOADABLE_TYPES.has(node.type as NodeType) && !!node.output;
 
   // Parse output JSON for output node summaries
   let parsedCampaignOutput: Record<string, string> | null = null;
@@ -84,9 +135,29 @@ export function CanvasNode({
       {/* Header */}
       <div className={`flex items-center gap-2 rounded-t-lg px-3 py-2 ${colorClass}`}>
         <span className="text-xs font-semibold text-white truncate">{node.label}</span>
+        {isDownloadable && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
+            className="ml-auto p-0.5 rounded text-white/60 hover:text-white hover:bg-white/20 transition-colors"
+            aria-label="Preview asset"
+            title="Preview"
+          >
+            <Eye size={12} />
+          </button>
+        )}
+        {isDownloadable && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleAssetDownload(node); }}
+            className="p-0.5 rounded text-white/60 hover:text-white hover:bg-white/20 transition-colors"
+            aria-label="Download asset"
+            title="Download"
+          >
+            <Download size={12} />
+          </button>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(node.id); }}
-          className="ml-auto p-0.5 rounded text-white/60 hover:text-white hover:bg-white/20 transition-colors"
+          className={`${isDownloadable ? "" : "ml-auto "}p-0.5 rounded text-white/60 hover:text-white hover:bg-white/20 transition-colors`}
           aria-label="Delete node"
         >
           <Trash2 size={12} />
@@ -132,11 +203,14 @@ export function CanvasNode({
             </div>
           )}
           {node.type === "image" && (
-            <img
-              src={node.output}
-              alt="Generated Ad"
-              className="mt-1 max-h-32 w-full rounded border object-contain bg-background shadow-inner"
-            />
+            <div className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}>
+              <img
+                src={node.output}
+                alt="Generated Ad"
+                className="mt-1 max-h-32 w-full rounded border object-contain bg-background shadow-inner group-hover:opacity-80 transition-opacity"
+              />
+              <span className="text-[9px] text-muted-foreground group-hover:text-primary transition-colors mt-0.5 block">Click to preview</span>
+            </div>
           )}
           {node.type === "audio" && (
             <audio
@@ -146,11 +220,15 @@ export function CanvasNode({
             />
           )}
           {node.type === "video" && (
-            <video
-              src={node.output}
-              controls
-              className="mt-1 max-h-32 w-full rounded border object-contain bg-background"
-            />
+            <div className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}>
+              <video
+                src={node.output}
+                className="mt-1 max-h-32 w-full rounded border object-contain bg-background group-hover:opacity-80 transition-opacity"
+                muted
+                playsInline
+              />
+              <span className="text-[9px] text-muted-foreground group-hover:text-primary transition-colors mt-0.5 block">Click to preview</span>
+            </div>
           )}
           {node.type === "input" && (
             <div className="italic text-muted-foreground text-[10px] line-clamp-3">
@@ -215,6 +293,57 @@ export function CanvasNode({
           <path d="M11 1v10H1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
       </div>
+
+      {/* Fullscreen preview modal */}
+      {showPreview && node.output && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={(e) => { e.stopPropagation(); setShowPreview(false); }}
+        >
+          {/* Close button */}
+          <button
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+            onClick={(e) => { e.stopPropagation(); setShowPreview(false); }}
+            aria-label="Close preview"
+          >
+            <X size={24} />
+          </button>
+
+          {/* Download button in modal */}
+          <button
+            className="absolute top-4 right-16 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+            onClick={(e) => { e.stopPropagation(); handleAssetDownload(node); }}
+            aria-label="Download"
+          >
+            <Download size={20} />
+          </button>
+
+          {/* Preview content */}
+          <div className="max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            {node.type === "image" && (
+              <img
+                src={node.output}
+                alt="Preview"
+                className="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain"
+              />
+            )}
+            {node.type === "video" && (
+              <video
+                src={node.output}
+                controls
+                autoPlay
+                className="max-w-full max-h-[85vh] rounded-lg shadow-2xl"
+              />
+            )}
+            {node.type === "audio" && (
+              <div className="bg-card rounded-lg p-8 shadow-2xl flex flex-col items-center gap-4">
+                <p className="text-sm font-medium text-foreground">{node.label}</p>
+                <audio src={node.output} controls autoPlay className="w-80" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

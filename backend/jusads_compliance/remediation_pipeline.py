@@ -1,14 +1,14 @@
-"""
+﻿"""
 remediation_pipeline.py
-───────────────────────
-Remediation Pipeline (Pipeline 2) — an independent LangGraph StateGraph
+Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+Remediation Pipeline (Pipeline 2) Ã¢â‚¬â€ an independent LangGraph StateGraph
 that remediates non-compliant media assets.
 
 Flow:
-  1. fetch_compliance_result  → retrieve compliance check by check_id
-  2. confirm_aspect_ratio     → LangGraph interrupt() for image/video aspect ratio
-  3. media_remediation        → route to media-specific handler
-  4. upload_and_finalize      → S3 upload + Supabase record update
+  1. fetch_compliance_result  Ã¢â€ â€™ retrieve compliance check by task_id
+  2. confirm_aspect_ratio     Ã¢â€ â€™ LangGraph interrupt() for image/video aspect ratio
+  3. media_remediation        Ã¢â€ â€™ route to media-specific handler
+  4. upload_and_finalize      Ã¢â€ â€™ S3 upload + Supabase record update
 """
 
 import json
@@ -23,9 +23,10 @@ from langgraph.types import interrupt
 
 from shared.clients import supabase, gemini, elevenlabs
 from shared.models import Remediation_State
+from shared.config import MODEL_TEXT
 from jusads_compliance.progress_tracker import ProgressTracker
 from shared.s3_client import upload_file_public, build_s3_key
-from config import VOICE_CONFIG, DEFAULT_VOICE
+from config import get_voice, DEFAULT_VOICE
 
 logger = logging.getLogger(__name__)
 
@@ -33,33 +34,33 @@ logger = logging.getLogger(__name__)
 _tracker = ProgressTracker()
 
 
-# ─── Node 1: Fetch Compliance Result ─────────────────────────────────────────
+# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Node 1: Fetch Compliance Result Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
 def fetch_compliance_result(state: dict) -> dict:
-    """Retrieve the compliance check record from Supabase by check_id.
+    """Retrieve the compliance check record from Supabase by task_id.
 
     Sets compliance_result, media_type, source_media_url, and platform_target
-    from the fetched record. Returns error status if check_id is not found.
+    from the fetched record. Returns error status if task_id is not found.
     """
-    check_id = state["check_id"]
-    _tracker.start_step(check_id, "fetch_compliance_result")
+    task_id = state["task_id"]
+    _tracker.start_step(task_id, "fetch_compliance_result")
 
     try:
         response = (
             supabase.table("compliance_checks")
             .select("*")
-            .eq("check_id", check_id)
+            .eq("task_id", task_id)
             .execute()
         )
         rows = response.data or []
 
         if not rows:
-            logger.error("[RemediationPipeline] check_id=%s not found", check_id)
-            _tracker.fail_step(check_id, "fetch_compliance_result", f"check_id '{check_id}' not found")
+            logger.error("[RemediationPipeline] task_id=%s not found", task_id)
+            _tracker.fail_step(task_id, "fetch_compliance_result", f"task_id '{task_id}' not found")
             return {
                 "status": "remix_failed",
-                "compliance_result": {"error": f"check_id '{check_id}' not found"},
+                "compliance_result": {"error": f"task_id '{task_id}' not found"},
             }
 
         record = rows[0]
@@ -78,10 +79,10 @@ def fetch_compliance_result(state: dict) -> dict:
         }
 
         logger.info(
-            "[RemediationPipeline] Fetched check_id=%s, media_type=%s, platform=%s",
-            check_id, media_type, platform,
+            "[RemediationPipeline] Fetched task_id=%s, media_type=%s, platform=%s",
+            task_id, media_type, platform,
         )
-        _tracker.complete_step(check_id, "fetch_compliance_result", f"Retrieved {media_type} check record")
+        _tracker.complete_step(task_id, "fetch_compliance_result", f"Retrieved {media_type} check record")
 
         return {
             "compliance_result": result_json,
@@ -94,14 +95,14 @@ def fetch_compliance_result(state: dict) -> dict:
 
     except Exception as e:
         logger.error("[RemediationPipeline] fetch_compliance_result failed: %s", e)
-        _tracker.fail_step(check_id, "fetch_compliance_result", str(e))
+        _tracker.fail_step(task_id, "fetch_compliance_result", str(e))
         return {
             "status": "remix_failed",
             "compliance_result": {"error": str(e)},
         }
 
 
-# ─── Node 2: Confirm Aspect Ratio ────────────────────────────────────────────
+# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Node 2: Confirm Aspect Ratio Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
 def confirm_aspect_ratio(state: dict) -> dict:
@@ -110,16 +111,16 @@ def confirm_aspect_ratio(state: dict) -> dict:
     Skips for text/audio media types. Uses LangGraph interrupt() to pause
     execution and present aspect ratio options to the user.
     """
-    check_id = state["check_id"]
+    task_id = state["task_id"]
     media_type = state["media_type"]
     platform_target = state["platform_target"]
 
-    _tracker.start_step(check_id, "confirm_aspect_ratio")
+    _tracker.start_step(task_id, "confirm_aspect_ratio")
 
-    # Skip for text and audio — no aspect ratio needed
+    # Skip for text and audio Ã¢â‚¬â€ no aspect ratio needed
     if media_type not in ("image", "video"):
         logger.info("[RemediationPipeline] Skipping aspect ratio for media_type=%s", media_type)
-        _tracker.complete_step(check_id, "confirm_aspect_ratio", f"Skipped for {media_type}")
+        _tracker.complete_step(task_id, "confirm_aspect_ratio", f"Skipped for {media_type}")
         return {"aspect_ratio": ""}
 
     try:
@@ -168,13 +169,13 @@ def confirm_aspect_ratio(state: dict) -> dict:
                 aspect_ratio = options[0]["aspect_ratio"]
 
         logger.info("[RemediationPipeline] Confirmed aspect_ratio=%s", aspect_ratio)
-        _tracker.complete_step(check_id, "confirm_aspect_ratio", f"Confirmed: {aspect_ratio}")
+        _tracker.complete_step(task_id, "confirm_aspect_ratio", f"Confirmed: {aspect_ratio}")
 
         return {"aspect_ratio": aspect_ratio}
 
     except Exception as e:
         logger.error("[RemediationPipeline] confirm_aspect_ratio failed: %s", e)
-        _tracker.fail_step(check_id, "confirm_aspect_ratio", str(e))
+        _tracker.fail_step(task_id, "confirm_aspect_ratio", str(e))
         # On failure, set remix_failed, preserve original
         return {
             "status": "remix_failed",
@@ -182,7 +183,7 @@ def confirm_aspect_ratio(state: dict) -> dict:
         }
 
 
-# ─── Node 3: Media Remediation ───────────────────────────────────────────────
+# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Node 3: Media Remediation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
 def media_remediation(state: dict) -> dict:
@@ -193,14 +194,14 @@ def media_remediation(state: dict) -> dict:
     - Text: AI-powered text rewrite
     - Audio: ElevenLabs TTS recreation
     """
-    check_id = state["check_id"]
+    task_id = state["task_id"]
     media_type = state["media_type"]
 
     # If already failed in a previous step, skip
     if state.get("status") == "remix_failed":
         return {}
 
-    _tracker.start_step(check_id, "media_remediation")
+    _tracker.start_step(task_id, "media_remediation")
 
     try:
         if media_type == "image":
@@ -224,7 +225,7 @@ def media_remediation(state: dict) -> dict:
 
         logger.info("[RemediationPipeline] %s remediation complete", media_type)
         _tracker.complete_step(
-            check_id, "media_remediation",
+            task_id, "media_remediation",
             f"{media_type} remediation completed successfully",
         )
 
@@ -235,7 +236,7 @@ def media_remediation(state: dict) -> dict:
 
     except Exception as e:
         logger.error("[RemediationPipeline] media_remediation failed: %s", e)
-        _tracker.fail_step(check_id, "media_remediation", str(e))
+        _tracker.fail_step(task_id, "media_remediation", str(e))
         return {
             "status": "remix_failed",
             "remediated_paths": state.get("remediated_paths", []) or [],
@@ -260,7 +261,7 @@ def _remediate_image(state: dict) -> dict:
     localization_plan = remediation_plan.get("suggestion", "")
 
     # Download original image
-    tmp_original = os.path.join(tempfile.gettempdir(), f"remediate_orig_{state['check_id']}.png")
+    tmp_original = os.path.join(tempfile.gettempdir(), f"remediate_orig_{state['task_id']}.png")
     urllib.request.urlretrieve(source_url, tmp_original)
 
     # Generate or download mask
@@ -269,7 +270,7 @@ def _remediate_image(state: dict) -> dict:
     if segmentation and segmentation.get("mask_path"):
         mask_path = segmentation["mask_path"]
         if mask_path.startswith("http"):
-            tmp_mask = os.path.join(tempfile.gettempdir(), f"remediate_mask_{state['check_id']}.png")
+            tmp_mask = os.path.join(tempfile.gettempdir(), f"remediate_mask_{state['task_id']}.png")
             urllib.request.urlretrieve(mask_path, tmp_mask)
             mask_path = tmp_mask
 
@@ -277,14 +278,14 @@ def _remediate_image(state: dict) -> dict:
         # Generate simple mask from segmented overlay if available
         seg_url = segmentation.get("segmented_url", "")
         if seg_url:
-            tmp_seg = os.path.join(tempfile.gettempdir(), f"remediate_seg_{state['check_id']}.png")
+            tmp_seg = os.path.join(tempfile.gettempdir(), f"remediate_seg_{state['task_id']}.png")
             urllib.request.urlretrieve(seg_url, tmp_seg)
             mask_path = _make_binary_mask(tmp_seg, tmp_original)
         else:
-            # No segmentation available — create a full-image mask as fallback
+            # No segmentation available Ã¢â‚¬â€ create a full-image mask as fallback
             img = Image.open(tmp_original)
             mask = Image.new("L", img.size, 255)
-            mask_path = os.path.join(tempfile.gettempdir(), f"remediate_fullmask_{state['check_id']}.png")
+            mask_path = os.path.join(tempfile.gettempdir(), f"remediate_fullmask_{state['task_id']}.png")
             mask.save(mask_path)
 
     # Build inpainting prompt
@@ -302,7 +303,7 @@ def _remediate_image(state: dict) -> dict:
     # Inpainting loop: max 3 retries, quality >= 70
     MAX_RETRIES = 3
     quality_score = 0
-    output_path = os.path.join(tempfile.gettempdir(), f"remediated_{state['check_id']}.png")
+    output_path = os.path.join(tempfile.gettempdir(), f"remediated_{state['task_id']}.png")
     last_error = None
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -378,17 +379,17 @@ def _remediate_video(state: dict) -> dict:
     aspect_ratio = state.get("aspect_ratio", "16:9")
 
     # Download source video
-    tmp_video = os.path.join(tempfile.gettempdir(), f"remediate_video_{state['check_id']}.mp4")
+    tmp_video = os.path.join(tempfile.gettempdir(), f"remediate_video_{state['task_id']}.mp4")
     urllib.request.urlretrieve(source_url, tmp_video)
 
-    output_path = os.path.join(tempfile.gettempdir(), f"remediated_video_{state['check_id']}.mp4")
+    output_path = os.path.join(tempfile.gettempdir(), f"remediated_video_{state['task_id']}.mp4")
 
     if not violations_timeline:
-        # No specific violations — just return original
+        # No specific violations Ã¢â‚¬â€ just return original
         return {"output_path": tmp_video, "strategy": "video_i2v", "note": "no violations to fix"}
 
     # For each violation segment, extract a reference keyframe
-    # In production this would use I2V APIs — here we structure the call
+    # In production this would use I2V APIs Ã¢â‚¬â€ here we structure the call
     try:
         from google.genai import types
 
@@ -397,7 +398,7 @@ def _remediate_video(state: dict) -> dict:
         start_time = first_violation.get("start", first_violation.get("start_seconds", 0))
 
         # Extract keyframe using ffmpeg
-        keyframe_path = os.path.join(tempfile.gettempdir(), f"keyframe_{state['check_id']}.png")
+        keyframe_path = os.path.join(tempfile.gettempdir(), f"keyframe_{state['task_id']}.png")
         import subprocess
         subprocess.run(
             ["ffmpeg", "-y", "-ss", str(start_time), "-i", tmp_video,
@@ -412,7 +413,7 @@ def _remediate_video(state: dict) -> dict:
             f"Replace the following violations: {violations_desc}"
         )
 
-        # For now, mark as processed — actual I2V would be via external API
+        # For now, mark as processed Ã¢â‚¬â€ actual I2V would be via external API
         logger.info("[RemediationPipeline] Video I2V remediation prepared for %d segments", len(violations_timeline))
         output_path = tmp_video  # In full implementation, this would be the composited output
 
@@ -452,7 +453,7 @@ def _remediate_text(state: dict) -> dict:
         )
 
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=prompt,
             config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
         )
@@ -460,7 +461,7 @@ def _remediate_text(state: dict) -> dict:
         rewritten = result.get("rewritten_text", original_text)
 
         # Save rewritten text to file
-        output_path = os.path.join(tempfile.gettempdir(), f"remediated_text_{state['check_id']}.txt")
+        output_path = os.path.join(tempfile.gettempdir(), f"remediated_text_{state['task_id']}.txt")
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(rewritten)
 
@@ -480,14 +481,14 @@ def _remediate_audio(state: dict) -> dict:
     remediation_plan = state.get("remediation_plan", {})
     suggestion = remediation_plan.get("suggestion", "")
 
-    # Get replacement text — from suggestion or compliance result
+    # Get replacement text Ã¢â‚¬â€ from suggestion or compliance result
     replacement_text = suggestion
     if not replacement_text:
         replacement_text = compliance_result.get("suggestion", "Compliant audio replacement.")
 
-    # Select voice based on platform/market context
-    # Use DEFAULT_VOICE as the primary source (from env config)
-    voice_id = DEFAULT_VOICE["voice_id"]
+    # Select voice based on platform/market context via DB lookup
+    voice_entry = get_voice("malaysia", "malay", "female")
+    voice_id = voice_entry["voice_id"]
 
     try:
         # Generate TTS audio via ElevenLabs
@@ -498,7 +499,7 @@ def _remediate_audio(state: dict) -> dict:
         )
 
         # Write audio to temp file
-        output_path = os.path.join(tempfile.gettempdir(), f"remediated_audio_{state['check_id']}.mp3")
+        output_path = os.path.join(tempfile.gettempdir(), f"remediated_audio_{state['task_id']}.mp3")
         with open(output_path, "wb") as f:
             for chunk in audio_generator:
                 f.write(chunk)
@@ -510,7 +511,7 @@ def _remediate_audio(state: dict) -> dict:
         return {"error": f"Audio TTS remediation failed: {e}"}
 
 
-# ─── Node 4: Upload and Finalize ─────────────────────────────────────────────
+# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Node 4: Upload and Finalize Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
 def upload_and_finalize(state: dict) -> dict:
@@ -518,18 +519,18 @@ def upload_and_finalize(state: dict) -> dict:
 
     Sets status to "remediated" on success, or "remix_failed" on failure.
     """
-    check_id = state["check_id"]
+    task_id = state["task_id"]
 
     # If already failed, skip
     if state.get("status") == "remix_failed":
         return {}
 
-    _tracker.start_step(check_id, "upload_and_finalize")
+    _tracker.start_step(task_id, "upload_and_finalize")
 
     remediated_paths = state.get("remediated_paths", []) or []
     if not remediated_paths:
-        logger.warning("[RemediationPipeline] No remediated paths to upload for check_id=%s", check_id)
-        _tracker.fail_step(check_id, "upload_and_finalize", "No remediated files to upload")
+        logger.warning("[RemediationPipeline] No remediated paths to upload for task_id=%s", task_id)
+        _tracker.fail_step(task_id, "upload_and_finalize", "No remediated files to upload")
         return {"status": "remix_failed"}
 
     try:
@@ -540,8 +541,8 @@ def upload_and_finalize(state: dict) -> dict:
         s3_key = build_s3_key(
             asset_type="remixed",
             username="pipeline",  # Generic user for pipeline-generated assets
-            project_id=check_id,
-            check_id=check_id,
+            project_id=task_id,
+            task_id=task_id,
             filename=filename,
         )
 
@@ -552,29 +553,29 @@ def upload_and_finalize(state: dict) -> dict:
         supabase.table("compliance_checks").update({
             "status": "remediated",
             "s3_remix_key": s3_url,
-        }).eq("check_id", check_id).execute()
+        }).eq("task_id", task_id).execute()
 
-        logger.info("[RemediationPipeline] Updated check %s -> remediated", check_id)
-        _tracker.complete_step(check_id, "upload_and_finalize", f"Uploaded and finalized: {s3_url}")
+        logger.info("[RemediationPipeline] Updated task %s -> remediated", task_id)
+        _tracker.complete_step(task_id, "upload_and_finalize", f"Uploaded and finalized: {s3_url}")
 
         return {"status": "remediated"}
 
     except Exception as e:
         logger.error("[RemediationPipeline] upload_and_finalize failed: %s", e)
-        _tracker.fail_step(check_id, "upload_and_finalize", str(e))
+        _tracker.fail_step(task_id, "upload_and_finalize", str(e))
 
-        # Preserve original — set status to remix_failed
+        # Preserve original Ã¢â‚¬â€ set status to remix_failed
         try:
             supabase.table("compliance_checks").update({
                 "status": "remix_failed",
-            }).eq("check_id", check_id).execute()
+            }).eq("task_id", task_id).execute()
         except Exception as update_err:
             logger.error("[RemediationPipeline] Failed to set remix_failed status: %s", update_err)
 
         return {"status": "remix_failed"}
 
 
-# ─── Helper Functions ─────────────────────────────────────────────────────────
+# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Helper Functions Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
 def _make_binary_mask(segmented_path: str, original_path: str) -> str:
@@ -648,7 +649,7 @@ def _check_image_quality(original_path: str, edited_path: str) -> int:
         return 75  # Assume acceptable on error
 
 
-# ─── Build the Remediation Pipeline ──────────────────────────────────────────
+# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Build the Remediation Pipeline Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
 _graph = StateGraph(Remediation_State)
@@ -659,7 +660,7 @@ _graph.add_node("confirm_aspect_ratio", confirm_aspect_ratio)
 _graph.add_node("media_remediation", media_remediation)
 _graph.add_node("upload_and_finalize", upload_and_finalize)
 
-# Wire edges: fetch → confirm → remediate → upload → END
+# Wire edges: fetch Ã¢â€ â€™ confirm Ã¢â€ â€™ remediate Ã¢â€ â€™ upload Ã¢â€ â€™ END
 _graph.set_entry_point("fetch_compliance_result")
 _graph.add_edge("fetch_compliance_result", "confirm_aspect_ratio")
 _graph.add_edge("confirm_aspect_ratio", "media_remediation")
@@ -668,3 +669,4 @@ _graph.add_edge("upload_and_finalize", END)
 
 # Compile and export
 remediation_pipeline = _graph.compile()
+

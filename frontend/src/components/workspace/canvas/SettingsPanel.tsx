@@ -293,11 +293,11 @@ function GenerationTab({
       />
 
       <ToggleRow
-        label="Video V2 — Multi-Scene Storyboard"
+        label="Video V3 — Character Grid Pipeline"
         description={
           settings.videoV2Enabled
-            ? "Storyboard → keyframes → Veo clips → subtitles + transitions"
-            : "Single Veo clip (V1). Enable for a rich multi-scene ad"
+            ? "Director → Character Sheet → Scene Grid → Veo first+last frame → Dual Output"
+            : "Single Veo clip (V1). Enable for rich multi-scene character-consistent video"
         }
         enabled={settings.videoV2Enabled}
         onToggle={() => onUpdate({ videoV2Enabled: !settings.videoV2Enabled })}

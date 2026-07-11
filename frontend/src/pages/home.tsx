@@ -76,14 +76,18 @@ export default function DashboardHome() {
       const tl = gsap.timeline({ defaults: { duration: 0.6, ease: "power3.out" } });
 
       // Header entrance
-      tl.from(".dash-header", { y: -20, opacity: 0, clearProps: "all" })
-        .from(".dash-header-sub", { y: 10, opacity: 0, duration: 0.4, clearProps: "all" }, "<0.15");
+      tl.fromTo(".dash-header", { y: -20, opacity: 0 }, { y: 0, opacity: 1, clearProps: "all" })
+        .fromTo(".dash-header-sub", { y: 10, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, clearProps: "all" }, "<0.15");
 
       // Stats cards stagger in with scale
-      tl.from(".stat-card", {
+      tl.fromTo(".stat-card", {
         y: 40,
         opacity: 0,
         scale: 0.95,
+      }, {
+        y: 0,
+        opacity: 1,
+        scale: 1,
         stagger: 0.12,
         duration: 0.5,
         ease: "back.out(1.4)",
@@ -107,9 +111,12 @@ export default function DashboardHome() {
       });
 
       // Promo card slides in
-      tl.from(".promo-card", {
+      tl.fromTo(".promo-card", {
         y: 30,
         opacity: 0,
+      }, {
+        y: 0,
+        opacity: 1,
         duration: 0.7,
         ease: "power2.out",
         clearProps: "all",
@@ -125,17 +132,23 @@ export default function DashboardHome() {
       }, "-=0.4");
 
       // Market sentiment panel
-      tl.from(".sentiment-panel", {
+      tl.fromTo(".sentiment-panel", {
         y: 20,
         opacity: 0,
+      }, {
+        y: 0,
+        opacity: 1,
         duration: 0.5,
         clearProps: "all",
       }, "-=0.6");
 
       // Activity items stagger from right
-      tl.from(".activity-item", {
+      tl.fromTo(".activity-item", {
         x: 30,
         opacity: 0,
+      }, {
+        x: 0,
+        opacity: 1,
         stagger: 0.1,
         duration: 0.4,
         ease: "power2.out",

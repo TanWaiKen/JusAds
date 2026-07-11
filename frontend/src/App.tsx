@@ -16,7 +16,11 @@ import Generate from "./pages/generate";
 import ProjectOverviewPage from "./pages/projectOverview";
 import TaskDetailPage from "./pages/taskDetail";
 import GenerateInitiator from "./pages/generateInitiator";
+import GuidedGenerate from "./pages/guidedGenerate";
 import NotFoundPage from "./pages/notFound";
+import CapcutDraftPage from "./pages/capcut-draft";
+import StatisticsPage from "./pages/statistics";
+import EasyGenerationPage from "./pages/easy-generation";
 
 function App() {
   return (
@@ -29,6 +33,9 @@ function App() {
 
             {/* Cognito OAuth callback — must match redirect_uri in cognito.ts */}
             <Route path="/callback" element={<CallbackHandler />} />
+
+            {/* CapCut Draft Test Page (unprotected for easy testing) */}
+            <Route path="/capcut-draft" element={<CapcutDraftPage />} />
 
             {/* Dashboard (Protected under ProtectedRoute) */}
             <Route
@@ -45,6 +52,7 @@ function App() {
               <Route path="profile" element={<DashboardProfile />} />
               <Route path="assets" element={<DashboardAssets />} />
               <Route path="trends" element={<DashboardTrends />} />
+              <Route path="statistics" element={<StatisticsPage />} />
               <Route path="compliance" element={<DashboardCompliance />} />
               <Route path="generate" element={<Generate />} />
 
@@ -53,6 +61,8 @@ function App() {
               <Route path="project/:projectId/compliance" element={<DashboardCompliance />} />
               <Route path="project/:projectId/compliance/:taskId" element={<DashboardCompliance />} />
               <Route path="project/:projectId/generate" element={<GenerateInitiator />} />
+              <Route path="project/:projectId/guided-generate" element={<GuidedGenerate />} />
+              <Route path="project/:projectId/easy" element={<EasyGenerationPage />} />
               <Route path="project/:projectId/:taskId" element={<TaskDetailPage />} />
 
               {/* Redirect any other dashboard path to home */}

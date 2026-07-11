@@ -39,6 +39,7 @@ from jusads_generation.distribution import (
     distribute_ad,
     DistributionError,
     AccountNotConfiguredError,
+    get_ad_analytics,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,10 +57,13 @@ def init_generation(store: SupabaseComplianceStore | None):
 
 class ChatRequest(BaseModel):
     message: str
+    guided_mode: bool = False
+    design_type: Optional[str] = None
+    guided_inputs: Optional[dict] = None
     reference_urls: List[str] = []
     target_platform: Optional[str] = None
     skip_compliance: bool = False
-    video_v2: bool = False
+    video_v3: bool = False
     target_ethnicity: Optional[str] = None
     age_group: Optional[str] = None  # gen_z|millennial|gen_x|baby_boomer|all_ages
     market: Optional[str] = None  # malaysia|singapore
@@ -67,6 +71,9 @@ class ChatRequest(BaseModel):
     product_name: Optional[str] = None
     product_category: Optional[str] = None
     gender: Optional[str] = None  # male|female|mixed
+    # Easy Mode fields (Req 14.1, 14.5)
+    revision_instruction: Optional[str] = None
+    advanced_overrides: Optional[dict] = None
 
 
 class UploadUrlRequest(BaseModel):
@@ -116,6 +123,46 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
         "viewport": {"panX": 0, "panY": 0, "zoom": 1}
     }
 
+    # ── Guided mode: assemble the effective message from form inputs ──
+    # Easy Mode detection: if revision_instruction or advanced_overrides are present,
+    # use the Easy Mode prompt assembly path (Req 13.3, 14.1, 14.5).
+    easy_mode_provenance: dict | None = None
+
+    is_easy_mode = body.guided_mode and body.design_type and body.guided_inputs and (
+        body.revision_instruction is not None or body.advanced_overrides is not None
+    )
+
+    if is_easy_mode:
+        try:
+            from jusads_generation.easy_mode_prompts import assemble_easy_mode_prompt
+            from jusads_generation.guided_prompts import DESIGN_TYPE_TO_MEDIA
+
+            effective_message, easy_mode_provenance = assemble_easy_mode_prompt(
+                design_type=body.design_type,
+                form_inputs=body.guided_inputs,
+                revision_instruction=body.revision_instruction,
+                advanced_overrides=body.advanced_overrides,
+            )
+            forced_media = DESIGN_TYPE_TO_MEDIA.get(body.design_type)
+            logger.info(
+                "[Generation] Easy Mode detected (design_type=%s, has_revision=%s)",
+                body.design_type,
+                body.revision_instruction is not None,
+            )
+        except ValueError as ve:
+            return JSONResponse(status_code=422, content={"error": str(ve)})
+    elif body.guided_mode and body.design_type and body.guided_inputs:
+        try:
+            from jusads_generation.guided_prompts import assemble_guided_message, DESIGN_TYPE_TO_MEDIA
+
+            effective_message = assemble_guided_message(body.design_type, body.guided_inputs)
+            forced_media = DESIGN_TYPE_TO_MEDIA.get(body.design_type)
+        except ValueError as ve:
+            return JSONResponse(status_code=422, content={"error": str(ve)})
+    else:
+        effective_message = body.message
+        forced_media = None
+
     # Create a unique run_id for this generation
     run_id = f"{project_id}_{task_id}_{uuid.uuid4().hex[:6]}"
     queue: asyncio.Queue = asyncio.Queue()
@@ -123,8 +170,18 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
     _run_complete[run_id] = False
 
     # Persist user turn BEFORE spawning background task
+    # For guided mode, persist a human-readable summary instead of the full assembled prompt
+    if body.guided_mode and body.design_type and body.guided_inputs:
+        chat_display_message = (
+            f"[Guided: {body.design_type}] "
+            f"{body.guided_inputs.get('product_name', '')} — "
+            f"{body.guided_inputs.get('key_message', '')}"
+        )
+    else:
+        chat_display_message = body.message
+
     try:
-        create_chat_message(project_id, task_id, "user", body.message)
+        create_chat_message(project_id, task_id, "user", chat_display_message)
     except ChatPersistenceError as pe:
         logger.error("[SSE] User turn persistence failed: %s", pe)
 
@@ -140,12 +197,12 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
             async for chunk in run_generation(
                 project_id=project_id,
                 task_id=task_id,
-                user_message=body.message,
+                user_message=effective_message,
                 reference_urls=body.reference_urls,
                 target_platform=body.target_platform,
                 current_state=current_pipeline_state,
                 skip_compliance=body.skip_compliance,
-                video_v2=body.video_v2,
+                video_v3=body.video_v3,
                 target_ethnicity=body.target_ethnicity,
                 age_group=body.age_group,
                 market=body.market,
@@ -153,6 +210,7 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                 product_name=body.product_name,
                 product_category=body.product_category,
                 gender=body.gender,
+                force_media_types=forced_media,
             ):
                 # Push chunk to queue for any listening SSE client
                 await queue.put(chunk)
@@ -190,6 +248,52 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                 logger.info("[BG] Persisted final generation pipeline state to Supabase.")
             except Exception as se:
                 logger.error("[BG] Failed to persist final state: %s", se)
+
+        # ── Easy Mode provenance persistence (Req 17.1, 17.2) ──
+        # Store the provenance record in generated_ads.metadata.easy_mode namespace
+        if easy_mode_provenance and final_state:
+            try:
+                from shared.clients import supabase as sb
+
+                # Extract ad IDs from the pipeline_state generated_ads list
+                generated_ads_list = final_state.get("generated_ads") or []
+                ad_ids = [
+                    ad.get("ad_id") for ad in generated_ads_list
+                    if ad.get("ad_id") and ad.get("gen_status") == "completed"
+                ]
+
+                for ad_id in ad_ids:
+                    # Fetch current metadata to merge (don't overwrite existing metadata)
+                    row_resp = (
+                        sb.table("generated_ads")
+                        .select("metadata")
+                        .eq("id", ad_id)
+                        .limit(1)
+                        .execute()
+                    )
+                    rows = row_resp.data or []
+                    current_metadata = (rows[0].get("metadata") or {}) if rows else {}
+
+                    # Merge easy_mode provenance into the metadata namespace
+                    current_metadata["easy_mode"] = {
+                        "template_type": body.design_type,
+                        "revision_instruction": body.revision_instruction,
+                        "provenance": easy_mode_provenance,
+                    }
+
+                    sb.table("generated_ads").update(
+                        {"metadata": current_metadata}
+                    ).eq("id", ad_id).execute()
+
+                logger.info(
+                    "[Generation] Easy Mode provenance stored for %d ad(s)",
+                    len(ad_ids),
+                )
+            except Exception as prov_err:
+                logger.error(
+                    "[Generation] Failed to persist Easy Mode provenance: %s",
+                    prov_err,
+                )
 
         # Signal completion
         _run_complete[run_id] = True
@@ -464,6 +568,26 @@ async def distribute_generated_ad(
         return JSONResponse(status_code=503, content={"error": str(e)})
 
 
+@router.get("/projects/{project_id}/tasks/{task_id}/ads/{ad_id}/analytics")
+async def get_ad_performance_analytics(
+    project_id: str, task_id: str, ad_id: str
+) -> JSONResponse:
+    """Retrieve social post analytics from Zernio for a distributed ad.
+
+    If Zernio is not configured or the post is not distributed, returns fallback
+    mock engagement data so the UI can render analytics graphs beautifully.
+    """
+    if not _store:
+        return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+
+    try:
+        analytics = get_ad_analytics(ad_id, project_id)
+        return JSONResponse(content=analytics)
+    except Exception as e:
+        logger.error("[Routes] Failed to get ad analytics: %s", e)
+        return JSONResponse(status_code=500, content={"error": f"Failed to load analytics: {e}"})
+
+
 @router.post("/projects/{project_id}/tasks/{task_id}/upload-url")
 async def get_upload_url(project_id: str, task_id: str, body: UploadUrlRequest) -> JSONResponse:
     """Generate a pre-signed PUT URL for direct-to-S3 upload."""
@@ -515,6 +639,17 @@ async def upload_reference_asset(project_id: str, task_id: str, file: UploadFile
             os.unlink(tmp_path)
         except Exception:
             pass
+
+
+# ─── Guided Form Schema ───────────────────────────────────────────────────────
+
+
+@router.get("/guided-form-schema")
+async def get_guided_form_schema() -> JSONResponse:
+    """Return form field definitions for guided generation mode."""
+    from jusads_generation.guided_prompts import get_form_schema
+
+    return JSONResponse(content=get_form_schema())
 
 
 # ─── Prompt Search (Phase F) ──────────────────────────────────────────────────

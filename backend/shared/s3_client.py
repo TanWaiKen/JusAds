@@ -55,7 +55,7 @@ def build_s3_key(
     """Construct an S3 object key.
 
     asset_type: "upload" | "remixed" | "segmented"
-    Returns: e.g. uploads/{username}/{project_id}/{check_id}/{filename}
+    Returns: e.g. uploads/{username}/{project_id}/{task_id}/{filename}
     """
     prefix_map = {"upload": "uploads", "remixed": "remixed", "segmented": "segmented"}
     prefix = prefix_map.get(asset_type)

@@ -40,7 +40,7 @@ from langgraph.graph import END, START, StateGraph
 from shared.clients import gemini
 
 from .agents import audio_agent, image_agent, text_agent, video_agent
-from .agents import video_v2 as video_v2_agent
+from .agents import video_v3_grid as video_v3_agent
 from .agents.base import NODE_COORDS, AgentResult, load_guide, load_multimodal_reference
 from .chat_store import ChatPersistenceError, create_chat_message, list_recent_chat_messages
 from .compliance_bridge import run_compliance_for_ad, summarize_reasons
@@ -71,7 +71,8 @@ _AGENTS: dict[MediaType, Callable[..., Awaitable[AgentResult]]] = {
 # Media types in a stable canonical ordering used for streaming/pipeline layout.
 _MEDIA_ORDER: tuple[MediaType, ...] = ("text", "image", "audio", "video")
 
-_GEMINI_MODEL = "gemini-2.5-flash"
+from shared.config import MODEL_TEXT
+_GEMINI_MODEL = MODEL_TEXT
 
 # Human-friendly labels surfaced in the in-progress SSE ``data`` payload.
 _NODE_LABELS: dict[MediaType, str] = {
@@ -295,37 +296,13 @@ async def _generate_and_check(
         reference_parts=reference_parts,
     )
 
-    # When compliance is skipped, mark as non-final immediately without invoking
-    # the pipeline. This saves ~120s during development/iteration.
-    if skip_compliance:
-        logger.info("[Orchestrator] Compliance skipped for %s ad (user toggle)", media_type)
-        compliance = {
-            "compliance_status": "non-final",
-            "compliance_result": {"skipped": True, "reason": "user disabled compliance check"},
-            "persisted": False,
-        }
-    else:
-        # Every produced ad is submitted to compliance before it is presented as
-        # final (Req 8.1). A failed generation still runs through the bridge, which
-        # records it as non-final. Pass product context to prevent hallucination (C1 fix).
-        try:
-            _ctx = gen_context or {}
-            compliance = await run_compliance_for_ad(
-                result,
-                project_id=project_id,
-                market=_ctx.get("market"),
-                product_name=_ctx.get("product_name"),
-                product_category=_ctx.get("product_category"),
-            )
-        except Exception as exc:  # noqa: BLE001 - compliance failure → non-final (Req 8.5)
-            logger.error(
-                "[Orchestrator] Compliance bridge failed for %s ad: %s", media_type, exc
-            )
-            compliance = {
-                "compliance_status": "non-final",
-                "compliance_result": {"error": str(exc)},
-                "persisted": False,
-        }
+    # Compliance is now a SEPARATE step (run from the compliance page).
+    # During generation, always mark as non-final to avoid slowing down ad creation.
+    compliance = {
+        "compliance_status": "non-final",
+        "compliance_result": {"skipped": True, "reason": "compliance runs separately after generation"},
+        "persisted": False,
+    }
 
     return GeneratedAdRef(
         ad_id=result.get("ad_id") or "",
@@ -627,7 +604,7 @@ async def run_generation(
     target_platform: Optional[str],
     current_state: dict,
     skip_compliance: bool = False,
-    video_v2: bool = False,
+    video_v3: bool = False,
     target_ethnicity: Optional[str] = None,
     age_group: Optional[str] = None,
     market: Optional[str] = None,
@@ -635,6 +612,7 @@ async def run_generation(
     product_name: Optional[str] = None,
     product_category: Optional[str] = None,
     gender: Optional[str] = None,
+    force_media_types: Optional[list[str]] = None,
 ) -> AsyncGenerator[str, None]:
     """Run the generation orchestration, streaming SSE lines.
 
@@ -668,8 +646,8 @@ async def run_generation(
         target_platform: The requested platform (defaults to Instagram).
         current_state: The task's prior canvas ``pipeline_state``.
         skip_compliance: When True, skip the compliance check (faster iteration).
-        video_v2: When True, video generation uses the multi-scene storyboard
-            pipeline (Director → keyframes → Veo clips → subtitles → transitions)
+        video_v3: When True, video generation uses the V3 Character Grid Pipeline
+            (Director → Character Sheet → Scene Grid → Veo first+last frame → Assemble)
             instead of the single-clip V1 path.
         target_ethnicity: Target audience for conditional localization
             (``malay``/``chinese``/``indian``/``all``). Halal rules apply only
@@ -718,9 +696,15 @@ async def run_generation(
 
     # 4. Detect intent (Req 4.1).
     yield _status_event("orchestrator", "in-progress", {"message": "Analyzing campaign channels..."})
-    detected = _detect_intent_step(user_message)
+    if force_media_types:
+        # Guided mode: bypass intent detection — we know exactly what to generate.
+        detected = [mt for mt in _MEDIA_ORDER if mt in force_media_types]
+        logger.info("[Orchestrator] Using forced media types: %s", detected)
+    else:
+        detected = _detect_intent_step(user_message)
 
     generated_ads: list[GeneratedAdRef] = []
+    v3_ran = False  # Track if V3 pipeline handled video (it emits its own pipeline_state)
 
     # 5a. No media type detected → request clarification, invoke no agent (Req 4.3).
     if not detected:
@@ -757,106 +741,34 @@ async def run_generation(
             )
 
             # Special path: Video V2 planning mode. Instead of running the whole
-            # (expensive) pipeline, plan the storyboard + keyframes and emit them
-            # for user review. Veo clips run later via the execute-plan endpoint
-            # when the user clicks "Continue".
-            if media_type == "video" and video_v2:
+            # V3 Grid Pipeline: Full character-consistent multi-scene video.
+            # Director → Character Sheet → Scene Grid → Slice → Veo first+last → Assemble.
+            # Each step emits its own canvas nodes via SSE.
+            if media_type == "video" and video_v3:
+                v3_ran = True
                 yield _status_event(
                     "video", "in-progress",
-                    {"message": "Director: planning storyboard & keyframes...", "phase": "planning"},
+                    {"message": "V3 Grid Pipeline: Director planning...", "phase": "v3_grid"},
                 )
                 try:
-                    plan = await video_v2_agent.plan_video(
+                    async for sse_line in video_v3_agent.run_grid_pipeline(
                         brief=_enrich_brief(user_message, gen_context),
                         project_id=project_id,
                         task_id=task_id,
-                        platform=platform,
-                        rules=rules,
-                        reference_parts=reference_parts,
-                        target_ethnicity=gen_context["target_ethnicity"],
-                    )
+                        character_description=gen_context.get("product_name", ""),
+                        product_description=gen_context.get("product_category", ""),
+                        video_duration_sec=30.0,
+                        width=1080,
+                        height=1920,
+                        target_ethnicity=gen_context.get("target_ethnicity", "all"),
+                    ):
+                        yield sse_line
                 except Exception as exc:  # noqa: BLE001
-                    logger.error("[Orchestrator] Video V2 planning failed: %s", exc)
+                    logger.error("[Orchestrator] V3 Grid Pipeline failed: %s", exc)
                     yield _status_event(
                         "video", "failed",
-                        {"media_type": "video", "error": str(exc), "phase": "planning_failed"},
+                        {"media_type": "video", "error": str(exc), "phase": "v3_failed"},
                     )
-                    continue
-                # Emit the plan for the canvas to render (scenes + keyframes +
-                # Continue button). No ad is produced yet.
-                yield _sse({"video_plan": plan})
-                yield _status_event(
-                    "video", "completed",
-                    {"phase": "planned", "plan_id": plan.get("plan_id"),
-                     "scene_count": len(plan.get("scenes") or []),
-                     "message": "Storyboard ready — review and click Continue to render the video."},
-                )
-
-                # Persist the plan onto the task's pipeline_state so it survives refresh (B3).
-                # Also add per-scene canvas nodes (E1) so the storyboard shows on the canvas.
-                try:
-                    from shared.supabase_client import update_task
-
-                    persisted_state = dict(current_state or {})
-                    persisted_state["video_plan"] = plan
-
-                    # E1: Build per-scene nodes for the canvas (like the storyboard reference image).
-                    scene_nodes: list[dict] = list(persisted_state.get("nodes") or [])
-                    scene_edges: list[dict] = list(persisted_state.get("edges") or [])
-
-                    # Create a director node that fans out to scene nodes.
-                    director_node_id = f"node-director-{plan.get('plan_id', uuid.uuid4().hex[:6])}"
-                    scene_nodes.append({
-                        "id": director_node_id,
-                        "type": "orchestrator",
-                        "x": 100,
-                        "y": 200,
-                        "label": "Director",
-                        "props": {"plan_id": plan.get("plan_id"), "scene_count": len(plan.get("scenes") or [])},
-                        "status": "done",
-                        "output": user_message,
-                        "error": None,
-                    })
-
-                    plan_scenes = plan.get("scenes") or []
-                    for i, scene_data in enumerate(plan_scenes):
-                        scene_node_id = f"node-scene-{i}-{plan.get('plan_id', '')[:6]}"
-                        scene_nodes.append({
-                            "id": scene_node_id,
-                            "type": "image",
-                            "x": 350 + (i % 3) * 220,
-                            "y": 80 + (i // 3) * 280,
-                            "label": f"Scene {i + 1}: {scene_data.get('shot_type', '')}",
-                            "props": {
-                                "shot_type": scene_data.get("shot_type", ""),
-                                "camera_movement": scene_data.get("camera_movement", ""),
-                                "subtitle": scene_data.get("subtitle", ""),
-                                "script": scene_data.get("script", ""),
-                                "sfx": scene_data.get("sfx", ""),
-                                "duration": str(scene_data.get("duration", "")),
-                                "description": scene_data.get("description", ""),
-                            },
-                            "status": "done",
-                            "output": scene_data.get("keyframe_url"),
-                            "error": None,
-                        })
-                        # Edge: director → scene
-                        scene_edges.append({
-                            "id": f"edge-dir-scene-{i}",
-                            "from": director_node_id,
-                            "to": scene_node_id,
-                        })
-
-                    persisted_state["nodes"] = scene_nodes
-                    persisted_state["edges"] = scene_edges
-
-                    update_task(project_id, task_id, "in_progress", persisted_state)
-                    logger.info("[Orchestrator] Persisted video_plan on task %s", task_id)
-                except Exception as pe:
-                    logger.warning("[Orchestrator] Failed to persist video_plan: %s", pe)
-
-                # Emit updated pipeline_state with scene nodes so the canvas updates in real-time.
-                yield _sse({"pipeline_state": persisted_state})
                 continue
 
             # Phase 2: Run the agent
@@ -883,32 +795,12 @@ async def run_generation(
                     media_type, "in-progress", {"message": f"{label}: Uploading to S3...", "phase": "uploaded"}
                 )
 
-            # Phase 3: Compliance check (if enabled)
-            if skip_compliance:
-                logger.info("[Orchestrator] Compliance skipped for %s ad (user toggle)", media_type)
-                compliance = {
-                    "compliance_status": "non-final",
-                    "compliance_result": {"skipped": True, "reason": "user disabled compliance check"},
-                    "persisted": False,
-                }
-            else:
-                yield _status_event(
-                    media_type, "in-progress", {"message": f"{label}: Running compliance check...", "phase": "compliance"}
-                )
-                try:
-                    compliance = await run_compliance_for_ad(
-                        result, project_id=project_id,
-                        market=gen_context.get("market"),
-                        product_name=gen_context.get("product_name"),
-                        product_category=gen_context.get("product_category"),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("[Orchestrator] Compliance bridge failed for %s: %s", media_type, exc)
-                    compliance = {
-                        "compliance_status": "non-final",
-                        "compliance_result": {"error": str(exc)},
-                        "persisted": False,
-                    }
+            # Compliance removed from generation flow — runs separately.
+            compliance = {
+                "compliance_status": "non-final",
+                "compliance_result": {"skipped": True, "reason": "compliance runs separately"},
+                "persisted": False,
+            }
 
             # Build the final ref
             ref = GeneratedAdRef(
@@ -950,14 +842,16 @@ async def run_generation(
         yield _sse({"error": f"chat persistence failed: {persist_error}"})
 
     # 7. Emit the final canvas state (Req 10.4).
-    pipeline_state = _build_pipeline_state(
-        user_message=user_message,
-        current_state=current_state or {},
-        generated_ads=generated_ads,
-    )
-    yield _sse({"pipeline_state": pipeline_state})
+    # Skip for V3 — it emits its own pipeline_state with V3-specific nodes.
+    if not v3_ran:
+        pipeline_state = _build_pipeline_state(
+            user_message=user_message,
+            current_state=current_state or {},
+            generated_ads=generated_ads,
+        )
+        yield _sse({"pipeline_state": pipeline_state})
     logger.info(
-        "[Orchestrator] Generation run complete (%d ad(s) produced)", len(generated_ads)
+        "[Orchestrator] Generation run complete (%d ad(s) produced, v3=%s)", len(generated_ads), v3_ran
     )
 
 
@@ -971,13 +865,11 @@ async def run_video_plan_execution(
     current_state: dict,
     skip_compliance: bool = False,
 ) -> AsyncGenerator[str, None]:
-    """Render an approved Video V2 plan into a final video, streaming SSE lines.
+    """Execute an approved video plan (V3 Grid or legacy V2).
 
-    This is the second half of the two-phase Video V2 flow. The user reviewed the
-    storyboard + keyframes produced by :func:`run_generation` (plan mode) and
-    clicked "Continue"; this runs the expensive Veo/ffmpeg step for the approved
-    (possibly edited) ``plan``, bridges the result to compliance, and emits the
-    updated ``pipeline_state`` so the canvas shows the finished video.
+    Detects the plan version and routes accordingly:
+    - V3 (pipeline_version: "v3_grid"): calls video_v3_agent.execute_production()
+    - Legacy V2: calls video_v2_agent.execute_video_plan() [if still available]
 
     Args:
         project_id: Owning project id.
@@ -987,11 +879,51 @@ async def run_video_plan_execution(
         skip_compliance: When True, skip the compliance check.
 
     Yields:
-        SSE ``data:`` lines: ``{node,status,data}`` progress, then
-        ``{pipeline_state}``.
+        SSE ``data:`` lines with progress and pipeline_state.
     """
+    pipeline_version = plan.get("pipeline_version", "v2")
+
+    if pipeline_version == "v3_grid":
+        # V3 Grid Pipeline — Stage 3: Execute Production
+        logger.info("[Orchestrator] Executing V3 Grid plan %s", plan.get("plan_id"))
+
+        yield _status_event(
+            "video", "in-progress",
+            {"message": "V3: Generating video clips with Veo (first+last frame)...", "phase": "v3_production"},
+        )
+
+        # Build the assets dict from the plan (frame_urls should be persisted on the plan)
+        assets = {
+            "plan_id": plan.get("plan_id"),
+            "frame_urls": plan.get("frame_urls", []),
+            "scenes": plan.get("scenes", []),
+        }
+
+        # If frame_urls not in plan directly, try to reconstruct from pipeline_state
+        if not assets["frame_urls"]:
+            # Look for frame_urls in the current state's node props
+            for node in (current_state.get("nodes") or []):
+                if node.get("props", {}).get("frame_urls"):
+                    assets["frame_urls"] = node["props"]["frame_urls"]
+                    break
+
+        if not assets["frame_urls"]:
+            yield _sse({"error": "No frame URLs found in plan — regenerate assets first"})
+            return
+
+        async for event in video_v3_agent.execute_production(
+            assets=assets,
+            project_id=project_id,
+            task_id=task_id,
+            brief=plan.get("product_integration", ""),
+        ):
+            yield event
+
+        return
+
+    # ── Legacy V2 path (fallback) ─────────────────────────────────────────
     logger.info(
-        "[Orchestrator] Executing Video V2 plan %s (project=%s, task=%s)",
+        "[Orchestrator] Executing Video plan %s (project=%s, task=%s)",
         plan.get("plan_id"), project_id, task_id,
     )
     platform = normalize_platform(plan.get("platform"))
@@ -1001,66 +933,7 @@ async def run_video_plan_execution(
         {"message": "Rendering approved scenes with Veo...", "phase": "generating"},
     )
 
-    try:
-        result = await video_v2_agent.execute_video_plan(
-            plan=plan,
-            project_id=project_id,
-            task_id=task_id,
-            platform=platform,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("[Orchestrator] Video V2 plan execution crashed: %s", exc)
-        yield _status_event("video", "failed", {"media_type": "video", "error": str(exc)})
-        return
-
-    # Bridge to compliance unless skipped.
-    if skip_compliance or result.get("status") != "completed":
-        compliance = {
-            "compliance_status": "non-final",
-            "compliance_result": {"skipped": True, "reason": "user disabled compliance check"}
-            if skip_compliance else {"error": "generation did not complete"},
-            "persisted": False,
-        }
-    else:
-        yield _status_event("video", "in-progress", {"message": "Running compliance check...", "phase": "compliance"})
-        try:
-            compliance = await run_compliance_for_ad(result, project_id=project_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("[Orchestrator] Compliance bridge failed for V2 plan: %s", exc)
-            compliance = {"compliance_status": "non-final", "compliance_result": {"error": str(exc)}, "persisted": False}
-
-    ref = GeneratedAdRef(
-        ad_id=result.get("ad_id") or "",
-        media_type="video",
-        platform=platform,
-        s3_media_key=result.get("s3_media_key"),
-        public_url=result.get("public_url"),
-        caption=result.get("caption"),
-        gen_status=result.get("status", "failed"),
-        compliance_status=compliance.get("compliance_status", "non-final"),
-        compliance_persisted=bool(compliance.get("persisted", False)),
-        compliance_reasons=summarize_reasons(compliance.get("compliance_result") or {}),
-    )
-
-    status = "completed" if ref["gen_status"] == "completed" else "failed"
-    yield _status_event(
-        "video", status,
-        {
-            "ad_id": ref["ad_id"],
-            "media_type": ref["media_type"],
-            "platform": ref["platform"],
-            "public_url": ref["public_url"],
-            "caption": ref["caption"],
-            "compliance_status": ref["compliance_status"],
-            "compliance_persisted": ref["compliance_persisted"],
-            "compliance_reasons": ref["compliance_reasons"],
-        },
-    )
-
-    pipeline_state = _build_pipeline_state(
-        user_message=plan.get("brief") or "Video V2",
-        current_state=current_state or {},
-        generated_ads=[ref],
-    )
-    yield _sse({"pipeline_state": pipeline_state})
-    logger.info("[Orchestrator] Video V2 plan execution complete (ad=%s)", ref["ad_id"])
+    # V2 is deprecated — if an old V2 plan somehow arrives, inform the user.
+    logger.warning("[Orchestrator] Legacy V2 plan received — V2 is deprecated, use V3")
+    yield _sse({"error": "Video V2 is deprecated. Please regenerate using V3 Grid Pipeline."})
+    return

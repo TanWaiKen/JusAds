@@ -184,21 +184,41 @@ async def get_task_detail(project_id: str, task_id: str) -> JSONResponse:
 
 @router.post("/projects/{project_id}/tasks")
 async def create_task(project_id: str, body: CreateTaskRequest) -> JSONResponse:
-    """Create a new task."""
+    """Create a new task. Copies generation_settings from the latest task in the project."""
     store = _get_store()
     if not store:
         return JSONResponse(status_code=503, content={"error": "Database unavailable"})
 
     try:
+        # Copy generation_settings from the most recent task in this project (project-level settings)
+        inherited_settings = {}
+        try:
+            from shared.clients import supabase as sb
+            latest = (
+                sb.table("tasks")
+                .select("pipeline_state")
+                .eq("project_id", project_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if latest.data:
+                ps = latest.data[0].get("pipeline_state") or {}
+                if isinstance(ps, dict) and "generation_settings" in ps:
+                    inherited_settings = ps["generation_settings"]
+        except Exception:
+            pass  # Non-fatal — new task just won't have pre-filled settings
+
+        initial_pipeline = {"nodes": [], "edges": [], "viewport": {"panX": 0, "panY": 0, "zoom": 1}}
+        if inherited_settings:
+            initial_pipeline["generation_settings"] = inherited_settings
+
         task = store.create_task(
             project_id=project_id,
             task_type=body.type,
             status="created",
             summary=f"New {body.type} task",
-            pipeline_state=(
-                {"nodes": [], "edges": [], "viewport": {"panX": 0, "panY": 0, "zoom": 1}}
-                if body.type == "generation" else None
-            ),
+            pipeline_state=initial_pipeline if body.type == "generation" else None,
         )
         return JSONResponse(status_code=201, content=task)
     except Exception as e:

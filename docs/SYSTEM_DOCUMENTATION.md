@@ -21,6 +21,10 @@
 10. [Test Cases](#10-test-cases)
 11. [Before vs After Comparison](#11-before-vs-after-comparison)
 12. [Future Plan](#12-future-plan)
+13. [Intelligent Remediation Engine](#13-intelligent-remediation-engine-implemented)
+14. [V3 Character Grid Video Pipeline](#14-v3-character-grid-video-pipeline-implemented)
+15. [Dual Output System](#15-dual-output-system-implemented)
+16. [Background Task Architecture](#16-background-task-architecture-implemented)
 
 ---
 
@@ -1081,24 +1085,26 @@ Browser          Frontend          Backend API        AI Router         Remediat
 
 ---
 
-## 13. Next Major Feature: Intelligent Remediation Engine
+## 13. Intelligent Remediation Engine (Implemented)
 
 ### Overview
 
-Enhance post-generation editing with AI-driven tool routing. Instead of always re-generating (slow + expensive), the system intelligently picks the right editing approach:
+AI-driven post-generation editing with intelligent tool routing. Instead of always re-generating (slow + expensive), the system classifies violation severity and picks the cheapest/fastest tool that can fix the issue.
 
 ### Architecture: AI Tool Router
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │              Remediation Request                           │
-│  "Fix the non-compliant segments" / "Change the text"     │
+│  (from compliance verdict: REMEDIATE)                     │
 └────────────────────────┬─────────────────────────────────┘
                          │
                          ▼
               ┌─────────────────────┐
               │   AI Tool Router    │
-              │   (Gemini decides)  │
+              │   (Gemini 2.5 Flash │
+              │   classifies + picks│
+              │   cheapest tool)    │
               └──────────┬──────────┘
                          │
          ┌───────────────┼───────────────┐
@@ -1106,66 +1112,197 @@ Enhance post-generation editing with AI-driven tool routing. Instead of always r
          ▼               ▼               ▼
    ┌───────────┐  ┌───────────┐  ┌───────────┐
    │  MINOR    │  │  MODERATE │  │  MAJOR    │
-   │  (Edit)   │  │  (Remix)  │  │  (Regen)  │
+   │  (≤40%)   │  │  (41-70%) │  │  (>70%)   │
    └─────┬─────┘  └─────┬─────┘  └─────┬─────┘
          │               │               │
          ▼               ▼               ▼
    ┌───────────┐  ┌───────────┐  ┌───────────┐
-   │ CapCut API│  │ ElevenLabs│  │  Veo/     │
-   │ (video)   │  │ Dubbing   │  │  Imagen   │
-   │ Inpaint   │  │ (audio)   │  │  (full    │
-   │ (image)   │  │ Rewrite   │  │   regen)  │
-   │ Rewrite   │  │ (text)    │  │           │
-   │ (text)    │  │           │  │           │
+   │CapCut trim│  │ Voice clone│  │  Veo/     │
+   │ Inpaint   │  │ Scene repl │  │  Imagen   │
+   │ Dub seg   │  │ Imagen     │  │  full     │
+   │ Rewrite   │  │ constrained│  │  regen    │
    └───────────┘  └───────────┘  └───────────┘
 ```
 
-### Decision Logic
+### Decision Matrix (16 tools)
 
 | Severity | Video | Image | Audio | Text |
 |----------|-------|-------|-------|------|
-| **Minor** (subtitle fix, small area) | CapCut: add/edit text overlay | Inpaint: mask + regenerate area | ElevenLabs: re-dub specific segment | Gemini: rewrite flagged phrase |
-| **Moderate** (scene change, tone shift) | CapCut: trim + replace scene + re-transition | Imagen: regenerate with constraints | ElevenLabs: voice clone + full re-read | Gemini: full copy rewrite |
-| **Major** (complete redo needed) | Veo: re-generate from keyframe | Imagen: full regeneration | ElevenLabs: new VO from scratch | Gemini: complete new copy |
+| **Minor** | CapCut text overlay, trim, speed ramp, transition | Inpaint area | ElevenLabs dub segment, SFX replace | Gemini rewrite phrase |
+| **Moderate** | CapCut scene replace | Imagen constrained | Voice clone re-read | Gemini full rewrite |
+| **Major** | Veo regenerate | Imagen full regen | New VO from scratch | Gemini new copy |
 
-### Audio Remediation Plan (ElevenLabs)
+### Implementation Modules
 
-| Capability | API | Use Case |
-|-----------|-----|----------|
-| **Voice Cloning** | `POST /v1/voices/add` | Clone the brand's voice for consistent future ads |
-| **Dubbing** | `POST /v1/dubbing` | Re-dub specific segments with the cloned voice |
-| **Text-to-Speech** | `POST /v1/text-to-speech/{voice_id}` | Generate replacement narration |
-| **Sound Effects** | `POST /v1/sound-generation` | Replace/add ambient SFX |
-| **Audio Isolation** | `POST /v1/audio-isolation` | Extract voice from background for editing |
+| Module | Purpose |
+|--------|---------|
+| `jusads_compliance/tool_router.py` | AI severity classification + tool selection (Gemini + heuristic fallback) |
+| `jusads_compliance/capcut_client.py` | pyCapCut draft generation (1120 transitions) + FFmpeg rendering |
+| `jusads_compliance/voice_clone_manager.py` | Persistent brand voice cloning via ElevenLabs |
+| `jusads_compliance/remediation_executor.py` | Orchestrates sequential tool execution from routing decision |
 
-**Ref:** https://elevenlabs.io/docs/eleven-api/guides/cookbooks
+### API Endpoints
 
-### Video Remediation Plan (CapCut API)
-
-| Capability | Use Case |
-|-----------|----------|
-| **Add text overlay** | Fix/add subtitles, CTAs |
-| **Trim/cut** | Remove non-compliant segment |
-| **Speed ramp** | Adjust pacing of specific scenes |
-| **Replace audio** | Swap voiceover/music bed |
-| **Add transitions** | Smooth scene changes |
-| **Filter/color grade** | Match brand aesthetic |
-| **Template apply** | Apply CapCut template to raw footage |
-
-**Ref:** https://github.com/ashreo/CapCutAPI (Open CapCut API)
-
-### Implementation Phases
-
-| Phase | Scope | Effort |
-|-------|-------|--------|
-| R1 | AI Tool Router — Gemini classifies severity + picks tool | 1 sprint |
-| R2 | ElevenLabs voice cloning + per-segment dubbing | 1 sprint |
-| R3 | CapCut API integration for video editing (text, trim, transitions) | 2 sprints |
-| R4 | Unified remediation UI (show before/after, approve changes) | 1 sprint |
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/compliance/{check_id}/smart-remediate` | AI-driven remediation (SSE stream) |
+| GET | `/api/compliance/{check_id}/routing-preview` | Preview tool routing without executing |
+| POST | `/api/compliance/{check_id}/clone-voice` | Clone brand voice from audio sample |
 
 ### Key Design Decisions
 
-1. **AI decides the tool** — the user doesn't pick CapCut vs Veo; the AI analyzes what needs fixing and routes to the cheapest/fastest option that can handle it.
-2. **Voice cloning is persistent** — once you clone your brand voice, it's stored and reused across all future ads (no re-cloning needed).
-3. **CapCut for edits, Veo for generation** — CapCut handles post-production (what an editor would do); Veo handles raw content creation (what a camera would do).
-4. **Remediation is non-destructive** — original is always preserved; the edit creates a new version linked via `parent_ad_id`.
+1. **AI decides the tool** — the user doesn't pick CapCut vs Veo; the AI analyzes what needs fixing and routes to the cheapest option.
+2. **Voice cloning is persistent** — clone once per project, reuse across all future audio remediation.
+3. **Dual output** — FFmpeg renders instant .mp4 + pyCapCut creates editable draft for CapCut desktop.
+4. **Non-destructive** — original is always preserved; edits create a new version.
+5. **Heuristic fallback** — when Gemini is unavailable, deterministic risk% thresholds route to appropriate tools (confidence: 0.5).
+
+---
+
+## 14. V3 Character Grid Video Pipeline (Implemented)
+
+### Overview
+
+AI-directed multi-scene video production with character consistency. Replaces V2 (legacy storyboard) with a more sophisticated pipeline that uses Veo's first+last frame mode for smooth inter-scene motion.
+
+### Pipeline Flow (each step = visible canvas node)
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐
+│ Node 0:     │     │ Node 1:      │     │ Node 2:      │     │ Node 3:     │
+│ DIRECTOR    │────▶│ CHARACTER    │────▶│ SCENE GRID   │────▶│ GRID SLICER │
+│ (Gemini     │     │ SHEET        │     │ (NxM panels) │     │ (PIL split) │
+│  plans      │     │ (Imagen 4)   │     │ (Imagen 4)   │     │             │
+│  scenes)    │     │              │     │              │     │             │
+└─────────────┘     └──────────────┘     └──────────────┘     └──────┬──────┘
+                                                                      │
+         ┌────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────┐     ┌──────────────┐     ┌──────────────────────┐
+│ Nodes 4-N:              │     │ Node N+1:    │     │ Node N+2:            │
+│ VEO I2V (first+last     │────▶│ AI EDITOR    │────▶│ ASSEMBLER            │
+│ frame pairs)            │     │ (Gemini      │     │ (FFmpeg .mp4 +       │
+│ clip[0]: frame[0]→[1]  │     │  plans edits)│     │  pyCapCut draft)     │
+│ clip[1]: frame[1]→[2]  │     │              │     │                      │
+│ ...                     │     │              │     │                      │
+└─────────────────────────┘     └──────────────┘     └──────────────────────┘
+```
+
+### Dynamic Scene Count (based on video duration)
+
+| Video Length | Keyframes | Clips | Grid Layout |
+|---|---|---|---|
+| 15s | 4 | 3 | 2×2 |
+| 30s | 6 | 5 | 3×2 |
+| 45s | 8 | 7 | 3×3 |
+| 60s | 11 | 10 | 4×3 |
+
+### Key Innovation: Veo First + Last Frame
+
+Instead of generating each clip independently (causing character inconsistency), V3 uses Veo's first-and-last-frame mode:
+
+- **Clip 1**: `frame[0]` as start, `frame[1]` as end → Veo interpolates motion
+- **Clip 2**: `frame[1]` as start, `frame[2]` as end → seamless transition
+- **Result**: Character stays consistent across all scenes (same clothing, features, style)
+
+### Modules
+
+| Module | Purpose |
+|--------|---------|
+| `jusads_generation/agents/video_v3_grid.py` | Full pipeline: Director → Character → Grid → Slice → Veo → Assemble |
+| `jusads_generation/agents/video_assembler.py` | AI Edit Planner + FFmpeg assembly + CapCut draft creation |
+| `docs/prompts/character_setting.md` | Prompt template for character turnaround sheets |
+| `docs/prompts/scene_grid.md` | Prompt template for dynamic NxM scene grids |
+
+---
+
+## 15. Dual Output System (Implemented)
+
+### Overview
+
+Every video generation produces TWO outputs simultaneously:
+
+1. **FFmpeg → instant .mp4** — viewable immediately in the Output Gallery
+2. **pyCapCut → editable CapCut draft** — user opens in CapCut desktop for fine-tuning
+
+### Architecture
+
+```
+AI generates scenes → AI Editor decides edits → Both renderers execute:
+
+┌────────────────────┐     ┌─────────────────────────────────┐
+│ FFmpeg Renderer     │     │ pyCapCut Draft Generator         │
+│                     │     │                                  │
+│ • Crossfade/xfade  │     │ • 1120 transition types          │
+│ • drawtext subs    │     │ • Animated text intros/outros    │
+│ • Speed ramp       │     │ • Video effects & filters        │
+│ • Audio mix        │     │ • Sticker & keyframe support     │
+│                     │     │ • Full NLE timeline              │
+│ Output: .mp4 file  │     │ Output: CapCut project folder    │
+└────────────────────┘     └─────────────────────────────────┘
+         │                              │
+         ▼                              ▼
+┌────────────────────┐     ┌─────────────────────────────────┐
+│ Shown in Output    │     │ "Open in CapCut" button          │
+│ Gallery instantly   │     │ User opens in CapCut desktop     │
+│                     │     │ and exports at full quality      │
+└────────────────────┘     └─────────────────────────────────┘
+```
+
+### Technology
+
+| Component | Library | Features |
+|-----------|---------|----------|
+| FFmpeg | System binary | Renders .mp4 immediately, cross-platform |
+| pyCapCut | `pip install pycapcut` (v0.0.3) | CapCut draft format, 1120 transitions, text animations |
+| pyJianYingDraft | Fallback (JianYing Chinese version) | Same API, 451 transitions |
+
+### AI Edit Planner
+
+The AI (Gemini) analyzes each scene and decides **what edits to apply** — the user doesn't choose manually:
+
+- **Transition type** per scene (crossfade, fade_black, wipe_left, zoom_in, cut)
+- **Speed factor** (1.0 normal, 1.2 for energy in hooks, 0.8 for slow-mo drama)
+- **Text overlay** position and timing (immediate, delayed, last 2 seconds)
+- **Text position** (bottom for subtitles, center for CTA, top for hooks)
+
+---
+
+## 16. Background Task Architecture (Implemented)
+
+### Problem Solved
+
+Previously, the generation pipeline was tied to the SSE HTTP connection. If the user navigated away mid-generation, the pipeline stopped and no outputs were produced.
+
+### Solution
+
+Generation now runs as an independent `asyncio.create_task()`:
+
+```
+┌───────────┐        ┌──────────────┐        ┌──────────────┐
+│  Frontend │──SSE──▶│ Queue Reader │◀──queue──│ Background   │
+│  (client) │        │ (can drop)   │          │ Task         │
+└───────────┘        └──────────────┘          │ (keeps       │
+                                               │  running!)   │
+     User navigates away?                      └──────┬───────┘
+     ↓ No problem.                                    │
+     Task continues...                                ▼
+                                               ┌──────────────┐
+                                               │  Supabase    │
+                                               │  (incremental│
+                                               │   persist)   │
+                                               └──────────────┘
+```
+
+### Key Behaviors
+
+- **Incremental persistence**: `pipeline_state` saved after EACH media agent completes (not just at the end)
+- **Node rebuild on return**: When user comes back, canvas nodes are rebuilt from persisted `generated_ads`
+- **Graceful disconnect**: `asyncio.CancelledError` caught without stopping background task
+- **Keep-alive pings**: SSE sends `{"type": "ping"}` every 120s to prevent proxy timeouts
+
+---
+
+*End of documentation.*
+

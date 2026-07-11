@@ -98,9 +98,7 @@ class ComplianceCheck:
     """Maps to public.compliance_checks table.
 
     Columns:
-      id               uuid  PK  (auto-generated)
-      check_id         text  UNIQUE  NOT NULL
-      user_email       text  NOT NULL
+      task_id          uuid  PK + FK -> tasks.id
       project_id       uuid  FK -> projects.id
       media_type       text  NOT NULL  ('text'|'image'|'audio'|'video')
       market           text  NOT NULL
@@ -117,8 +115,7 @@ class ComplianceCheck:
       updated_at       timestamptz  DEFAULT now()
     """
 
-    check_id: str
-    user_email: str
+    task_id: str
     project_id: str
     media_type: str
     market: str
@@ -131,7 +128,6 @@ class ComplianceCheck:
     s3_upload_key: Optional[str] = None
     s3_segmented_key: Optional[str] = None
     s3_remix_key: Optional[str] = None
-    id: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -142,7 +138,7 @@ class Violation:
 
     Columns:
       id               uuid  PK  (auto-generated)
-      check_id         text  FK -> compliance_checks.check_id
+      task_id          uuid  FK -> compliance_checks.task_id
       violation_index  integer  NOT NULL
       type             text  NOT NULL
       severity         text  NOT NULL
@@ -153,7 +149,7 @@ class Violation:
       created_at       timestamptz  DEFAULT now()
     """
 
-    check_id: str
+    task_id: str
     violation_index: int
     type: str
     severity: str
@@ -175,7 +171,6 @@ class Task:
       type            text  NOT NULL  ('compliance'|'generation')
       status          text  NOT NULL
       summary         text
-      reference_id    text
       pipeline_state  jsonb
       created_at      timestamptz  DEFAULT now()
       updated_at      timestamptz  DEFAULT now()
@@ -185,7 +180,6 @@ class Task:
     type: str
     status: str
     summary: Optional[str] = None
-    reference_id: Optional[str] = None
     pipeline_state: Optional[dict] = None
     id: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -217,7 +211,7 @@ class Compliance_State(TypedDict):
     result: dict
     status: str                  # "pending" | "checked" | "pass" | "critical_regen" | "remediate"
     user_prompt_context: str     # additional campaign/creative brief details (up to 2000 chars)
-    check_id: str
+    task_id: str
     remediated_path: str
     remix_iteration: int
 
@@ -229,7 +223,7 @@ class Remediation_State(TypedDict):
     the Compliance Pipeline only via the compliance_checks table.
     """
 
-    check_id: str
+    task_id: str
     media_type: str              # "text" | "image" | "audio" | "video"
     source_media_url: str
     compliance_result: dict
@@ -263,7 +257,7 @@ class ComplianceState:
     result: dict = field(default_factory=dict)
     status: str = "pending"
     user_prompt_context: str = ""
-    check_id: str = ""
+    task_id: str = ""
     remediated_path: str = ""
     remix_iteration: int = 0
 
@@ -353,8 +347,7 @@ class CheckRecord(BaseModel):
     Used by the Supabase client and API layer for JSON (de)serialization.
     """
 
-    check_id: str
-    user_email: str
+    task_id: uuid.UUID
     project_id: uuid.UUID
     media_type: str
     market: str
@@ -374,7 +367,7 @@ class CheckRecord(BaseModel):
 class ViolationRecord(BaseModel):
     """Pydantic model for serialization of a violations row."""
 
-    check_id: str
+    task_id: uuid.UUID
     violation_index: int
     type: str
     severity: str
@@ -400,7 +393,6 @@ class TaskRecord(BaseModel):
     type: str
     status: str
     summary: Optional[str] = None
-    reference_id: Optional[str] = None
     pipeline_state: Optional[dict] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

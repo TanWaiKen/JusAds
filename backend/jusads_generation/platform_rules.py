@@ -134,7 +134,7 @@ def resolve_rule(platform: str, media_type: MediaType) -> PlatformRule:
         response = (
             supabase.table("platform_rules")
             .select("platform, media_type, aspect_ratio, max_duration_seconds, additional_rules")
-            .eq("platform", platform)
+            .ilike("platform", platform)
             .eq("media_type", media_type)
             .limit(1)
             .execute()

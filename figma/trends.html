@@ -3,385 +3,495 @@
 <html class="light" lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>JusAds - Trends Dashboard</title>
+<title>JusAds | Trend Intelligence Dashboard</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-    tailwind.config = {
-      darkMode: "class",
-      theme: {
-        extend: {
-          "colors": {
-            "text-muted": "#666666",
-            "on-secondary-container": "#fefcff",
-            "on-primary-fixed-variant": "#474746",
-            "error-container": "#ffdad6",
-            "secondary": "#0057c0",
-            "primary-fixed": "#e5e2e1",
-            "on-secondary": "#ffffff",
-            "aurora-purple": "#7928ca",
-            "on-primary": "#ffffff",
-            "primary": "#000000",
-            "on-primary-fixed": "#1c1b1b",
-            "on-primary-container": "#858383",
-            "surface-bright": "#f9f9f9",
-            "surface-variant": "#e2e2e2",
-            "on-surface": "#1a1c1c",
-            "secondary-fixed-dim": "#aec6ff",
-            "inverse-on-surface": "#f0f1f1",
-            "on-secondary-fixed-variant": "#004397",
-            "error": "#ba1a1a",
-            "surface-container-high": "#e8e8e8",
-            "on-error-container": "#93000a",
-            "ship-red": "#ee0000",
-            "primary-container": "#1c1b1b",
-            "tertiary-fixed-dim": "#ffb1c5",
-            "on-tertiary-fixed-variant": "#8f0045",
-            "surface-container-highest": "#e2e2e2",
-            "inverse-surface": "#2f3131",
-            "text-secondary": "#4d4d4d",
-            "on-background": "#1a1c1c",
-            "outline": "#747878",
-            "cosmic-pink": "#ff0080",
-            "tertiary-fixed": "#ffd9e1",
-            "on-secondary-fixed": "#001a43",
-            "primary-fixed-dim": "#c8c6c5",
-            "on-tertiary": "#ffffff",
-            "tertiary": "#000000",
-            "outline-variant": "#c4c7c7",
-            "on-error": "#ffffff",
-            "surface-container-lowest": "#ffffff",
-            "emerald-glow": "#50e3c2",
-            "on-tertiary-container": "#ef3982",
-            "surface": "#f9f9f9",
-            "secondary-container": "#006ff0",
-            "background": "#f9f9f9",
-            "surface-dim": "#dadada",
-            "bg-dark": "#0a0a0f",
-            "on-tertiary-fixed": "#3f001b",
-            "secondary-fixed": "#d8e2ff",
-            "tertiary-container": "#3f001b",
-            "surface-tint": "#5f5e5e",
-            "text-primary": "#171717",
-            "surface-container": "#eeeeee",
-            "surface-container-low": "#f3f3f4",
-            "on-surface-variant": "#444748",
-            "inverse-primary": "#c8c6c5"
-          },
-          "borderRadius": {
-            "DEFAULT": "0.25rem",
-            "lg": "0.5rem",
-            "xl": "0.75rem",
-            "full": "9999px"
-          },
-          "spacing": {
-            "stack-md": "16px",
-            "stack-sm": "8px",
-            "stack-lg": "32px",
-            "max-content-width": "1200px",
-            "margin-page": "40px",
-            "sidebar-width": "240px",
-            "gutter": "24px"
-          },
-          "fontFamily": {
-            "headline-sm": ["Hanken Grotesk"],
-            "code-xs": ["JetBrains Mono"],
-            "body-lg": ["Hanken Grotesk"],
-            "headline-md": ["Hanken Grotesk"],
-            "body-md": ["Hanken Grotesk"],
-            "label-ui": ["Hanken Grotesk"],
-            "headline-lg": ["Hanken Grotesk"],
-            "code-sm": ["JetBrains Mono"]
-          },
-          "fontSize": {
-            "headline-sm": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
-            "code-xs": ["11px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}],
-            "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
-            "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
-            "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
-            "label-ui": ["14px", {"lineHeight": "1", "fontWeight": "500"}],
-            "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "600"}],
-            "code-sm": ["13px", {"lineHeight": "1.4", "fontWeight": "400"}]
-          }
-        },
-      },
-    }
-  </script>
 <style>
-    .material-symbols-outlined {
-      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-    }
-    .shadow-retina {
-      box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
-    }
-    .card-shadow {
-      box-shadow: 0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.04);
-    }
-    .aurora-border-active {
-      position: relative;
-    }
-    .aurora-border-active::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      border-radius: inherit;
-      padding: 1px;
-      background: linear-gradient(to right, #0070f3, #7928ca, #ff0080);
-      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
-      pointer-events: none;
-    }
-  </style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+            font-size: 20px;
+        }
+        .shadow-retina {
+            box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.05);
+        }
+        .aurora-gradient {
+            background: linear-gradient(135deg, #171717 0%, #45464d 100%);
+        }
+        .aurora-border-active {
+            position: relative;
+        }
+        .aurora-border-active::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 25%;
+            height: 50%;
+            width: 2px;
+            background: #171717;
+        }
+        body {
+            font-family: 'Hanken Grotesk', sans-serif;
+            background-color: #f9f9f9;
+            color: #171717;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #dadada;
+            border-radius: 10px;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary": "#171717",
+                        "on-primary": "#ffffff",
+                        "surface": "#f9f9f9",
+                        "surface-dim": "#dadada",
+                        "surface-bright": "#f9f9f9",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f3f3f4",
+                        "surface-container": "#eeeeee",
+                        "surface-container-high": "#e8e8e8",
+                        "surface-container-highest": "#e2e2e2",
+                        "outline": "#747878",
+                        "outline-variant": "#c4c7c7",
+                        "on-surface": "#1a1c1c",
+                        "on-surface-variant": "#444748",
+                        "secondary": "#0057c0",
+                        "tertiary": "#cf5497",
+                        "error": "#ba1a1a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "8px",
+                        "lg": "8px",
+                        "xl": "12px",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "stack-md": "16px",
+                        "stack-lg": "32px",
+                        "gutter": "24px",
+                        "margin-page": "40px",
+                        "sidebar-width": "240px",
+                        "max-content-width": "1200px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "headline-sm": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "label-ui": ["Hanken Grotesk"],
+                        "trend-score": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "600"}],
+                        "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "headline-sm": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "label-ui": ["14px", {"lineHeight": "1", "fontWeight": "500"}]
+                    }
+                },
+            },
+        }
+    </script>
 </head>
-<body class="bg-background font-body-md text-text-primary">
-<!-- Side Navigation -->
-<aside class="fixed left-0 top-0 h-full w-[240px] bg-surface-container-low flex flex-col py-6 z-50">
-<div class="px-6 mb-8">
-<h1 class="font-headline-sm text-headline-sm font-black text-primary">JusAds</h1>
-<p class="font-label-ui text-label-ui text-text-muted">Marketing Engine</p>
+<body class="bg-surface-bright text-on-surface antialiased">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-full w-sidebar-width bg-surface-bright shadow-retina flex flex-col py-stack-lg border-r border-outline-variant/30 z-50">
+<div class="px-6 mb-8 flex items-center gap-2">
+<div class="w-8 h-8 aurora-gradient rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[20px]" style="font-variation-settings: 'FILL' 1;">analytics</span>
 </div>
-<nav class="flex-1 flex flex-col">
-<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
-<span class="material-symbols-outlined">home</span>
-<span class="font-label-ui text-label-ui">Home</span>
+<span class="font-headline-sm text-[20px] font-black text-primary">JusAds</span>
+</div>
+<div class="px-4 mb-6">
+<button class="w-full py-2.5 px-4 bg-primary text-on-primary rounded-lg font-label-ui flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-[0.98]">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Project
+            </button>
+</div>
+<nav class="flex-1 overflow-y-auto px-2 space-y-1">
+<div class="px-4 py-2">
+<span class="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant/50">Intelligence</span>
+</div>
+<a class="flex items-center gap-3 py-2 px-4 rounded-lg bg-surface-container-low aurora-border-active transition-all" href="#">
+<span class="material-symbols-outlined text-primary">dashboard</span>
+<span class="font-label-ui text-primary font-bold">Dashboard</span>
 </a>
-<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
-<span class="material-symbols-outlined">person</span>
-<span class="font-label-ui text-label-ui">Profile</span>
+<a class="flex items-center gap-3 py-2 px-4 rounded-lg hover:bg-surface-container-low transition-all group" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">public</span>
+<span class="font-label-ui text-on-surface-variant group-hover:text-primary">Global Trends</span>
 </a>
-<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
-<span class="material-symbols-outlined">ads_click</span>
-<span class="font-label-ui text-label-ui">Campaigns</span>
+<a class="flex items-center gap-3 py-2 px-4 rounded-lg hover:bg-surface-container-low transition-all group" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">movie</span>
+<span class="font-label-ui text-on-surface-variant group-hover:text-primary">Industry Intel</span>
 </a>
-<!-- Active Link: Trends -->
-<a class="flex items-center gap-3 px-4 py-2 text-primary bg-surface-container-highest font-semibold border-l-2 border-primary" href="#">
-<span class="material-symbols-outlined">trending_up</span>
-<span class="font-label-ui text-label-ui">Trends</span>
-</a>
-<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
-<span class="material-symbols-outlined">inventory_2</span>
-<span class="font-label-ui text-label-ui">Assets</span>
-</a>
-<a class="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-primary hover:bg-surface-container-high transition-colors duration-200" href="#">
-<span class="material-symbols-outlined">gavel</span>
-<span class="font-label-ui text-label-ui">Compliance</span>
+<a class="flex items-center gap-3 py-2 px-4 rounded-lg hover:bg-surface-container-low transition-all group" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">folder_special</span>
+<span class="font-label-ui text-on-surface-variant group-hover:text-primary">Projects</span>
 </a>
 </nav>
+<div class="mt-auto pt-6 border-t border-outline-variant/20 px-2 space-y-1">
+<a class="flex items-center gap-stack-sm text-on-surface-variant hover:text-primary hover:bg-surface-container-low py-2 px-4 rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-label-ui">Help</span>
+</a>
+<div class="mt-6 px-4 py-4 bg-surface-container-low rounded-xl mx-2 shadow-retina flex items-center gap-3">
+<img alt="User Profile" class="w-8 h-8 rounded-full bg-white object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBoK9KzYnYxZxv_2K_zKokj5URRowcYe2GyKJH6zH1O0HTVYR4TWRMI_DqHcCCzeYUdaOWpqnESqzOWVdcSSBTsgWDrMmhtbXpUzMZzMX4RlDGRLwZ57eWk-xUQF_yG0m8Wbrp9CQKpYyzfTez_l6ZciaHB3pYPW3zUh_QBHqnsncyp-xkA_dGLyqMvhCCdYbJ9IdbIpGVE8zV3OwF_jGs2ZFmFBgDFE57hMpHN4YshqohXK-kZ7a5tiN3c4q7DpV6YsEg-Zh9N5ss"/>
+<div class="flex flex-col overflow-hidden">
+<span class="font-label-ui font-bold text-primary truncate">Alex Rivera</span>
+<span class="text-[11px] text-on-surface-variant truncate">alex@jusads.io</span>
+</div>
+</div>
+</div>
 </aside>
-<!-- Main Content Wrapper -->
-<main class="ml-[240px] min-h-screen flex flex-col">
-<!-- Top Navigation -->
-<header class="sticky top-0 right-0 z-40 bg-surface/80 backdrop-blur-md flex justify-end items-center h-16 px-8 shadow-[0px_1px_0px_0px_rgba(0,0,0,0.08)]">
+<!-- Top AppBar -->
+<header class="sticky top-0 z-40 w-full bg-surface-bright/80 backdrop-blur-md border-b border-outline-variant/20 h-16 ml-sidebar-width flex items-center justify-between px-margin-page">
 <div class="flex items-center gap-4">
-<button class="text-text-muted hover:opacity-70 transition-opacity p-2 rounded-full">
-<span class="material-symbols-outlined">logout</span>
+<div class="flex items-center gap-2 text-on-surface-variant font-label-ui">
+<span>Projects</span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<span class="text-primary font-bold">Trend Intelligence</span>
+</div>
+</div>
+<div class="flex items-center gap-gutter">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-surface-container-low border-none rounded-full text-label-ui w-64 focus:ring-2 focus:ring-primary/10 transition-all outline-none" placeholder="Search trends, events..." type="text"/>
+</div>
+<div class="flex items-center gap-2">
+<button class="hover:bg-surface-container-low rounded-full p-2 transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-tertiary rounded-full"></span>
 </button>
-<div class="w-8 h-8 rounded-full overflow-hidden shadow-retina bg-surface-variant">
-<img alt="User Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBF_3ZmGyg293HFw_px2FjzhE0jo20y5FVJONopKA5N4rH863YtZVFBNbZWzWx93aLa-TOfuy6TuDwgtQwbA0A4rcVeeN0tPqtX9u2nOfHQJEaFWYn3MZTtnad3M624-mLn7-72BtoeF72xyi3ZQUvnfXIFx-_8wqJ4qHYtFh4ayHyfeqnzI4fb9A89ne8_NKmMDsYQTieS4IzY8OkXqJU-PY4JJXR5D56CAUDsyV_jY56WtqPf85prIBxhxUe1idF0ynT63UvSA7Y"/>
+<button class="hover:bg-surface-container-low rounded-full p-2 transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
 </div>
 </div>
 </header>
-<div class="p-margin-page max-w-max-content-width mx-auto w-full">
-<!-- Section 1: Onboarding State (Always present as top banner in this view for demonstration) -->
-<section class="mb-stack-lg p-8 bg-surface shadow-retina rounded-xl flex items-center justify-between gap-8 border-l-4 border-secondary">
+<!-- Main Content -->
+<main class="ml-sidebar-width min-h-[calc(100vh-64px)] p-margin-page">
+<div class="max-w-max-content-width mx-auto">
+<!-- Hero Header Section -->
+<div class="mb-stack-lg animate-in fade-in slide-in-from-bottom-4 duration-700">
+<div class="flex items-center gap-2 mb-3">
+<span class="bg-primary text-on-primary px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase">Live Feed</span>
+<span class="text-on-surface-variant text-[12px]">Updated 2 minutes ago</span>
+</div>
+<h1 class="font-headline-md text-headline-md text-primary mb-2">Trend Velocity: High Market Flux Detected</h1>
+<p class="text-body-md text-on-surface-variant max-w-2xl mb-stack-md">
+                    Our Engine has identified a 22% spike in F&amp;B interest overlapping with festive planning. 
+                    Recommendation: Pivot social ad spend to festive-food cross-overs.
+                </p>
+<div class="flex gap-stack-md">
+<button class="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-ui hover:shadow-lg transition-all flex items-center gap-2">
+                        Explore Spikes
+                        <span class="material-symbols-outlined text-[18px]">bolt</span>
+</button>
+<button class="bg-surface-container-low text-primary px-6 py-2 rounded-lg font-label-ui hover:bg-surface-container-high transition-all">
+                        View Detailed Report
+                    </button>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-gutter">
+<!-- Left Column: Calendar & Synergy -->
+<div class="md:col-span-8 space-y-gutter">
+<!-- Contextual Calendar Card -->
+<div class="bg-white p-stack-lg rounded-xl shadow-retina border border-outline-variant/10">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-headline-sm flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">calendar_month</span>
+                                Contextual Event Calendar
+                            </h3>
+<div class="flex gap-1">
+<button class="p-1 hover:bg-surface-container-low rounded-lg transition-colors"><span class="material-symbols-outlined text-[18px]">chevron_left</span></button>
+<button class="p-1 hover:bg-surface-container-low rounded-lg transition-colors"><span class="material-symbols-outlined text-[18px]">chevron_right</span></button>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-stack-md">
+<div class="p-4 rounded-lg bg-surface-container-low border-l-4 border-primary hover:bg-surface-container transition-colors cursor-pointer group">
+<span class="text-[11px] font-bold text-primary uppercase block mb-1">Jan 22 - Feb 5</span>
+<h4 class="font-bold text-body-md mb-2">Chinese New Year</h4>
+<div class="flex flex-wrap gap-1 mb-3">
+<span class="text-[10px] bg-white border border-outline-variant/30 px-2 py-0.5 rounded">Festive</span>
+<span class="text-[10px] bg-white border border-outline-variant/30 px-2 py-0.5 rounded">Family</span>
+</div>
+<div class="pt-2 border-t border-outline-variant/20 flex justify-between items-center">
+<span class="text-[10px] uppercase text-on-surface-variant">Impact</span>
+<span class="font-trend-score text-primary text-[14px]">94/100</span>
+</div>
+</div>
+<div class="p-4 rounded-lg bg-surface-container-low border-l-4 border-tertiary hover:bg-surface-container transition-colors cursor-pointer relative overflow-hidden">
+<span class="text-[11px] font-bold text-tertiary uppercase block mb-1">Feb 01 - Feb 15</span>
+<h4 class="font-bold text-body-md mb-2">FIFA World Cup Phase</h4>
+<div class="flex flex-wrap gap-1 mb-3">
+<span class="text-[10px] bg-white border border-outline-variant/30 px-2 py-0.5 rounded">Sports</span>
+<span class="text-[10px] bg-white border border-outline-variant/30 px-2 py-0.5 rounded">Global</span>
+</div>
+<div class="pt-2 border-t border-outline-variant/20 flex justify-between items-center">
+<span class="text-[10px] uppercase text-on-surface-variant">Impact</span>
+<span class="font-trend-score text-tertiary text-[14px]">88/100</span>
+</div>
+</div>
+<div class="p-4 rounded-lg bg-surface-container-low border-l-4 border-outline-variant hover:bg-surface-container transition-colors cursor-pointer">
+<span class="text-[11px] font-bold text-on-surface-variant uppercase block mb-1">Mar 22 - Apr 21</span>
+<h4 class="font-bold text-body-md mb-2">Hari Raya / Ramadan</h4>
+<div class="flex flex-wrap gap-1 mb-3">
+<span class="text-[10px] bg-white border border-outline-variant/30 px-2 py-0.5 rounded">Religious</span>
+<span class="text-[10px] bg-white border border-outline-variant/30 px-2 py-0.5 rounded">Community</span>
+</div>
+<div class="pt-2 border-t border-outline-variant/20 flex justify-between items-center">
+<span class="text-[10px] uppercase text-on-surface-variant">Impact</span>
+<span class="font-trend-score text-on-surface-variant text-[14px]">91/100</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Trend Synergy Insight Card -->
+<div class="group relative bg-white p-stack-lg rounded-xl shadow-retina border-2 border-transparent hover:border-tertiary/20 transition-all duration-300 overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-tertiary"></div>
+<div class="flex items-start gap-stack-lg">
+<div class="hidden sm:flex -space-x-4">
+<div class="w-16 h-16 rounded-xl border-4 border-white overflow-hidden shadow-sm">
+<img alt="Synergy 1" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD5N6KadCKgorGc7Rp7RfX7zth_PWYXDg6gGZemKgZ-j5TXCOEoflAfX40mZYYfH4PAMz5hOdbnkrKuc6oaiGiqRkDodlqAOdo4nPtLsnsCLVjGcuHY9spGXmokGtL5Wb8uMPcgwpyQxN4dSD9qXG7iIhy8-X4Mf4qvCIwi0fzwbrUAEvOz6bWjzsCSE_YSZ_NpKi43czF2NwimCW-meuzL3GoXgPO06gFpkMwruqSjohE2PVcF8FZ3RoFKgI7neYl79rh0ZNO-3gs"/>
+</div>
+<div class="w-16 h-16 rounded-xl border-4 border-white overflow-hidden shadow-sm">
+<img alt="Synergy 2" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA5rDqgF8YM7e5_KvnhnfGfXXkva7gNcxc6FVg9_OtVR-nVSzv2_T8RWBNHMKNdz5Vq1ybBPt9lu00pESfxJyGWSAZuuKQkAgSAD6EDXwIxm6PlZKZtKycI_nTA0KXakPlomqV19YkhCC0UQMVm6p0nISyOvPXIryv7UelWGUcIAgmG2TIDNmjByWe8BgLKWEeGd2WKgS6iJq6saG01-aL8m4E2UQ6HBk59Rj9o20QooGmW01oEFCh0-ulkHTJPEbjpfqPcAy4Hbvs"/>
+</div>
+</div>
 <div class="flex-1">
-<h2 class="font-headline-sm text-headline-sm text-primary mb-2">Personalize Your Trends</h2>
-<p class="font-body-md text-text-muted max-w-2xl">
-            Global social patterns move fast. Tell us about your brand architecture, target demographics, and product vertical to filter for high-conversion video trends that actually matter to your business.
-          </p>
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-tertiary text-[18px]">auto_awesome</span>
+<h4 class="font-headline-sm text-[20px] text-tertiary">Detected Synergy: "CNY Football Celebration"</h4>
 </div>
-<button class="bg-primary text-on-primary font-label-ui text-label-ui px-6 py-3 rounded-lg hover:opacity-90 transition-all flex items-center gap-2">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
-          Describe My Business
-        </button>
-</section>
-<!-- Section 2: Main Trends View Header -->
-<div class="mb-stack-lg">
-<h2 class="font-headline-md text-headline-md text-primary tracking-tight">Trending Videos for Your Brand</h2>
-<p class="font-body-md text-text-muted mt-2">Real-time engagement signals from TikTok &amp; Reels tailored to your F&amp;B and Retail profile.</p>
-</div>
-<!-- Section 3: Filter Bar -->
-<div class="flex flex-wrap items-center gap-4 mb-stack-lg p-4 bg-surface shadow-retina rounded-lg">
-<div class="flex items-center gap-2 px-3 py-2 border border-outline-variant rounded-md min-w-[200px] cursor-pointer hover:border-primary transition-colors">
-<span class="material-symbols-outlined text-text-muted">category</span>
-<div class="flex-1">
-<p class="text-[10px] uppercase font-bold text-text-muted leading-none">Product Category</p>
-<p class="font-label-ui text-label-ui">Cold brew</p>
-</div>
-<span class="material-symbols-outlined text-text-muted">expand_more</span>
-</div>
-<div class="flex items-center gap-2 px-3 py-2 border border-outline-variant rounded-md min-w-[200px] cursor-pointer hover:border-primary transition-colors">
-<span class="material-symbols-outlined text-text-muted">target</span>
-<div class="flex-1">
-<p class="text-[10px] uppercase font-bold text-text-muted leading-none">Campaign Goal</p>
-<p class="font-label-ui text-label-ui">Festival promo</p>
-</div>
-<span class="material-symbols-outlined text-text-muted">expand_more</span>
-</div>
-<div class="ml-auto flex items-center gap-2">
-<span class="font-label-ui text-label-ui text-text-muted">Auto-refreshed 2m ago</span>
-<button class="p-2 text-primary hover:bg-surface-container-high rounded-full transition-colors">
-<span class="material-symbols-outlined">refresh</span>
+<p class="text-body-md text-on-surface-variant mb-6">High probability of engagement for content blending traditional CNY reunion themes with World Cup viewing parties. Viral potential identified in urban youth demographic.</p>
+<div class="flex gap-4">
+<button class="bg-primary text-on-primary px-5 py-2 rounded-lg font-label-ui flex items-center gap-2 hover:shadow-md transition-all">
+                                        Generate Idea
+                                        <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
 </button>
+<button class="text-on-surface-variant hover:text-primary font-label-ui flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[18px]">bookmark</span>
+                                        Save Insight
+                                    </button>
 </div>
 </div>
-<!-- Section 4: Video Card Grid -->
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
-<!-- Video Card 1 -->
-<article class="bg-surface rounded-xl overflow-hidden shadow-retina card-shadow flex flex-col group transition-all hover:-translate-y-1">
-<div class="relative aspect-[9/16] bg-surface-container-highest overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A cinematic, vertical mobile video frame showing a high-speed preparation of a specialty cold brew coffee in a minimalist modern kitchen. The lighting is soft and bright, highlighting the rich textures of the coffee beans and the creamy swirl of milk. The overall aesthetic is clean, professional, and commercial-grade, aligning with a high-end marketing design system." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRQLEbU7RWrEaJNZ8cOIzI9qS3HQfvVmmP4opDczlaXSn34rHEZhj8Hk0O92poq45YCjicN2eO19cGthkhADLA7I58IA0-p-CH1sdmkYfXP1zBzdIw0NPZQtaMT-qI34yxe5vmhGp6njNNMqHTFfkYfx6Urz8Gcnx89aFFacazv8ncLB5tNiGflSGPyHLl0vkwKnT9EIxzzjgCE0ORlf-b8KdkmO7znvTvfKVtLdwFicyk0jZVvk7DaKBvNRo8HLJCMA56P7K0bqE"/>
-<div class="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
-<span class="material-symbols-outlined text-white text-[48px] drop-shadow-lg" style="font-variation-settings: 'FILL' 1;">play_circle</span>
-</div>
-<div class="absolute top-4 left-4 flex gap-2">
-<span class="bg-white/90 backdrop-blur-sm px-2 py-1 rounded font-code-xs text-code-xs text-primary shadow-sm">TIKTOK</span>
-<span class="bg-emerald-glow/20 backdrop-blur-sm text-primary px-2 py-1 rounded font-code-xs text-code-xs font-bold border border-emerald-glow/30">98% MATCH</span>
+<div class="text-right">
+<div class="font-trend-score text-headline-sm text-tertiary">+34%</div>
+<div class="text-[10px] uppercase font-bold text-on-surface-variant">Velocity</div>
 </div>
 </div>
-<div class="p-6 flex flex-col flex-1">
-<div class="mb-4">
-<h3 class="font-headline-sm text-label-ui font-bold mb-1 uppercase tracking-tight">Raya Preparation Skits</h3>
-<p class="text-text-muted font-body-md text-sm">A fast-paced "restock with me" style video featuring local ingredients.</p>
 </div>
-<div class="grid grid-cols-3 gap-2 mb-4 py-3 border-y border-outline-variant/30">
+</div>
+<!-- Right Column: Audience Sentiment -->
+<div class="md:col-span-4">
+<div class="bg-white p-stack-lg rounded-xl shadow-retina border border-outline-variant/10 h-full">
+<h3 class="font-headline-sm flex items-center gap-2 mb-8">
+<span class="material-symbols-outlined text-primary">analytics</span>
+                            Audience Sentiment
+                        </h3>
+<div class="space-y-8 mb-stack-lg">
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="text-label-ui text-on-surface-variant">Positive</span>
+<span class="font-trend-score text-[14px]">72%</span>
+</div>
+<div class="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 72%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="text-label-ui text-on-surface-variant">Neutral</span>
+<span class="font-trend-score text-[14px]">18%</span>
+</div>
+<div class="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-outline-variant rounded-full" style="width: 18%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="text-label-ui text-on-surface-variant">Critical</span>
+<span class="font-trend-score text-[14px]">10%</span>
+</div>
+<div class="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-error/70 rounded-full" style="width: 10%"></div>
+</div>
+</div>
+</div>
+<div class="p-6 bg-surface-container-low rounded-xl border border-outline-variant/20 relative overflow-hidden group">
+<span class="text-[10px] font-bold uppercase text-on-surface-variant/50 block mb-2">Top Keyphrase</span>
+<h4 class="font-headline-sm text-primary mb-2">"Sustainable Luxury"</h4>
+<p class="text-[12px] text-on-surface-variant italic leading-relaxed">Increasingly associated with premium F&amp;B brands in urban markets across SE Asia.</p>
+<!-- Decorative glow -->
+<div class="absolute -right-4 -bottom-4 w-20 h-20 bg-primary/5 blur-2xl rounded-full group-hover:bg-primary/10 transition-all"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Industry Intel Section -->
+<div class="mt-stack-lg">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-headline-sm flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">fastfood</span>
+                        Industry Intel: F&amp;B Focus
+                    </h3>
+<div class="flex gap-2">
+<select class="bg-surface-container-low border-none rounded-lg text-label-ui py-1.5 px-4 focus:ring-2 focus:ring-primary/10 cursor-pointer">
+<option>All Platforms</option>
+<option>TikTok</option>
+<option>Instagram</option>
+</select>
+<select class="bg-surface-container-low border-none rounded-lg text-label-ui py-1.5 px-4 focus:ring-2 focus:ring-primary/10 cursor-pointer">
+<option>Last 24 Hours</option>
+<option>Last 7 Days</option>
+</select>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
+<!-- Card 1 -->
+<div class="bg-white rounded-xl shadow-retina border border-outline-variant/10 overflow-hidden group hover:border-primary/20 transition-all">
+<div class="relative h-44 overflow-hidden">
+<img alt="Espresso" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnn_nYfkVJR9S6gQo7FhQg4-xCmgKGz80XGi_i9VmREVSXviNr1QtA1EQ3dnC9HrAdEMCj4ZBqegLs2f-rr8r5ckGKNtBoahietQCLIxlmEmQFJQNCdkXjtLULnR83xehNkGwddx2yReEwDhGqwdHvJUcn2Jfi39-YCywFjFcyaJS6QpIjeaScA1iakDsXtUBj9G7DxAP7UOu_BiGW2DkXafY0Zpdi6LJHY-1jwl_sXktEVjpMCu1tWPddL9TVYNVpQLWzUFX8mWA"/>
+<div class="absolute bottom-2 right-2 bg-primary/90 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded">98.2</div>
+</div>
+<div class="p-4">
+<h4 class="font-bold text-body-md mb-1 truncate">Nitro Cold Brew ASMR</h4>
+<p class="text-[11px] text-on-surface-variant mb-4">#coffee #aesthetic #lifestyle</p>
+<div class="flex justify-between items-center mb-4">
 <div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Views</p>
-<p class="font-code-sm text-code-sm font-bold">1.2M</p>
-</div>
-<div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Eng. Rate</p>
-<p class="font-code-sm text-code-sm font-bold">8.4%</p>
-</div>
-<div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Momentum</p>
-<span class="material-symbols-outlined text-emerald-glow text-sm">trending_up</span>
-</div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">F&amp;B</span>
-<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">Family-friendly</span>
-<span class="ml-auto bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Low Risk</span>
-</div>
-<div class="mb-6 p-3 bg-primary-fixed/30 rounded-lg border-l-2 border-primary">
-<p class="text-xs font-body-md leading-relaxed italic text-text-primary">
-                "Short skits using code-mixed Malay-English drive engagement by feeling authentic to urban audiences."
-              </p>
-</div>
-<div class="mt-auto flex gap-2">
-<button class="flex-1 bg-primary text-on-primary font-label-ui text-[12px] py-2 rounded hover:opacity-90 transition-all uppercase tracking-wider">Use Reference</button>
-<button class="px-3 border border-outline-variant text-text-primary hover:bg-surface-container-low rounded transition-colors">
-<span class="material-symbols-outlined text-sm">bookmark</span>
-</button>
-</div>
-</div>
-</article>
-<!-- Video Card 2 -->
-<article class="bg-surface rounded-xl overflow-hidden shadow-retina card-shadow flex flex-col group transition-all hover:-translate-y-1">
-<div class="relative aspect-[9/16] bg-surface-container-highest overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A top-down stylized shot of a desk with gaming equipment and colorful LED lighting. A hand is reaching for a sleek cold brew bottle placed strategically near a high-end mechanical keyboard. The scene is lit with vibrant neon accents against a dark, tech-inspired background, suggesting a trendy lifestyle video for a digital-native audience." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAHPimGgqDWbisGVrTL5XW9TYiKkQwHvsaqfxG2Xhsi6sFV5l6xCVlllhZDN4NgQBSVrU4jOMNgpdVpgRKrbaMD-ecd4uc7-B-8AdHF3cp8808OYTmgNw_9EdpsYJ950OnHz86jLvvUGiqEFptFTIM0HeQj82hFjMvnh004FqJvYjc5ZIBHnSJES4TIBdhSB_zBnTKPnGMjolN6IWEY33pTS86bHTh0YF9OkdYKaceH4Z-9Rpci5Vq8r5Lj8B73tO-AzNFEGsW_OTI"/>
-<div class="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
-<span class="material-symbols-outlined text-white text-[48px] drop-shadow-lg" style="font-variation-settings: 'FILL' 1;">play_circle</span>
-</div>
-<div class="absolute top-4 left-4 flex gap-2">
-<span class="bg-white/90 backdrop-blur-sm px-2 py-1 rounded font-code-xs text-code-xs text-primary shadow-sm">REELS</span>
-<span class="bg-emerald-glow/20 backdrop-blur-sm text-primary px-2 py-1 rounded font-code-xs text-code-xs font-bold border border-emerald-glow/30">85% MATCH</span>
-</div>
-</div>
-<div class="p-6 flex flex-col flex-1">
-<div class="mb-4">
-<h3 class="font-headline-sm text-label-ui font-bold mb-1 uppercase tracking-tight">Focus State ASMR</h3>
-<p class="text-text-muted font-body-md text-sm">Satisfying audio of coffee pouring and ice clinking during deep work.</p>
-</div>
-<div class="grid grid-cols-3 gap-2 mb-4 py-3 border-y border-outline-variant/30">
-<div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Views</p>
-<p class="font-code-sm text-code-sm font-bold">850K</p>
-</div>
-<div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Eng. Rate</p>
-<p class="font-code-sm text-code-sm font-bold">12.1%</p>
-</div>
-<div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Momentum</p>
-<span class="material-symbols-outlined text-emerald-glow text-sm">trending_up</span>
-</div>
-</div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">Lifestyle</span>
-<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">ASMR</span>
-<span class="ml-auto bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Low Risk</span>
-</div>
-<div class="mb-6 p-3 bg-primary-fixed/30 rounded-lg border-l-2 border-primary">
-<p class="text-xs font-body-md leading-relaxed italic text-text-primary">
-                "High-quality audio cues (ASMR) significantly increase watch time for beverage brands in productivity niches."
-              </p>
-</div>
-<div class="mt-auto flex gap-2">
-<button class="flex-1 bg-primary text-on-primary font-label-ui text-[12px] py-2 rounded hover:opacity-90 transition-all uppercase tracking-wider">Use Reference</button>
-<button class="px-3 border border-outline-variant text-text-primary hover:bg-surface-container-low rounded transition-colors">
-<span class="material-symbols-outlined text-sm">bookmark</span>
-</button>
-</div>
-</div>
-</article>
-<!-- Video Card 3 -->
-<article class="bg-surface rounded-xl overflow-hidden shadow-retina card-shadow flex flex-col group transition-all hover:-translate-y-1">
-<div class="relative aspect-[9/16] bg-surface-container-highest overflow-hidden">
-<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A candid lifestyle shot of several diverse young adults laughing and interacting in a bright, sun-drenched outdoor patio. They are holding cold coffee drinks. The style is natural, high-resolution, and feels like a genuine social media capture. The lighting is warm and golden, creating a joyful, communal atmosphere." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDp3WvXEKUeyd7-NQvSA0qrpC-vJkgx7R_u02OJu_7mutVc7Ou5AwmwMBJeev1HPiwaZREJCyd3oIR2B0I4RLfzTjX6qX7n99Y5dpMIev3kyt-IX1ommczBOxS7IDN1JeKfHKkyv0XtfRo4JTAaqNa2tintoCj0GRfhCfK6a63pfifxcKghmwtPRGNRfrDgn8Ry3SAopYuqdDCE_sstkBRNoy4n9TjAxsQHan9TcYf6XvfMGBJocGdLt5QLFcD44Hfqhpoj3s-uu5U"/>
-<div class="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
-<span class="material-symbols-outlined text-white text-[48px] drop-shadow-lg" style="font-variation-settings: 'FILL' 1;">play_circle</span>
-</div>
-<div class="absolute top-4 left-4 flex gap-2">
-<span class="bg-white/90 backdrop-blur-sm px-2 py-1 rounded font-code-xs text-code-xs text-primary shadow-sm">TIKTOK</span>
-<span class="bg-yellow-100 text-primary px-2 py-1 rounded font-code-xs text-code-xs font-bold border border-yellow-200">72% MATCH</span>
-</div>
-</div>
-<div class="p-6 flex flex-col flex-1">
-<div class="mb-4">
-<h3 class="font-headline-sm text-label-ui font-bold mb-1 uppercase tracking-tight">Flash Sale Countdown</h3>
-<p class="text-text-muted font-body-md text-sm">High-energy transition video announcing a 24-hour festival clearance.</p>
-</div>
-<div class="grid grid-cols-3 gap-2 mb-4 py-3 border-y border-outline-variant/30">
-<div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Views</p>
-<p class="font-code-sm text-code-sm font-bold">420K</p>
+<span class="text-[9px] uppercase font-bold text-on-surface-variant/50 block">Views</span>
+<span class="font-trend-score text-sm">2.4M</span>
 </div>
 <div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Eng. Rate</p>
-<p class="font-code-sm text-code-sm font-bold">5.2%</p>
+<span class="text-[9px] uppercase font-bold text-on-surface-variant/50 block">Velocity</span>
+<span class="font-trend-score text-sm text-secondary">+12.4%</span>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 py-1.5 rounded-lg border border-outline-variant/30 text-label-ui hover:bg-surface-container-low transition-colors">Reference</button>
+<button class="flex-1 py-1.5 rounded-lg bg-primary text-on-primary text-label-ui hover:opacity-90 transition-all">Campaign</button>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-white rounded-xl shadow-retina border border-outline-variant/10 overflow-hidden group hover:border-primary/20 transition-all">
+<div class="relative h-44 overflow-hidden">
+<img alt="Smoothie" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuANwql9ORy5apPH9Yw378itDFsZuBvY7-pCwi1CYU12Gz1QRUiCwCkk1pGDbmCyyMCzUzC0NPZQoVOlkDm0IBnQ80910J_BkLBPVmblmn7YQR4gIiKRedyL8vtJPlAI2Ang7mDxX96RnSYPtuBjcE0Mqyzs-A1bR06298c3tKpVcsoMqJVoSn2mwDNix_cnsgQkphgd7hjk3ijdM5LVnUvWW6R4h7szGkMAWXErfSqu3-7F4Ibd2LP0dwonaIvjIT3-_Txpzw2XUkI"/>
+<div class="absolute bottom-2 right-2 bg-primary/90 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded">84.5</div>
+</div>
+<div class="p-4">
+<h4 class="font-bold text-body-md mb-1 truncate">Botanical Smoothie Bowls</h4>
+<p class="text-[11px] text-on-surface-variant mb-4">#vegan #health #aesthetic</p>
+<div class="flex justify-between items-center mb-4">
+<div class="text-center">
+<span class="text-[9px] uppercase font-bold text-on-surface-variant/50 block">Views</span>
+<span class="font-trend-score text-sm">840K</span>
 </div>
 <div class="text-center">
-<p class="text-text-muted text-[10px] uppercase font-bold">Momentum</p>
-<span class="material-symbols-outlined text-ship-red text-sm">trending_flat</span>
+<span class="text-[9px] uppercase font-bold text-on-surface-variant/50 block">Velocity</span>
+<span class="font-trend-score text-sm text-secondary">+5.2%</span>
 </div>
 </div>
-<div class="flex flex-wrap gap-2 mb-4">
-<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">Retail</span>
-<span class="bg-surface-container-low px-2 py-0.5 rounded text-[11px] font-bold text-text-secondary">Flash Sale</span>
-<span class="ml-auto bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Medium Risk</span>
-</div>
-<div class="mb-6 p-3 bg-primary-fixed/30 rounded-lg border-l-2 border-primary">
-<p class="text-xs font-body-md leading-relaxed italic text-text-primary">
-                "UGC-style countdowns outperform polished graphics for urgency-driven clearance events."
-              </p>
-</div>
-<div class="mt-auto flex gap-2">
-<button class="flex-1 bg-primary text-on-primary font-label-ui text-[12px] py-2 rounded hover:opacity-90 transition-all uppercase tracking-wider">Use Reference</button>
-<button class="px-3 border border-outline-variant text-text-primary hover:bg-surface-container-low rounded transition-colors">
-<span class="material-symbols-outlined text-sm">bookmark</span>
-</button>
+<div class="flex gap-2">
+<button class="flex-1 py-1.5 rounded-lg border border-outline-variant/30 text-label-ui hover:bg-surface-container-low transition-colors">Reference</button>
+<button class="flex-1 py-1.5 rounded-lg bg-primary text-on-primary text-label-ui hover:opacity-90 transition-all">Campaign</button>
 </div>
 </div>
-</article>
+</div>
+<!-- Card 3 -->
+<div class="bg-white rounded-xl shadow-retina border border-outline-variant/10 overflow-hidden group hover:border-tertiary/20 transition-all">
+<div class="relative h-44 overflow-hidden">
+<img alt="Street food" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHwuruHsxCn_H0hLhki7yBFs7fp1Otrx_CQgtk7a4vzDIqrlbs8915H9lytavPiHll5-iX7Tkpc4LE1KaFcFUtgxL3qQZo3tpL14qMAPXOjkS-3eKtQYK4dutBgLfCjwKEw51b7J2YUsykVxGxYqbVtlqXOPLrcKiIjSfZzNNa0MXB6yVI3aN8dIS7BlNq92VY-dwbKpfviKkDkjg-Oxto49EgNqWMk5Z_Pel9DS9cvqftOwrrR3nsiclJQsdxQ6mLaeHqs4Z4QmE"/>
+<div class="absolute bottom-2 right-2 bg-tertiary text-white text-[10px] font-bold px-2 py-0.5 rounded">99.1</div>
+</div>
+<div class="p-4">
+<h4 class="font-bold text-body-md mb-1 truncate">Cyberpunk Aesthetics</h4>
+<p class="text-[11px] text-on-surface-variant mb-4">#streetfood #neon #travel</p>
+<div class="flex justify-between items-center mb-4">
+<div class="text-center">
+<span class="text-[9px] uppercase font-bold text-on-surface-variant/50 block">Views</span>
+<span class="font-trend-score text-sm">4.1M</span>
+</div>
+<div class="text-center">
+<span class="text-[9px] uppercase font-bold text-on-surface-variant/50 block">Velocity</span>
+<span class="font-trend-score text-sm text-tertiary">+22.8%</span>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 py-1.5 rounded-lg border border-outline-variant/30 text-label-ui hover:bg-surface-container-low transition-colors">Reference</button>
+<button class="flex-1 py-1.5 rounded-lg bg-tertiary text-on-primary text-label-ui hover:opacity-90 transition-all">Campaign</button>
+</div>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-white rounded-xl shadow-retina border border-outline-variant/10 overflow-hidden group hover:border-primary/20 transition-all">
+<div class="relative h-44 overflow-hidden">
+<img alt="Chocolates" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0ayQrv7CNWnJ35_h3mNlGrTkJvocxumUY7hVAC85BdOhxe_4lLIghIXP0BI-aJ2v20wGVKYUbVhCnMPdFFX2seZKzhg61nUfgnxZDFK0y2SXjhJjX99Wf5J75VThlewKOFIdJpm8YEZuPU_KuOQlTokyPn7kxI0lsGsLBJLW5i9eHp-_e3sNELpXdl9q15nqxsgYg4FVuV-43jes7wVuSDUcSf6vfODH6U62IH1h4dDAfLs5pBmoWEcVHf3ITUWkQx_zwy4SOP2M"/>
+<div class="absolute bottom-2 right-2 bg-primary/90 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded">78.9</div>
+</div>
+<div class="p-4">
+<h4 class="font-bold text-body-md mb-1 truncate">Confectionery Design</h4>
+<p class="text-[11px] text-on-surface-variant mb-4">#luxury #dessert #design</p>
+<div class="flex justify-between items-center mb-4">
+<div class="text-center">
+<span class="text-[9px] uppercase font-bold text-on-surface-variant/50 block">Views</span>
+<span class="font-trend-score text-sm">210K</span>
+</div>
+<div class="text-center">
+<span class="text-[9px] uppercase font-bold text-on-surface-variant/50 block">Velocity</span>
+<span class="font-trend-score text-sm text-secondary">+1.8%</span>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 py-1.5 rounded-lg border border-outline-variant/30 text-label-ui hover:bg-surface-container-low transition-colors">Reference</button>
+<button class="flex-1 py-1.5 rounded-lg bg-primary text-on-primary text-label-ui hover:opacity-90 transition-all">Campaign</button>
+</div>
+</div>
+</div>
+</div>
 </div>
 </div>
 </main>
-<!-- FAB (Contextual for Trends: Research New Trend) -->
-<button class="fixed bottom-8 right-8 bg-primary text-on-primary w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform active:scale-95 z-50">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">search_spark</span>
+<!-- Mobile FAB -->
+<button class="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center active:scale-90 transition-transform z-50">
+<span class="material-symbols-outlined">add</span>
 </button>
+<script>
+        // Interactive elements behavior
+        document.querySelectorAll('a, button, select').forEach(el => {
+            el.addEventListener('mouseenter', () => {
+                if(!el.disabled && !el.classList.contains('bg-tertiary')) {
+                    // Subtle hover effect logic if needed
+                }
+            });
+        });
+
+        // Search bar micro-interaction
+        const searchInput = document.querySelector('input[type="text"]');
+        if (searchInput) {
+            searchInput.addEventListener('focus', () => {
+                searchInput.parentElement.classList.add('ring-2', 'ring-primary/10');
+            });
+            searchInput.addEventListener('blur', () => {
+                searchInput.parentElement.classList.remove('ring-2', 'ring-primary/10');
+            });
+        }
+    </script>
 </body></html>

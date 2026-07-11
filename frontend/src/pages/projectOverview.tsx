@@ -346,7 +346,7 @@ export default function ProjectOverviewPage() {
                     Compliance Check
                   </button>
                   <button
-                    onClick={() => navigate(`/dashboard/project/${projectId}/generate`)}
+                    onClick={() => navigate(`/dashboard/project/${projectId}/guided-generate`)}
                     className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-text-body hover:bg-surface-inset rounded-b-lg transition-colors"
                   >
                     <Sparkles size={14} />

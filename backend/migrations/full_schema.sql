@@ -5,20 +5,22 @@
 -- the entire database from scratch. Safe to re-run (uses IF NOT EXISTS).
 --
 -- Table order respects foreign key dependencies:
---   1. projects (no FK)
+--   1. users (no FK)
+--   1a. projects (no FK)
 --   1b. project_members (FK → projects)
 --   1c. business_profiles (no FK — linked by owner_email)
---   2. compliance_checks (FK → projects)
---   3. violations (FK → compliance_checks)
---   4. tasks (FK → projects)
+--   2. tasks (FK → projects)
+--   3. compliance_checks (PK = task_id FK → tasks)
+--   4. violations (FK → compliance_checks.task_id)
 --   5. ad_policy_rules (no FK)
 --   6. personas (no FK)
---   7. pipeline_progress (FK → compliance_checks)
+--   7. pipeline_progress (task_id references tasks)
 --   8. platform_rules (no FK)
---   9. target_personas (no FK)
---   10. storyboard_scenes (FK → projects)
+--   9. chat_messages (FK → tasks)
+--   10. storyboard_scenes (FK → projects, optional task_id)
 --   11. generated_ads (FK → projects, tasks, self-referencing)
---   12. remediation_logs (FK → compliance_checks)
+--   12. remediation_logs (FK → compliance_checks.task_id)
+--   13. brand_voices (FK → projects)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -92,12 +94,29 @@ CREATE INDEX IF NOT EXISTS idx_business_profiles_email
     ON public.business_profiles(owner_email);
 
 
--- ─── 2. compliance_checks ────────────────────────────────────────────────────
+-- ─── 2. tasks ─────────────────────────────────────────────────────────────────
+-- Must be created before compliance_checks since compliance_checks.task_id → tasks.id
+
+CREATE TABLE IF NOT EXISTS public.tasks (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    project_id uuid NOT NULL,
+    type text NOT NULL CHECK (type IN ('compliance', 'generation')),
+    status text NOT NULL,
+    summary text,
+    pipeline_state jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT tasks_pkey PRIMARY KEY (id),
+    CONSTRAINT tasks_project_id_fkey FOREIGN KEY (project_id)
+        REFERENCES public.projects(id) ON DELETE CASCADE
+);
+
+
+-- ─── 3. compliance_checks ────────────────────────────────────────────────────
+-- One-to-one extension of a compliance task. task_id is both PK and FK.
 
 CREATE TABLE IF NOT EXISTS public.compliance_checks (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    check_id text NOT NULL UNIQUE,
-    user_email text NOT NULL,
+    task_id uuid NOT NULL,
     project_id uuid NOT NULL,
     media_type text NOT NULL CHECK (media_type IN ('text', 'image', 'audio', 'video')),
     market text NOT NULL,
@@ -110,19 +129,22 @@ CREATE TABLE IF NOT EXISTS public.compliance_checks (
     s3_upload_key text,
     s3_segmented_key text,
     s3_remix_key text,
+    remediation_metadata jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT compliance_checks_pkey PRIMARY KEY (id),
+    CONSTRAINT compliance_checks_pkey PRIMARY KEY (task_id),
+    CONSTRAINT compliance_checks_task_id_fkey FOREIGN KEY (task_id)
+        REFERENCES public.tasks(id) ON DELETE CASCADE,
     CONSTRAINT compliance_checks_project_id_fkey FOREIGN KEY (project_id)
         REFERENCES public.projects(id) ON DELETE CASCADE
 );
 
 
--- ─── 3. violations ───────────────────────────────────────────────────────────
+-- ─── 4. violations ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.violations (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
-    check_id text NOT NULL,
+    task_id uuid NOT NULL,
     violation_index integer NOT NULL,
     type text NOT NULL,
     severity text NOT NULL,
@@ -132,26 +154,8 @@ CREATE TABLE IF NOT EXISTS public.violations (
     clip_s3_key text,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT violations_pkey PRIMARY KEY (id),
-    CONSTRAINT violations_check_id_fkey FOREIGN KEY (check_id)
-        REFERENCES public.compliance_checks(check_id) ON DELETE CASCADE
-);
-
-
--- ─── 4. tasks ────────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS public.tasks (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    project_id uuid NOT NULL,
-    type text NOT NULL CHECK (type IN ('compliance', 'generation')),
-    status text NOT NULL,
-    summary text,
-    reference_id text,
-    pipeline_state jsonb,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT tasks_pkey PRIMARY KEY (id),
-    CONSTRAINT tasks_project_id_fkey FOREIGN KEY (project_id)
-        REFERENCES public.projects(id) ON DELETE CASCADE
+    CONSTRAINT violations_task_id_fkey FOREIGN KEY (task_id)
+        REFERENCES public.compliance_checks(task_id) ON DELETE CASCADE
 );
 
 
@@ -216,7 +220,7 @@ CREATE INDEX IF NOT EXISTS idx_personas_market_ethnicity
 
 CREATE TABLE IF NOT EXISTS public.pipeline_progress (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
-    check_id text NOT NULL,
+    task_id uuid NOT NULL,
     step_name text NOT NULL,
     status text NOT NULL CHECK (status IN ('running', 'completed', 'error')),
     message text CHECK (char_length(message) <= 1000),
@@ -225,8 +229,8 @@ CREATE TABLE IF NOT EXISTS public.pipeline_progress (
     CONSTRAINT pipeline_progress_pkey PRIMARY KEY (id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_pipeline_progress_check_id
-    ON public.pipeline_progress(check_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_progress_task_id
+    ON public.pipeline_progress(task_id);
 
 -- Auto-update updated_at trigger
 CREATE OR REPLACE FUNCTION update_pipeline_progress_updated_at()
@@ -261,26 +265,27 @@ CREATE TABLE IF NOT EXISTS public.platform_rules (
 );
 
 
--- ─── 9. target_personas ─────────────────────────────────────────────────────
--- Structured persona constraints for Judges Agent bias checks.
+-- ─── 9. chat_messages ─────────────────────────────────────────────────────
+-- Stores chat conversation turns between user and AI generation agent.
 
-CREATE TABLE IF NOT EXISTS public.target_personas (
+CREATE TABLE IF NOT EXISTS public.chat_messages (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
-    country_code text NOT NULL,
-    ethnicity text NOT NULL,
-    age_group text NOT NULL,
-    cultural_sensitivities text[] NOT NULL,
-    preferred_languages text[] NOT NULL,
+    project_id uuid NOT NULL,
+    task_id uuid NOT NULL,
+    role text NOT NULL CHECK (role IN ('user', 'assistant')),
+    content text NOT NULL,
+    attachments jsonb NOT NULL DEFAULT '[]',
     created_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT target_personas_pkey PRIMARY KEY (id),
-    CONSTRAINT target_personas_unique UNIQUE (country_code, ethnicity, age_group)
+    CONSTRAINT chat_messages_pkey PRIMARY KEY (id),
+    CONSTRAINT chat_messages_task_fkey FOREIGN KEY (task_id)
+        REFERENCES public.tasks(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_target_personas_country
-    ON public.target_personas(country_code);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_task
+    ON public.chat_messages(project_id, task_id);
 
-CREATE INDEX IF NOT EXISTS idx_target_personas_country_ethnicity
-    ON public.target_personas(country_code, ethnicity);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created
+    ON public.chat_messages(task_id, created_at);
 
 
 -- ─── 10. storyboard_scenes ───────────────────────────────────────────────────
@@ -289,7 +294,7 @@ CREATE INDEX IF NOT EXISTS idx_target_personas_country_ethnicity
 CREATE TABLE IF NOT EXISTS public.storyboard_scenes (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     project_id uuid NOT NULL,
-    check_id text,
+    task_id uuid,
     scene_index integer NOT NULL,
     timestamp_start numeric NOT NULL,
     timestamp_end numeric NOT NULL,
@@ -308,8 +313,8 @@ CREATE TABLE IF NOT EXISTS public.storyboard_scenes (
 CREATE INDEX IF NOT EXISTS idx_storyboard_scenes_project
     ON public.storyboard_scenes(project_id);
 
-CREATE INDEX IF NOT EXISTS idx_storyboard_scenes_check
-    ON public.storyboard_scenes(check_id);
+CREATE INDEX IF NOT EXISTS idx_storyboard_scenes_task
+    ON public.storyboard_scenes(task_id);
 
 
 -- ─── 11. generated_ads ────────────────────────────────────────────────────────
@@ -332,7 +337,7 @@ CREATE TABLE IF NOT EXISTS public.generated_ads (
     -- Compliance (written by compliance_bridge after generation)
     compliance_status text,
     compliance_result jsonb,
-    compliance_check_id text,
+    compliance_task_id uuid,
     -- Distribution (written after Zernio push)
     distributed_at timestamptz,
     distribution_platform text,
@@ -364,7 +369,7 @@ CREATE INDEX IF NOT EXISTS idx_generated_ads_parent
 
 CREATE TABLE IF NOT EXISTS public.remediation_logs (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
-    check_id text NOT NULL,
+    task_id uuid NOT NULL,
     agent_strategy text NOT NULL,
     modified_media_type text NOT NULL CHECK (modified_media_type IN ('text', 'image', 'audio', 'video')),
     previous_s3_key text,
@@ -373,9 +378,156 @@ CREATE TABLE IF NOT EXISTS public.remediation_logs (
     attempt_number integer NOT NULL DEFAULT 1,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT remediation_logs_pkey PRIMARY KEY (id),
-    CONSTRAINT remediation_logs_check_id_fkey FOREIGN KEY (check_id)
-        REFERENCES public.compliance_checks(check_id) ON DELETE CASCADE
+    CONSTRAINT remediation_logs_task_id_fkey FOREIGN KEY (task_id)
+        REFERENCES public.compliance_checks(task_id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_remediation_logs_check
-    ON public.remediation_logs(check_id);
+CREATE INDEX IF NOT EXISTS idx_remediation_logs_task
+    ON public.remediation_logs(task_id);
+
+
+-- ─── 13. brand_voices ────────────────────────────────────────────────────────
+-- Voice catalog + custom clones for brand-consistent audio.
+-- Global voices (project_id IS NULL) are available to all users.
+-- Custom clones (project_id set) are project-specific and cleaned up on delete.
+
+CREATE TABLE IF NOT EXISTS public.brand_voices (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    project_id uuid,
+    voice_id text NOT NULL,
+    voice_name text NOT NULL,
+    description text,
+    sample_url text,
+    market text,
+    ethnicity text,
+    gender text DEFAULT 'female',
+    language_code text DEFAULT 'ms',
+    is_custom_clone boolean NOT NULL DEFAULT false,
+    status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT brand_voices_pkey PRIMARY KEY (id),
+    CONSTRAINT brand_voices_project_fkey FOREIGN KEY (project_id)
+        REFERENCES public.projects(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_brand_voices_project
+    ON public.brand_voices(project_id);
+
+CREATE INDEX IF NOT EXISTS idx_brand_voices_global
+    ON public.brand_voices(market, ethnicity, gender)
+    WHERE project_id IS NULL AND status = 'active';
+
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Migration 020: Research & Intelligence Layer
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+
+-- ─── 14. trends_cache ────────────────────────────────────────────────────────
+-- Stores scraped trending content from Apify actors (weekly refresh).
+
+CREATE TABLE IF NOT EXISTS public.trends_cache (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    platform text NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube', 'facebook_ads')),
+    content_type text NOT NULL,
+    title text NOT NULL,
+    url text NOT NULL,
+    engagement_metrics jsonb NOT NULL DEFAULT '{}',
+    hashtags text[] DEFAULT '{}',
+    categories text[] DEFAULT '{}',
+    cultural_event_tag text,
+    market text NOT NULL DEFAULT 'malaysia',
+    scraped_at timestamptz NOT NULL DEFAULT now(),
+    scrape_batch_id uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT trends_cache_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trends_cache_platform
+    ON public.trends_cache(platform);
+CREATE INDEX IF NOT EXISTS idx_trends_cache_market
+    ON public.trends_cache(market);
+CREATE INDEX IF NOT EXISTS idx_trends_cache_scraped_at
+    ON public.trends_cache(scraped_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trends_cache_event
+    ON public.trends_cache(cultural_event_tag)
+    WHERE cultural_event_tag IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_trends_cache_batch
+    ON public.trends_cache(scrape_batch_id);
+
+
+-- ─── 15. cultural_events ─────────────────────────────────────────────────────
+-- Reference list of known cultural, religious, and global events per market.
+
+CREATE TABLE IF NOT EXISTS public.cultural_events (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    market text NOT NULL,
+    start_date date NOT NULL,
+    end_date date NOT NULL,
+    event_type text NOT NULL CHECK (event_type IN ('religious', 'festive', 'sports', 'national', 'global')),
+    tags text[] DEFAULT '{}',
+    impact_score integer CHECK (impact_score >= 0 AND impact_score <= 100),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT cultural_events_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cultural_events_market_date
+    ON public.cultural_events(market, start_date);
+CREATE INDEX IF NOT EXISTS idx_cultural_events_type
+    ON public.cultural_events(event_type);
+
+
+-- ─── 16. post_statistics_cache ───────────────────────────────────────────────
+-- Cached Zernio post performance metrics for the statistics page.
+
+CREATE TABLE IF NOT EXISTS public.post_statistics_cache (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    generated_ad_id uuid NOT NULL,
+    platform text NOT NULL,
+    post_external_id text NOT NULL,
+    impressions integer DEFAULT 0,
+    clicks integer DEFAULT 0,
+    engagement_rate numeric DEFAULT 0,
+    reach integer DEFAULT 0,
+    conversions integer DEFAULT 0,
+    raw_metrics jsonb,
+    fetched_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT post_statistics_cache_pkey PRIMARY KEY (id),
+    CONSTRAINT post_stats_ad_fkey FOREIGN KEY (generated_ad_id)
+        REFERENCES public.generated_ads(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_stats_ad
+    ON public.post_statistics_cache(generated_ad_id);
+CREATE INDEX IF NOT EXISTS idx_post_stats_fetched
+    ON public.post_statistics_cache(fetched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_stats_platform
+    ON public.post_statistics_cache(platform);
+
+
+-- ─── 17. tavily_usage_log ────────────────────────────────────────────────────
+-- Audit log for Tavily API invocations (cost monitoring).
+
+CREATE TABLE IF NOT EXISTS public.tavily_usage_log (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    task_id uuid NOT NULL,
+    query text NOT NULL,
+    results_count integer DEFAULT 0,
+    search_depth text NOT NULL DEFAULT 'advanced',
+    invoked_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT tavily_usage_log_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tavily_usage_task
+    ON public.tavily_usage_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_tavily_usage_time
+    ON public.tavily_usage_log(invoked_at DESC);
+
+
+-- ─── ALTER generated_ads — CapCut dual output columns ────────────────────────
+
+ALTER TABLE public.generated_ads
+    ADD COLUMN IF NOT EXISTS s3_draft_key text,
+    ADD COLUMN IF NOT EXISTS s3_rendered_key text;

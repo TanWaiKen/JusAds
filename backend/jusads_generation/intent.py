@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 
-_GEMINI_MODEL = "gemini-2.5-flash"
+from shared.config import MODEL_TEXT
+_GEMINI_MODEL = MODEL_TEXT
 
 # All valid media types, in a stable canonical ordering used for output.
 _VALID_MEDIA_TYPES: tuple[MediaType, ...] = get_args(MediaType)
@@ -54,11 +55,12 @@ IMPORTANT RULES:
 - Simply mentioning a concept (e.g., "my coffee shop") is NOT a request to generate anything.
 - The message MUST contain action words (generate, create, make, design, produce, write) OR explicit media type words (image, video, text, audio, poster, banner, clip, reel, caption, voiceover).
 - If the user is just chatting, asking questions, or describing something without requesting generation, return [].
+- IMPORTANT: If the user says "yes", "continue", "do it", "go ahead", "generate it", "make it", "proceed" — these are CONFIRMATIONS of a previous plan. In that case, look for media type context in the same message or return ["text", "image"] as a default confirmation response.
 
 Media types:
 1. "text" — ONLY if they ask for: ad copy, captions, headlines, taglines, slogans, descriptions
 2. "image" — ONLY if they ask for: ad image, poster, banner, visual, graphic, picture, photo
-3. "audio" — ONLY if they ask for: radio ad, voiceover, sound, jingle, podcast ad, audio
+3. "audio" — ONLY if they ask for: radio ad, voiceover, sound, jingle, podcast ad, audio, TTS
 4. "video" — ONLY if they ask for: video ad, clip, reel, TikTok video, footage, video content
 
 Return ONLY a JSON list. Examples:
@@ -66,6 +68,8 @@ Return ONLY a JSON list. Examples:
 - "Create image and text ads for shoes" → ["text", "image"]
 - "I want to promote my restaurant" → [] (no specific media type requested)
 - "Make me a poster" → ["image"]
+- "Yes, generate the audio" → ["audio"]
+- "Continue with the audio ad" → ["audio"]
 - "Hi, how are you?" → []
 
 If nothing matches, return: []
@@ -147,6 +151,13 @@ def _classify_with_keywords(user_message: str) -> list[MediaType]:
     """
     lowered = user_message.lower()
 
+    # Confirmation words — user is saying "yes" to a previous plan
+    _CONFIRMATION_WORDS = (
+        "yes", "yeah", "yep", "sure", "ok", "okay", "continue",
+        "go ahead", "do it", "proceed", "generate it", "make it",
+        "let's go", "sounds good", "perfect", "great",
+    )
+
     # Must have at least one generation-intent action word
     _ACTION_WORDS = (
         "generate", "create", "make", "design", "produce", "write",
@@ -154,11 +165,11 @@ def _classify_with_keywords(user_message: str) -> list[MediaType]:
         "i want", "i need", "can you make", "please make",
     )
     has_action = any(action in lowered for action in _ACTION_WORDS)
+    is_confirmation = any(confirm in lowered for confirm in _CONFIRMATION_WORDS)
 
     # If no action intent AND no explicit media type word, return empty
-    if not has_action:
+    if not has_action and not is_confirmation:
         # Still allow if message explicitly names the media type with enough context
-        # e.g., "image ad for coffee" or "video for my brand"
         explicit_media = any(
             media_type in lowered
             for media_type in ("image", "video", "audio", "text ad", "poster", "banner", "reel")
@@ -171,6 +182,14 @@ def _classify_with_keywords(user_message: str) -> list[MediaType]:
         for media_type in _VALID_MEDIA_TYPES
         if any(keyword in lowered for keyword in _KEYWORDS[media_type])
     ]
+
+    # If it's a confirmation but no specific media type found, check for audio/video keywords
+    # in the message context (user might say "yes, generate the audio")
+    if is_confirmation and not detected:
+        # Return empty — let Gemini handle it or the orchestrator will clarify
+        # This is better than defaulting to ["text", "image"] blindly
+        pass
+
     return detected
 
 

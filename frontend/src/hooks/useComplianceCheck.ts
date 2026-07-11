@@ -15,27 +15,14 @@ export interface UseComplianceCheckReturn {
   retry: () => void;
 }
 
-interface ProgressStep {
-  step_name: string;
-  status: "running" | "completed" | "error";
-  message: string | null;
-  created_at: string;
-}
-
-interface ProgressResponse {
-  steps: ProgressStep[];
-  is_terminal: boolean;
-}
-
 /**
- * Custom hook that uses REST API polling for compliance checks.
+ * Custom hook that uses SSE (Server-Sent Events) for compliance checks.
  *
  * Flow:
- * 1. POST multipart/form-data to /api/compliance/check → get { check_id }
- * 2. Poll GET /api/compliance/{check_id}/progress every 2 seconds
- * 3. Update nodeStatuses from progress steps
- * 4. When is_terminal=true, fetch GET /api/compliance/{check_id} for full result
- * 5. Resolve the promise with the compliance result
+ * 1. POST multipart/form-data to /api/compliance/check
+ * 2. Server responds with SSE stream (text/event-stream)
+ * 3. Events: "initiated" → "node_status" (per node) → "result" | "error"
+ * 4. Resolve the promise with the compliance result
  */
 export function useComplianceCheck(): UseComplianceCheckReturn {
   const [isStreaming, setIsStreaming] = useState(false);
@@ -47,14 +34,7 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
   } | null>(null);
 
   const lastParamsRef = useRef<(UploadParams & { projectId?: string }) | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, []);
+  const abortRef = useRef<AbortController | null>(null);
 
   const submit = useCallback(
     async (params: UploadParams & { projectId?: string }): Promise<ComplianceResult> => {
@@ -65,7 +45,12 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
       setNodeStatuses([]);
       setCurrentNode(null);
       setError(null);
-      stopPolling();
+
+      // Abort previous request if any
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
+      abortRef.current = new AbortController();
 
       // Construct FormData
       const formData = new FormData();
@@ -86,7 +71,7 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
         formData.append("username", username);
       }
 
-      console.log("[ComplianceCheck] Submitting compliance check", {
+      console.log("[ComplianceCheck] Submitting compliance check (SSE)", {
         hasFile: !!params.file,
         hasText: !!params.text,
         market: params.market,
@@ -94,10 +79,10 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
       });
 
       try {
-        // Step 1: POST to initiate the check
         const res = await fetch(`${API_BASE}/api/compliance/check`, {
           method: "POST",
           body: formData,
+          signal: abortRef.current.signal,
         });
 
         if (!res.ok) {
@@ -110,106 +95,99 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
           throw new Error(message);
         }
 
-        const initData = await res.json() as {
-          check_id: string;
-          media_type: string;
-          status: string;
-          s3_upload_key: string | null;
-        };
+        // Parse SSE stream
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalResult: ComplianceResult | null = null;
+        let taskId = "";
 
-        console.log("[ComplianceCheck] Check initiated:", initData);
-        const uploadUrl = initData.s3_upload_key;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        // Step 2: Poll for progress
-        return new Promise<ComplianceResult>((resolve, reject) => {
-          const checkId = initData.check_id;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
 
-          // Timeout after 5 minutes
-          const timeout = setTimeout(() => {
-            stopPolling();
-            const msg = "Pipeline timed out — no result within 5 minutes";
-            setError({ message: msg, retryable: true });
-            setIsStreaming(false);
-            reject(new Error(msg));
-          }, 5 * 60 * 1000);
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr) continue;
 
-          // Set initial "processing" status
-          setNodeStatuses([{
-            type: "node_status",
-            node: "pipeline",
-            status: "running",
-            description: "Compliance check in progress...",
-          }]);
-          setCurrentNode("pipeline");
-
-          pollingRef.current = setInterval(async () => {
             try {
-              const progressRes = await fetch(`${API_BASE}/api/compliance/${checkId}/progress`);
-              if (!progressRes.ok) return;
+              const event = JSON.parse(jsonStr);
 
-              const progress: ProgressResponse = await progressRes.json();
+              switch (event.type) {
+                case "initiated":
+                  taskId = event.task_id;
+                  console.log("[ComplianceCheck] Initiated:", event);
+                  setNodeStatuses([{
+                    type: "node_status",
+                    node: "upload",
+                    status: "completed",
+                    description: "Media uploaded successfully",
+                  }]);
+                  setCurrentNode("upload");
+                  break;
 
-              // Update node statuses from progress steps
-              const statuses: NodeStatus[] = progress.steps.map((step) => ({
-                type: "node_status" as const,
-                node: step.step_name,
-                status: step.status,
-                description: step.message || step.step_name,
-              }));
-              setNodeStatuses(statuses);
+                case "node_status":
+                  setNodeStatuses((prev) => {
+                    const existing = prev.findIndex((s) => s.node === event.node);
+                    const status: NodeStatus = {
+                      type: "node_status",
+                      node: event.node,
+                      status: event.status,
+                      description: event.description || event.node,
+                    };
+                    if (existing >= 0) {
+                      const updated = [...prev];
+                      updated[existing] = status;
+                      return updated;
+                    }
+                    return [...prev, status];
+                  });
+                  if (event.status === "running") {
+                    setCurrentNode(event.node);
+                  }
+                  break;
 
-              // Set current node to the latest running step
-              const runningStep = progress.steps.filter(s => s.status === "running").pop();
-              const lastStep = progress.steps[progress.steps.length - 1];
-              setCurrentNode(runningStep?.step_name || lastStep?.step_name || null);
+                case "result":
+                  finalResult = {
+                    ...event.data,
+                    check_id: taskId || event.data.task_id,
+                    market: event.data.market,
+                  };
+                  console.log("[ComplianceCheck] ✅ Result received:", finalResult);
+                  break;
 
-              // If terminal, fetch the full result
-              if (progress.is_terminal) {
-                stopPolling();
-                clearTimeout(timeout);
-
-                // Check if any step errored
-                const errorStep = progress.steps.find(s => s.status === "error");
-                if (errorStep) {
-                  const msg = errorStep.message || "Pipeline failed";
-                  setError({ message: msg, retryable: true });
+                case "error":
+                  setError({ message: event.message, retryable: true });
                   setIsStreaming(false);
-                  reject(new Error(msg));
-                  return;
-                }
-
-                // Fetch full result
-                const resultRes = await fetch(`${API_BASE}/api/compliance/${checkId}`);
-                if (!resultRes.ok) {
-                  const msg = "Failed to fetch compliance result";
-                  setError({ message: msg, retryable: true });
-                  setIsStreaming(false);
-                  reject(new Error(msg));
-                  return;
-                }
-
-                const resultData = await resultRes.json();
-                const result: ComplianceResult = {
-                  ...resultData,
-                  check_id: checkId,
-                  market: resultData.market || params.market,
-                  s3_upload_key: resultData.s3_upload_key || uploadUrl || undefined,
-                };
-
-                console.log("[ComplianceCheck] ✅ Result received:", result);
-                setIsStreaming(false);
-                resolve(result);
+                  throw new Error(event.message);
               }
-            } catch (pollErr) {
-              // Non-fatal polling error — just retry next interval
-              console.warn("[ComplianceCheck] Poll error:", pollErr);
+            } catch (parseErr) {
+              // Skip malformed lines
+              if (parseErr instanceof Error && parseErr.message !== jsonStr) {
+                throw parseErr;
+              }
             }
-          }, 5000);
-        });
+          }
+        }
+
+        setIsStreaming(false);
+
+        if (finalResult) {
+          return finalResult;
+        }
+
+        throw new Error("Stream ended without a result");
 
       } catch (err: unknown) {
         setIsStreaming(false);
-        stopPolling();
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw err;
+        }
         if (!(err instanceof Error && error)) {
           const message = err instanceof Error ? err.message : "Connection failed";
           setError({ message, retryable: true });
@@ -217,7 +195,7 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
         throw err;
       }
     },
-    [stopPolling]
+    [error]
   );
 
   const retry = useCallback(() => {
@@ -226,12 +204,5 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
     }
   }, [submit]);
 
-  return {
-    submit,
-    isStreaming,
-    nodeStatuses,
-    currentNode,
-    error,
-    retry,
-  };
+  return { submit, isStreaming, nodeStatuses, currentNode, error, retry };
 }

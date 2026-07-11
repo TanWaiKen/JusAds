@@ -13,7 +13,6 @@ import { CanvasContextMenu } from "@/components/workspace/canvas/CanvasContextMe
 import { ChatbotPanel } from "@/components/workspace/canvas/ChatbotPanel";
 import { OutputGallery } from "@/components/workspace/canvas/OutputGallery";
 import { VideoPlanStoryboard } from "@/components/workspace/canvas/VideoPlanStoryboard";
-import { PromptRecommendations } from "@/components/prompt-search/PromptRecommendations";
 import { SettingsPanel } from "@/components/workspace/canvas/SettingsPanel";
 import type { GenerationSettings } from "@/components/workspace/canvas/SettingsPanel";
 import type { GeneratedAdView, VideoPlan } from "@/services/generationApi";
@@ -276,7 +275,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                 onStateUpdate={(pipeline) => dispatch({ type: "SET_PIPELINE", pipeline })}
                 targetPlatform={settings.targetPlatform}
                 complianceEnabled={settings.complianceEnabled}
-                videoV2Enabled={settings.videoV2Enabled}
+                videoV3Enabled={settings.videoV2Enabled}
                 targetEthnicity={settings.targetEthnicity}
                 generationOptions={{
                   ageGroup: settings.ageGroup,
@@ -309,32 +308,27 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                     taskId={taskId}
                   />
                 ) : !videoPlan ? (
-                  <div className="p-4">
-                    <PromptRecommendations
-                      profile={{
-                        productName: settings.productName,
-                        productCategory: settings.productCategory,
-                        targetEthnicity: settings.targetEthnicity,
-                        platform: settings.targetPlatform || "tiktok",
-                        ageGroup: settings.ageGroup,
-                      }}
-                      onUse={(prompt) => {
-                        setActiveTab("chatbot");
-                        // The prompt will be injected into the chat input via a slight delay.
-                        setTimeout(() => {
-                          const chatInput = document.querySelector<HTMLTextAreaElement>('textarea[placeholder]');
-                          if (chatInput) {
-                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                              window.HTMLTextAreaElement.prototype, 'value'
-                            )?.set;
-                            nativeInputValueSetter?.call(chatInput, prompt);
-                            chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            chatInput.focus();
-                          }
-                        }, 100);
-                      }}
-                      maxCards={6}
-                    />
+                  <div className="flex flex-col items-center justify-center h-full p-8 text-center text-muted-foreground my-auto">
+                    <div className="rounded-full bg-muted p-4 mb-4">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="w-8 h-8 text-muted-foreground/60"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.008 1.24l.885 1.77a2.25 2.25 0 0 0 2.007 1.24h1.98a2.25 2.25 0 0 0 2.007-1.24l.885-1.77a2.25 2.25 0 0 1 2.007-1.24h3.86m-18 0h18"
+                        />
+                      </svg>
+                    </div>
+                    <h3 className="font-semibold text-lg text-foreground">No outputs generated yet</h3>
+                    <p className="text-sm max-w-sm mt-1">
+                      Start a conversation with the Agent Chatbot to generate ad copy, images, audio, or video creatives.
+                    </p>
                   </div>
                 ) : null}
               </div>

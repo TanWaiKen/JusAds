@@ -4,7 +4,7 @@ routes/remix.py
 Remix/remediation endpoints for compliance checks.
 Handles text rewrite, audio TTS generation, and image editing.
 
-DEPRECATION NOTE: The new Remediation Pipeline (POST /api/compliance/{check_id}/remediate)
+DEPRECATION NOTE: The new Remediation Pipeline (POST /api/compliance/{task_id}/remediate)
 supersedes this SSE-based remix endpoint for new clients. This module is retained for
 backward compatibility with existing frontend code that uses the SSE streaming approach.
 New integrations should use the /remediate endpoint + progress polling instead.
@@ -35,12 +35,12 @@ def init_remix(supabase_store: SupabaseComplianceStore | None) -> None:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# POST /api/compliance/{check_id}/remix
+# POST /api/compliance/{task_id}/remix
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-@router.post("/api/compliance/{check_id}/remix")
-async def remix_compliance(check_id: str):
+@router.post("/api/compliance/{task_id}/remix")
+async def remix_compliance(task_id: str):
     """Run AI remediation for a compliance check. Returns SSE stream.
 
     Routes to the appropriate remix strategy based on media type:
@@ -54,14 +54,14 @@ async def remix_compliance(check_id: str):
 
     try:
         response = _supabase_store.client.table("compliance_checks").select(
-            "check_id, media_type, market, ethnicity, age_group, platform, "
-            "result_json, s3_upload_key, user_email, project_id"
-        ).eq("check_id", check_id).execute()
+            "task_id, media_type, market, ethnicity, age_group, platform, "
+            "result_json, s3_upload_key, project_id"
+        ).eq("task_id", task_id).execute()
         rows = response.data or []
         if not rows:
             return JSONResponse(status_code=404, content={"error": "Check not found"})
     except Exception as e:
-        logger.error("[Remix] Failed to fetch check %s: %s", check_id, e)
+        logger.error("[Remix] Failed to fetch check %s: %s", task_id, e)
         return JSONResponse(status_code=500, content={"error": str(e)})
 
     check = rows[0]
@@ -93,7 +93,7 @@ async def remix_compliance(check_id: str):
             elif media_type == "image":
                 # Image remix uses yield for progress streaming
                 async for event_str in _remix_image_stream(
-                    check, check_id, violations, suggestion, result_json,
+                    check, task_id, violations, suggestion, result_json,
                     market, platform, ethnicity, age_group
                 ):
                     if isinstance(event_str, dict):
@@ -110,7 +110,7 @@ async def remix_compliance(check_id: str):
             # Persist remix result
             try:
                 _supabase_store.update_check_status(
-                    check_id, "remediated", result_json={**result_json, "remix": remix_result_data}
+                    task_id, "remediated", result_json={**result_json, "remix": remix_result_data}
                 )
             except Exception as e:
                 logger.warning("[Remix] Persist failed: %s", e)
@@ -118,7 +118,7 @@ async def remix_compliance(check_id: str):
             yield emit({"type": "remix_result", "data": remix_result_data})
 
         except Exception as e:
-            logger.error("[Remix] Error for %s: %s", check_id, e, exc_info=True)
+            logger.error("[Remix] Error for %s: %s", task_id, e, exc_info=True)
             yield emit({"type": "node_status", "node": "error", "status": "error", "description": str(e)[:200]})
 
     return StreamingResponse(generate_events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
@@ -203,7 +203,7 @@ _VALID_PLATFORMS = {"tiktok", "meta", "instagram", "general"}
 _VALID_MARKETS = {"malaysia", "singapore"}
 
 
-async def _remix_image_stream(check, check_id, violations, suggestion, result_json, market, platform, ethnicity, age_group):
+async def _remix_image_stream(check, task_id, violations, suggestion, result_json, market, platform, ethnicity, age_group):
     """Three-outcome image remix with triage → plan → edit flow.
 
     Yields SSE strings for progress and a final dict for the remix result.
@@ -251,6 +251,7 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
             localization_plan=localization_plan,
             platform=platform,
             market=market,
+            confidence=result_json.get("overall_confidence", "high"),
         )
 
         logger.info("[Remix] Triage: %s — %s", triage["outcome"], triage["reasoning"])
@@ -306,7 +307,7 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
 
         edit_result = edit_image.invoke({
             "project_id": str(check.get("project_id", "default")),
-            "task_id": check_id,
+            "task_id": task_id,
             "violations": violations,
             "market": market,
             "platform": platform,
@@ -326,9 +327,9 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
                 from shared.s3_client import S3MediaClient, build_s3_key
                 try:
                     s3_client = S3MediaClient()
-                    user_id = check.get("user_email", "unknown")
+                    user_id = str(check.get("project_id", "unknown"))
                     project_id = str(check.get("project_id", "default"))
-                    remix_key = build_s3_key("remixed", user_id, project_id, check_id, os.path.basename(output_path))
+                    remix_key = build_s3_key("remixed", user_id, project_id, task_id, os.path.basename(output_path))
                     s3_client.upload_file(output_path, remix_key)
                     s3_remix_url = s3_client.get_public_url(remix_key)
                     logger.info("[Remix] Uploaded remix to S3: %s", s3_remix_url)
@@ -338,7 +339,7 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
             # Update DB
             if s3_remix_url and _supabase_store:
                 try:
-                    _supabase_store.update_check_status(check_id, "remediated", s3_remix_key=s3_remix_url)
+                    _supabase_store.update_check_status(task_id, "remediated", s3_remix_key=s3_remix_url)
                 except Exception as e:
                     logger.warning("[Remix] DB update failed: %s", e)
 
@@ -352,7 +353,7 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
                     if original_url:
                         import urllib.request
                         import tempfile
-                        original_path = os.path.join(tempfile.gettempdir(), f"bias_orig_{check_id}.png")
+                        original_path = os.path.join(tempfile.gettempdir(), f"bias_orig_{task_id}.png")
                         urllib.request.urlretrieve(original_url, original_path)
                         bias_check = check_edit_bias(original_path, output_path, violations)
                 except Exception as e:
@@ -388,6 +389,6 @@ async def _remix_image_stream(check, check_id, violations, suggestion, result_js
             }
 
     except Exception as e:
-        logger.error("[Remix] Unhandled error for %s: %s", check_id, e, exc_info=True)
+        logger.error("[Remix] Unhandled error for %s: %s", task_id, e, exc_info=True)
         yield emit({"type": "error", "message": "An unexpected error occurred during image remix. Please try again."})
 

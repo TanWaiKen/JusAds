@@ -74,11 +74,24 @@ export function PromptRecommendations({
   const [loading, setLoading] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
 
-  // Auto-load recommendations based on profile on mount and when profile changes.
-  // Cache results so they persist across tab switches (don't re-fetch every time).
+  // Auto-load recommendations based on profile on mount.
+  // Cache in sessionStorage so they persist across tab switches and page navigations
+  // without re-fetching every time (same result for entire session).
   useEffect(() => {
-    // Skip if we already have results and profile hasn't changed.
-    if (recommendations.length > 0) return;
+    const cacheKey = `prompt_recs_${profile.productName}_${profile.productCategory}_${profile.targetEthnicity}_${profile.platform}_${profile.ageGroup}`;
+
+    // Try loading from session cache first
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached) as PromptSuggestion[];
+        if (parsed.length > 0) {
+          setRecommendations(parsed);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {}
 
     let cancelled = false;
     setLoading(true);
@@ -86,6 +99,8 @@ export function PromptRecommendations({
       if (!cancelled) {
         setRecommendations(results);
         setLoading(false);
+        // Save to session cache
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(results)); } catch {}
       }
     });
     return () => { cancelled = true; };

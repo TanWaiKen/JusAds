@@ -1,10 +1,10 @@
-"""
+﻿"""
 ai_designer.py
-──────────────
-AIDesigner — plans HOW to edit an image using a single Gemini Flash call.
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+AIDesigner â€” plans HOW to edit an image using a single Gemini Flash call.
 
 Produces an EditPlan containing mode (INPAINT_INSERT or INPAINT_REMOVE)
-and an inpaint_prompt (≤ 60 words).
+and an inpaint_prompt (â‰¤ 60 words).
 
 Falls back to SCULPT template + _decide_edit_mode if the Gemini call fails.
 """
@@ -38,7 +38,7 @@ def _validate_mode(mode_str: str) -> str:
     if mode_str in valid_modes:
         return mode_str
     logger.warning(
-        "[AIDesigner] Invalid mode '%s' — defaulting to INPAINT_INSERT", mode_str
+        "[AIDesigner] Invalid mode '%s' â€” defaulting to INPAINT_INSERT", mode_str
     )
     return EditMode.INPAINT_INSERT.value
 
@@ -68,6 +68,7 @@ async def plan_edit(
         On Gemini failure, falls back to SCULPT template.
     """
     from shared.clients import gemini
+from shared.config import MODEL_TEXT
     from google.genai import types as genai_types
 
     prompt = f"""You are an AI art director for advertising compliance.
@@ -91,7 +92,7 @@ Return JSON: {{"mode": "INPAINT_INSERT"|"INPAINT_REMOVE",
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 response_mime_type="application/json"
@@ -104,7 +105,7 @@ Return JSON: {{"mode": "INPAINT_INSERT"|"INPAINT_REMOVE",
         reasoning = plan.get("reasoning", "")
 
         if not inpaint_prompt:
-            # Empty prompt from Gemini — fall back
+            # Empty prompt from Gemini â€” fall back
             raise ValueError("Gemini returned empty inpaint_prompt")
 
         logger.info(
@@ -121,7 +122,7 @@ Return JSON: {{"mode": "INPAINT_INSERT"|"INPAINT_REMOVE",
         )
 
     except Exception as e:
-        logger.warning("[AIDesigner] Gemini call failed: %s — using SCULPT fallback", e)
+        logger.warning("[AIDesigner] Gemini call failed: %s â€” using SCULPT fallback", e)
         return _fallback_edit_plan(violations, market, platform, ethnicity, age_group, localization_plan)
 
 
@@ -169,3 +170,4 @@ def _fallback_edit_plan(
             reasoning="Emergency fallback: both AIDesigner and SCULPT failed",
             target_description="Fix compliance violations",
         )
+

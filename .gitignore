@@ -39,3 +39,29 @@ weights/
 *.njsproj
 *.sln
 *.sw?
+
+# Private documents — never commit
+*.pdf
+*.docx
+*.doc
+*.pem
+
+# Media & binary assets (runtime data)
+backend/assets/
+*.mp4
+*.mp3
+*.wav
+
+# Data files (runtime / scraped)
+backend/data/
+backend/dustbin/
+
+# Cloud secrets (only template is committed)
+cloud/.env.production
+cloud/certbot/
+
+# Diagrams (binary exports)
+diagram/*.png
+
+# CSV data files
+*.csv

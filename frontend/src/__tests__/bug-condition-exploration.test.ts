@@ -16,7 +16,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 // Page files to scan
-const PAGE_FILES = ["home.tsx", "trends.tsx", "campaigns.tsx", "assets.tsx"];
+const PAGE_FILES = ["home.tsx", "trends.tsx", "assets.tsx"];
 const PAGES_DIR = path.resolve(__dirname, "../pages");
 
 // Read all page sources once

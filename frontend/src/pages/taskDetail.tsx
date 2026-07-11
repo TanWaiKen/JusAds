@@ -4,21 +4,41 @@
  * - Compliance tasks: loads the task, extracts saved pipeline_state,
  *   then redirects to /compliance/:taskId passing restored result as location.state
  * - Generation tasks: renders the GenerationCanvas inline
+ * - Guided mode: auto-triggers generation on mount when navigated from guided form
  */
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useParams, useNavigate, useLocation } from "react-router";
+import { toast } from "sonner";
+import { ArrowLeft } from "lucide-react";
 import { getTask } from "@/services/taskApi";
 import type { TaskDetail } from "@/services/taskApi";
 import { GenerationCanvas } from "@/components/workspace/canvas/GenerationCanvas";
 import { deserializePipeline } from "@/components/workspace/canvas/graphModel";
+import { streamGuidedGeneration } from "@/services/generationApi";
+import type { PipelineState } from "@/components/workspace/canvas/graphModel";
 
 export default function TaskDetailPage() {
   const { projectId, taskId } = useParams<{ projectId: string; taskId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Guided mode state from navigation (set when user submits the guided form)
+  const guidedState = location.state as {
+    guidedMode?: boolean;
+    designType?: string;
+    guidedInputs?: Record<string, string>;
+  } | null;
+
+  const [isGuidedMode] = useState(guidedState?.guidedMode === true);
+  const [guidedRunning, setGuidedRunning] = useState(false);
+  const guidedTriggered = useRef(false);
+
+  // Pipeline state updated by guided generation stream
+  const [guidedPipelineState, setGuidedPipelineState] = useState<PipelineState | undefined>(undefined);
 
   const fetchTask = useCallback(async () => {
     if (!projectId || !taskId) return;
@@ -114,6 +134,49 @@ export default function TaskDetailPage() {
     fetchTask();
   }, [fetchTask]);
 
+  // Auto-trigger guided generation on mount when navigated from the guided form
+  useEffect(() => {
+    if (
+      !guidedTriggered.current &&
+      guidedState?.guidedMode &&
+      guidedState.designType &&
+      guidedState.guidedInputs &&
+      projectId &&
+      taskId &&
+      task
+    ) {
+      guidedTriggered.current = true;
+      setGuidedRunning(true);
+
+      // Clear navigation state to prevent re-triggering on refresh
+      window.history.replaceState({}, document.title);
+
+      (async () => {
+        try {
+          for await (const event of streamGuidedGeneration(
+            projectId,
+            taskId,
+            guidedState.designType!,
+            guidedState.guidedInputs!
+          )) {
+            if (event.pipeline_state) {
+              setGuidedPipelineState(event.pipeline_state);
+            }
+            if (event.error) {
+              toast.error(`Generation error: ${event.error}`);
+            }
+          }
+          toast.success("Ad generation completed!");
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Generation failed";
+          toast.error(message);
+        } finally {
+          setGuidedRunning(false);
+        }
+      })();
+    }
+  }, [guidedState, projectId, taskId, task]);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -143,12 +206,38 @@ export default function TaskDetailPage() {
     ? deserializePipeline(task.pipeline_state)
     : undefined;
 
+  // Use guided pipeline state if available (updated from auto-trigger stream)
+  const effectiveInitialState = guidedPipelineState ?? initialState;
+
   return (
-    <div className="h-full">
+    <div className="relative h-full">
+      {/* Back to form link — shown when this task was triggered via guided mode */}
+      {isGuidedMode && (
+        <div className="absolute left-4 top-4 z-10">
+          <button
+            onClick={() => navigate(`/dashboard/project/${projectId}/guided-generate`)}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            New Generation
+          </button>
+        </div>
+      )}
+
+      {/* Guided mode running indicator */}
+      {guidedRunning && (
+        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-background/90 px-4 py-2 text-sm text-muted-foreground shadow-sm backdrop-blur-sm">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+            Generating from guided form...
+          </div>
+        </div>
+      )}
+
       <GenerationCanvas
         projectId={projectId}
         taskId={taskId}
-        initialState={initialState}
+        initialState={effectiveInitialState}
       />
     </div>
   );
