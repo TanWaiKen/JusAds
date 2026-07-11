@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   RefreshCw,
   BarChart2,
+  ExternalLink,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { fetchPostStatistics } from "@/services/statisticsApi";
@@ -44,28 +45,87 @@ function MetricCard({ label, value, icon, suffix }: MetricCardProps) {
 }
 
 function PostRow({ post, index }: { post: PostStats; index: number }) {
+  const isInstagram = post.platform?.toLowerCase() === "instagram";
+  const isTikTok = post.platform?.toLowerCase() === "tiktok";
+
   return (
     <tr className="post-row border-b border-border-subtle last:border-0 hover:bg-surface-inset/50 transition-colors">
+      {/* Index */}
       <td className="py-3 px-4 text-[13px] font-mono text-text-caption">
         #{index + 1}
       </td>
-      <td className="py-3 px-4 text-[13px] text-text-body font-medium truncate max-w-[180px]">
+      
+      {/* Platform Badge */}
+      <td className="py-3 px-4">
+        {isInstagram && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400">
+            Instagram
+          </span>
+        )}
+        {isTikTok && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200">
+            TikTok
+          </span>
+        )}
+        {!isInstagram && !isTikTok && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+            {post.platform || "Unknown"}
+          </span>
+        )}
+      </td>
+      
+      {/* Type Badge */}
+      <td className="py-3 px-4">
+        {post.is_external ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+            Organic
+          </span>
+        ) : (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+            Studio Ad
+          </span>
+        )}
+      </td>
+      
+      {/* Post Content / Preview */}
+      <td className="py-3 px-4 text-[13px] text-text-body font-medium truncate max-w-[280px]">
         {post.post_external_id}
       </td>
+      
+      {/* Views */}
       <td className="py-3 px-4 text-[13px] font-mono text-text-heading text-right">
         {post.impressions.toLocaleString()}
       </td>
+      
+      {/* Likes */}
+      <td className="py-3 px-4 text-[13px] font-mono text-text-heading text-right">
+        {(post.likes ?? 0).toLocaleString()}
+      </td>
+      
+      {/* Clicks */}
       <td className="py-3 px-4 text-[13px] font-mono text-text-heading text-right">
         {post.clicks.toLocaleString()}
       </td>
+      
+      {/* Engagement */}
       <td className="py-3 px-4 text-[13px] font-mono text-accent-blue text-right">
         {post.engagement_rate.toFixed(2)}%
       </td>
-      <td className="py-3 px-4 text-[13px] font-mono text-text-heading text-right">
-        {post.reach.toLocaleString()}
-      </td>
-      <td className="py-3 px-4 text-[13px] font-mono text-green-600 text-right">
-        {post.conversions}
+      
+      {/* Link to Post */}
+      <td className="py-3 px-4 text-center">
+        {post.post_url ? (
+          <a
+            href={post.post_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-accent-blue hover:text-accent-blue-hover transition-colors"
+          >
+            <ExternalLink size={14} />
+          </a>
+        ) : (
+          <span className="text-text-caption/30 font-mono text-[11px]">-</span>
+        )}
       </td>
     </tr>
   );
@@ -221,12 +281,14 @@ export default function StatisticsPage() {
                 <thead>
                   <tr className="bg-surface-inset border-b border-border-default">
                     <th className="text-left py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">#</th>
-                    <th className="text-left py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Post ID</th>
-                    <th className="text-right py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Impressions</th>
+                    <th className="text-left py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Platform</th>
+                    <th className="text-left py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Type</th>
+                    <th className="text-left py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Post Content</th>
+                    <th className="text-right py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Views</th>
+                    <th className="text-right py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Likes</th>
                     <th className="text-right py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Clicks</th>
                     <th className="text-right py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Engagement</th>
-                    <th className="text-right py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Reach</th>
-                    <th className="text-right py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Conv.</th>
+                    <th className="text-center py-3 px-4 text-[11px] uppercase font-bold text-text-caption tracking-wider">Link</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -45,7 +45,10 @@ export interface CulturalEvent {
 
 export interface EventsResponse {
   events: CulturalEvent[];
+  global_events: CulturalEvent[];
+  national_events: CulturalEvent[];
   market: string;
+  available_markets: string[];
   window_days: number;
   count: number;
 }
@@ -68,18 +71,13 @@ export async function fetchTrends(
 }
 
 export async function fetchCulturalEvents(
-  market: string = "malaysia",
-  windowDays: number = 30
+  market?: string,
+  windowDays: number = 60
 ): Promise<EventsResponse> {
-  const params = new URLSearchParams({ market, window_days: String(windowDays) });
+  const params = new URLSearchParams({ window_days: String(windowDays) });
+  if (market) params.set("market", market);
   const response = await fetch(`${API_BASE}/api/trends/events?${params.toString()}`);
   if (!response.ok) throw new Error(`Failed to fetch events: ${response.status}`);
-  return response.json();
-}
-
-export async function triggerTrendRefresh(): Promise<{ status: string; message: string }> {
-  const response = await fetch(`${API_BASE}/api/trends/refresh`, { method: "POST" });
-  if (!response.ok) throw new Error(`Failed to trigger refresh: ${response.status}`);
   return response.json();
 }
 

@@ -92,19 +92,39 @@ async def get_trends(
 
 @router.get("/events")
 async def get_cultural_events(
-    market: str = "malaysia",
-    window_days: int = 30,
+    market: Optional[str] = None,
+    country: Optional[str] = None,
+    window_days: int = 60,
 ) -> JSONResponse:
-    """Fetch upcoming events split into Global and National sections.
+    """Fetch upcoming events with country-based filtering.
 
-    Supports 'worldwide' or 'global' market values to fetch all events,
-    or filters to a specific market (e.g. 'malaysia').
+    Filters:
+    - market: 'malaysia', 'thailand', 'singapore', etc. Shows that market + global events.
+    - country: alias for market (frontend sends country code like 'MY' → mapped to market name).
+    - If market is 'all' or 'worldwide', returns everything.
+    - Global events (market='global') are always included alongside country-specific ones.
     """
     try:
+        from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
         window_end = (now + timedelta(days=window_days)).strftime("%Y-%m-%d")
         today = now.strftime("%Y-%m-%d")
 
+        # Map country codes to market names
+        country_to_market = {
+            "MY": "malaysia", "TH": "thailand", "SG": "singapore",
+            "ID": "indonesia", "VN": "vietnam", "PH": "philippines",
+        }
+
+        # Resolve the effective market filter
+        effective_market = None
+        if country and country.upper() in country_to_market:
+            effective_market = country_to_market[country.upper()]
+        elif market and market.lower() not in ("all", "worldwide", "global"):
+            effective_market = market.lower()
+
+        # Fetch events within date window
         query = (
             supabase.table("cultural_events")
             .select("*")
@@ -112,28 +132,39 @@ async def get_cultural_events(
             .lte("start_date", window_end)
         )
 
-        # Filter by market unless worldwide is requested
-        if market.lower() not in ("worldwide", "global", "all"):
-            query = query.eq("market", market.lower())
-
         response = query.order("start_date", desc=False).execute()
         all_events = response.data or []
 
-        # Split into global vs national/regional
+        # Filter: show country-specific + global events
+        if effective_market:
+            filtered_events = [
+                e for e in all_events
+                if e.get("market") == effective_market or e.get("market") == "global"
+            ]
+        else:
+            filtered_events = all_events
+
+        # Split into sections
         global_types = {"sports", "global"}
         national_types = {"religious", "festive", "national"}
 
-        global_events = [e for e in all_events if e.get("event_type") in global_types]
-        national_events = [e for e in all_events if e.get("event_type") in national_types]
+        global_events = [e for e in filtered_events if e.get("event_type") in global_types]
+        national_events = [e for e in filtered_events if e.get("event_type") in national_types]
+
+        # Get distinct markets for the filter dropdown
+        all_markets = sorted(set(
+            e.get("market", "") for e in all_events if e.get("market") != "global"
+        ))
 
         return JSONResponse(content={
             "global_events": global_events,
             "national_events": national_events,
-            "all_events": all_events,
-            "events": all_events,  # Align with frontend TrendsResponse expectation
-            "market": market,
+            "all_events": filtered_events,
+            "events": filtered_events,
+            "market": effective_market or "all",
+            "available_markets": all_markets,
             "window_days": window_days,
-            "count": len(all_events),
+            "count": len(filtered_events),
         })
 
     except Exception as e:

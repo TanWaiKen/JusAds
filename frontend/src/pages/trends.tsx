@@ -4,7 +4,6 @@ import gsap from "gsap";
 import {
   TrendingUp,
   Calendar,
-  RefreshCw,
   ExternalLink,
   Zap,
   Sparkles,
@@ -16,15 +15,13 @@ import {
   AlignLeft,
   Layers,
   AlertCircle,
+  MapPin,
 } from "lucide-react";
 import {
   fetchTrends,
   fetchCulturalEvents,
-  triggerTrendRefresh,
-  syncCulturalEvents,
 } from "@/services/trendsApi";
 import type { TrendItem, CulturalEvent } from "@/services/trendsApi";
-import { toast } from "sonner";
 
 gsap.registerPlugin(useGSAP);
 
@@ -37,6 +34,38 @@ const PLATFORMS = [
   { value: "youtube", label: "YouTube", color: "text-red-500" },
   { value: "facebook_ads", label: "Facebook Ads", color: "text-blue-600" },
 ];
+
+// ─── Market / Country config ──────────────────────────────────────────────────
+
+const MARKET_OPTIONS: { value: string; label: string; flag: string }[] = [
+  { value: "malaysia", label: "Malaysia", flag: "🇲🇾" },
+  { value: "thailand", label: "Thailand", flag: "🇹🇭" },
+  { value: "singapore", label: "Singapore", flag: "🇸🇬" },
+  { value: "indonesia", label: "Indonesia", flag: "🇮🇩" },
+  { value: "vietnam", label: "Vietnam", flag: "🇻🇳" },
+  { value: "philippines", label: "Philippines", flag: "🇵🇭" },
+  { value: "all", label: "All Markets", flag: "🌏" },
+];
+
+/** Map browser locale/timezone to a default market. */
+function detectUserMarket(): string {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone.toLowerCase();
+  if (tz.includes("kuala_lumpur") || tz.includes("singapore")) return "malaysia";
+  if (tz.includes("bangkok")) return "thailand";
+  if (tz.includes("jakarta")) return "indonesia";
+  if (tz.includes("ho_chi_minh") || tz.includes("hanoi")) return "vietnam";
+  if (tz.includes("manila")) return "philippines";
+
+  // Fallback: check navigator language
+  const lang = navigator.language.toLowerCase();
+  if (lang.startsWith("ms") || lang === "en-my") return "malaysia";
+  if (lang.startsWith("th")) return "thailand";
+  if (lang.startsWith("id")) return "indonesia";
+  if (lang.startsWith("vi")) return "vietnam";
+  if (lang.startsWith("fil") || lang === "en-ph") return "philippines";
+
+  return "malaysia"; // Default
+}
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
   religious: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
@@ -178,15 +207,14 @@ export default function DashboardTrends() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [platform, setPlatform] = useState("");
-  const [eventScope, setEventScope] = useState<"malaysia" | "worldwide">("malaysia");
+  const [eventMarket, setEventMarket] = useState(detectUserMarket);
+  const [availableMarkets, setAvailableMarkets] = useState<string[]>([]);
   const [trendsData, setTrendsData] = useState<Record<string, TrendItem[]>>({});
   const [lastRefresh, setLastRefresh] = useState<Record<string, string>>({});
   const [events, setEvents] = useState<CulturalEvent[]>([]);
   const [statsData, setStatsData] = useState<any>(null);
   const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState<string | null>(null);
 
@@ -230,8 +258,8 @@ export default function DashboardTrends() {
     setError(null);
     try {
       const [trendsRes, eventsRes, statsRes] = await Promise.all([
-        fetchTrends(platform || undefined, "malaysia"),
-        fetchCulturalEvents(eventScope, 30),
+        fetchTrends(platform || undefined, eventMarket === "all" ? undefined : eventMarket),
+        fetchCulturalEvents(eventMarket === "all" ? undefined : eventMarket, 60),
         fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/statistics`).then(res => res.json()).catch(() => null),
       ]);
 
@@ -240,44 +268,20 @@ export default function DashboardTrends() {
       setTotalItems(trendsRes.total_items || 0);
       setEmptyMessage(trendsRes.message ?? null);
       setEvents(eventsRes.events || []);
+      if (eventsRes.available_markets?.length) {
+        setAvailableMarkets(eventsRes.available_markets);
+      }
       setStatsData(statsRes);
     } catch (e) {
       setError("Failed to load trends. Data may be outdated or unavailable.");
     } finally {
       setIsLoading(false);
     }
-  }, [platform, eventScope]);
+  }, [platform, eventMarket]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await triggerTrendRefresh();
-      setTimeout(() => loadData(), 2000); // Give backend time to start
-    } catch {
-      /* silently ignore */
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  const handleSyncEvents = async () => {
-    setIsSyncing(true);
-    setError(null);
-    try {
-      const res = await syncCulturalEvents();
-      toast.success(res.message);
-      loadData();
-    } catch (e) {
-      setError("Failed to synchronize events from PredictHQ.");
-      toast.error("Failed to sync events");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   // ── Animations ─────────────────────────────────────────────────────────────
   useGSAP(() => {
@@ -346,14 +350,6 @@ export default function DashboardTrends() {
             >
               <Zap size={16} /> Explore Spikes
             </a>
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="bg-surface-inset text-text-body border border-border-default px-5 py-2 rounded-lg font-semibold text-[14px] hover:bg-surface-elevated transition-all flex items-center gap-2 disabled:opacity-60"
-            >
-              <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
-              {isRefreshing ? "Refreshing…" : "Refresh Data"}
-            </button>
           </div>
         </section>
 
@@ -379,45 +375,27 @@ export default function DashboardTrends() {
                     <Calendar size={18} className="text-accent-blue" />
                     Contextual Event Calendar
                   </h3>
-                  <p className="text-[12px] text-text-caption mt-1">
-                    Next 30 days • {eventScope === "malaysia" ? "Malaysia View" : "Worldwide View"}
+                  <p className="text-[12px] text-text-caption mt-1 flex items-center gap-1">
+                    <MapPin size={11} />
+                    Next 60 days • {MARKET_OPTIONS.find(m => m.value === eventMarket)?.flag}{" "}
+                    {MARKET_OPTIONS.find(m => m.value === eventMarket)?.label ?? eventMarket}
+                    {eventMarket !== "all" && " + Global"}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  {/* Toggle Button Group */}
-                  <div className="flex rounded-lg bg-surface-inset p-1 border border-border-default">
-                    <button
-                      onClick={() => setEventScope("malaysia")}
-                      className={`px-3 py-1.5 rounded-md text-code-xs font-semibold transition-all ${
-                        eventScope === "malaysia"
-                          ? "bg-white dark:bg-surface-elevated text-text-heading shadow-xs"
-                          : "text-text-caption hover:text-text-body"
-                      }`}
-                    >
-                      Malaysia
-                    </button>
-                    <button
-                      onClick={() => setEventScope("worldwide")}
-                      className={`px-3 py-1.5 rounded-md text-code-xs font-semibold transition-all ${
-                        eventScope === "worldwide"
-                          ? "bg-white dark:bg-surface-elevated text-text-heading shadow-xs"
-                          : "text-text-caption hover:text-text-body"
-                      }`}
-                    >
-                      Worldwide
-                    </button>
-                  </div>
-
-                  {/* Sync Button */}
-                  <button
-                    onClick={handleSyncEvents}
-                    disabled={isSyncing}
-                    className="p-2 rounded-lg border border-border-default hover:bg-surface-inset text-text-caption hover:text-text-body transition-colors disabled:opacity-50"
-                    title="Sync Events from PredictHQ"
+                <div className="flex items-center gap-2">
+                  {/* Country Filter Dropdown */}
+                  <select
+                    value={eventMarket}
+                    onChange={(e) => setEventMarket(e.target.value)}
+                    className="bg-surface-inset border border-border-default rounded-lg text-[13px] py-1.5 px-3 text-text-body cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-blue/20"
                   >
-                    <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
-                  </button>
+                    {MARKET_OPTIONS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.flag} {m.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -595,14 +573,8 @@ export default function DashboardTrends() {
               <Globe size={40} className="text-text-caption/30 mb-3" />
               <h4 className="font-bold text-[16px] text-text-heading mb-1">No trend data yet</h4>
               <p className="text-text-caption text-[13px] mb-4">
-                {emptyMessage ?? "Trend data refreshes weekly. Click Refresh Data to pull the latest."}
+                {emptyMessage ?? "Trend data refreshes weekly. Check back later for the latest insights."}
               </p>
-              <button
-                onClick={handleRefresh}
-                className="px-4 py-2 rounded-lg bg-accent-blue text-white text-[13px] font-semibold hover:opacity-90 transition-all"
-              >
-                Refresh Data
-              </button>
             </div>
           )}
 

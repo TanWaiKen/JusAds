@@ -94,71 +94,169 @@ async def get_connected_accounts() -> dict:
         return {"error": str(e), "accounts": []}
 
 
-async def get_posts_list() -> dict:
-    """List all posts from Zernio. Returns mock posts if Zernio API key is not set."""
+async def get_posts_list(platform: Optional[str] = None) -> dict:
+    """List all posts from Zernio, including both scheduled and organic/external posts.
+    Returns metrics formatted for the frontend.
+    """
     client = _get_client()
     if not client:
         # Realistic mock data representing the user's published social media posts
-        return {
-            "posts": [
-                {
-                    "post_external_id": "tiktok_ad_fresh_bites",
-                    "platform": "tiktok",
-                    "impressions": 48200,
-                    "clicks": 3950,
-                    "engagement_rate": 8.19,
-                    "reach": 32000,
-                    "conversions": 128,
-                    "likes": 2980,
-                },
-                {
-                    "post_external_id": "tiktok_ad_summer_smoothie",
-                    "platform": "tiktok",
-                    "impressions": 31500,
-                    "clicks": 2840,
-                    "engagement_rate": 9.02,
-                    "reach": 22400,
-                    "conversions": 84,
-                    "likes": 1820,
-                },
-                {
-                    "post_external_id": "instagram_carousel_gourmet",
-                    "platform": "instagram",
-                    "impressions": 58900,
-                    "clicks": 5120,
-                    "engagement_rate": 8.69,
-                    "reach": 41200,
-                    "conversions": 142,
-                    "likes": 3650,
-                },
-                {
-                    "post_external_id": "instagram_story_weekend",
-                    "platform": "instagram",
-                    "impressions": 21500,
-                    "clicks": 1850,
-                    "engagement_rate": 8.60,
-                    "reach": 15600,
-                    "conversions": 48,
-                    "likes": 1150,
-                }
-            ],
-            "totals": {
-                "impressions": 160100,
-                "clicks": 13760,
-                "engagement_rate": 8.59,
-                "reach": 111200,
-                "conversions": 402
+        mock_posts = [
+            {
+                "post_external_id": "tiktok_ad_fresh_bites",
+                "platform": "tiktok",
+                "impressions": 48200,
+                "clicks": 3950,
+                "engagement_rate": 8.19,
+                "reach": 32000,
+                "conversions": 128,
+                "likes": 2980,
+                "comments": 240,
+                "shares": 85,
+                "is_external": False,
+                "published_at": "2026-07-09T04:48:45Z",
             },
-            "post_count": 4,
+            {
+                "post_external_id": "tiktok_ad_summer_smoothie",
+                "platform": "tiktok",
+                "impressions": 31500,
+                "clicks": 2840,
+                "engagement_rate": 9.02,
+                "reach": 22400,
+                "conversions": 84,
+                "likes": 1820,
+                "comments": 135,
+                "shares": 40,
+                "is_external": False,
+                "published_at": "2026-07-05T04:48:45Z",
+            },
+            {
+                "post_external_id": "instagram_carousel_gourmet",
+                "platform": "instagram",
+                "impressions": 58900,
+                "clicks": 5120,
+                "engagement_rate": 8.69,
+                "reach": 41200,
+                "conversions": 142,
+                "likes": 3650,
+                "comments": 420,
+                "shares": 190,
+                "is_external": True,
+                "published_at": "2026-07-02T03:03:24Z",
+            },
+            {
+                "post_external_id": "instagram_story_weekend",
+                "platform": "instagram",
+                "impressions": 21500,
+                "clicks": 1850,
+                "engagement_rate": 8.60,
+                "reach": 15600,
+                "conversions": 48,
+                "likes": 1150,
+                "comments": 95,
+                "shares": 30,
+                "is_external": True,
+                "published_at": "2026-07-06T03:03:24Z",
+            }
+        ]
+        if platform:
+            mock_posts = [p for p in mock_posts if p["platform"].lower() == platform.lower()]
+            
+        total_impressions = sum(p["impressions"] for p in mock_posts)
+        total_clicks = sum(p["clicks"] for p in mock_posts)
+        total_reach = sum(p["reach"] for p in mock_posts)
+        total_conversions = sum(p["conversions"] for p in mock_posts)
+        total_likes = sum(p["likes"] for p in mock_posts)
+        total_comments = sum(p["comments"] for p in mock_posts)
+        
+        totals = {
+            "impressions": total_impressions,
+            "clicks": total_clicks,
+            "engagement_rate": (total_clicks / total_impressions * 100) if total_impressions > 0 else 0.0,
+            "reach": total_reach,
+            "conversions": total_conversions,
+            "likes": total_likes,
+            "comments": total_comments,
+        }
+        return {
+            "posts": mock_posts,
+            "totals": totals,
+            "post_count": len(mock_posts),
             "is_stale": False,
             "last_refresh": None
         }
 
     try:
-        data = client.posts.list()
-        if hasattr(data, "__dict__"):
-            return _serialize(data)
-        return data
+        # Fetch actual analytics (includes all posts, internal and external/organic)
+        analytics_data = client.analytics.get_analytics(platform=platform)
+        posts_raw = analytics_data.get("posts", [])
+        
+        posts_formatted = []
+        total_impressions = 0
+        total_clicks = 0
+        total_reach = 0
+        total_likes = 0
+        total_comments = 0
+        
+        for post in posts_raw:
+            metrics = post.get("analytics") or {}
+            
+            # Map values, default to 0 if None
+            impressions = metrics.get("impressions") or metrics.get("views") or 0
+            clicks = metrics.get("clicks") or 0
+            likes = metrics.get("likes") or 0
+            comments = metrics.get("comments") or 0
+            reach = metrics.get("reach") or 0
+            engagement_rate = metrics.get("engagementRate") or 0.0
+            
+            # Aggregate totals
+            total_impressions += impressions
+            total_clicks += clicks
+            total_reach += reach
+            total_likes += likes
+            total_comments += comments
+            
+            # Use content preview as the external id or ID if not available
+            content = post.get("content") or ""
+            title = post.get("title") or ""
+            content_preview = title or (content.replace("\n", " ")[:60] + "..." if len(content) > 60 else content.replace("\n", " "))
+            if not content_preview:
+                content_preview = post.get("_id") or "Untitled Post"
+                
+            posts_formatted.append({
+                "post_external_id": content_preview,
+                "platform": post.get("platform") or "unknown",
+                "impressions": impressions,
+                "clicks": clicks,
+                "engagement_rate": float(engagement_rate),
+                "reach": reach,
+                "conversions": likes,  # Map conversions to likes/engagement metric for general UX
+                "likes": likes,
+                "comments": comments,
+                "shares": metrics.get("shares") or 0,
+                "is_external": post.get("isExternal") or False,
+                "published_at": post.get("publishedAt"),
+                "post_url": post.get("platformPostUrl")
+            })
+            
+        from datetime import datetime
+        totals = {
+            "impressions": total_impressions,
+            "clicks": total_clicks,
+            "engagement_rate": (total_clicks / total_impressions * 100) if total_impressions > 0 else 0.0,
+            "reach": total_reach,
+            "conversions": total_likes,  # using likes as primary conversion proxy
+            "likes": total_likes,
+            "comments": total_comments,
+        }
+        
+        return {
+            "posts": posts_formatted,
+            "totals": totals,
+            "post_count": len(posts_formatted),
+            "is_stale": False,
+            "last_refresh": datetime.utcnow().isoformat() + "Z"
+        }
     except Exception as e:
         logger.error("[ZernioClient] posts.list failed: %s", e)
         return {"error": str(e), "posts": []}

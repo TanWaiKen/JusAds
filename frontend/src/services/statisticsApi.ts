@@ -9,6 +9,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 export interface PostStats {
   post_external_id: string;
+  platform: string;
   impressions: number;
   clicks: number;
   engagement_rate: number;
@@ -16,6 +17,12 @@ export interface PostStats {
   conversions: number;
   is_stale: boolean;
   fetched_at: string;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  is_external?: boolean;
+  published_at?: string;
+  post_url?: string;
 }
 
 export interface MetricsTotals {

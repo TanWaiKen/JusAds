@@ -10,6 +10,7 @@ Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6
 """
 
 import logging
+from typing import Optional
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -76,11 +77,12 @@ async def get_accounts() -> JSONResponse:
 
 
 @router.get("/posts")
-async def get_posts() -> JSONResponse:
+async def get_posts(platform: Optional[str] = None) -> JSONResponse:
     """List all posts from Zernio."""
     try:
-        data = await get_posts_list()
+        data = await get_posts_list(platform=platform)
         return JSONResponse(content=data)
     except Exception as e:
         logger.error("[StatisticsAPI] posts list failed: %s", e)
         return JSONResponse(status_code=500, content={"error": str(e)})
+
