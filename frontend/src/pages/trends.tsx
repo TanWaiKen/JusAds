@@ -233,7 +233,7 @@ export default function DashboardTrends() {
     : [];
 
   // ── Derived: Platform Distribution and Engagement Stats from Zernio
-  const allZernioPosts = statsData?.posts || [];
+  const allZernioPosts = statsData?.jusads_posts || statsData?.posts || [];
   // Only show JusAds-published posts (non-external) in the trends sidebar
   const zernioPosts = allZernioPosts.filter((p: any) => !p.is_external && !p.isExternal);
   const zernioTiktokCount = zernioPosts.filter((p: any) => {
@@ -251,8 +251,8 @@ export default function DashboardTrends() {
     { label: "Instagram", count: zernioInstagramCount, pct: Math.round((zernioInstagramCount / totalZernioPosts) * 100), color: "bg-[#e1306c]" },
   ];
 
-  const totalViews = zernioPosts.reduce((acc: number, p: any) => acc + (p.analytics?.impressions || p.analytics?.views || p.impressions || p.views || 0), 0);
-  const totalLikes = zernioPosts.reduce((acc: number, p: any) => acc + (p.analytics?.likes || p.analytics?.clicks || p.likes || p.clicks || 0), 0);
+  const totalViews = zernioPosts.reduce((acc: number, p: any) => acc + (p.impressions || p.analytics?.impressions || p.analytics?.views || 0), 0);
+  const totalLikes = zernioPosts.reduce((acc: number, p: any) => acc + (p.likes || p.analytics?.likes || 0), 0);
 
   // ── Fetch data ─────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -262,7 +262,7 @@ export default function DashboardTrends() {
       const [trendsRes, eventsRes, statsRes] = await Promise.all([
         fetchTrends(platform || undefined, eventMarket === "all" ? undefined : eventMarket),
         fetchCulturalEvents(eventMarket === "all" ? undefined : eventMarket, 60),
-        fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/statistics`).then(res => res.json()).catch(() => null),
+        fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/statistics/posts`).then(res => res.json()).catch(() => null),
       ]);
 
       setTrendsData(trendsRes.trends || {});
@@ -499,11 +499,11 @@ export default function DashboardTrends() {
                   <span className="block text-[10px] font-bold uppercase text-text-caption/60">Recent Posts Performance</span>
                   <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
                     {zernioPosts.slice(0, 3).map((p: any) => {
-                      const postTitle = p.content || p.title || "Untitled Post";
+                      const postTitle = p.post_external_id || p.content || p.title || "Untitled Post";
                       const platformName = p.platform || p.platforms?.[0]?.platform || "unknown";
                       const platformColor = platformName.toLowerCase() === "tiktok" ? "text-[#fe2c55]" : "text-[#e1306c]";
-                      const viewsCount = p.analytics?.impressions || p.analytics?.views || p.impressions || p.views || 0;
-                      const likesCount = p.analytics?.likes || p.analytics?.clicks || p.likes || p.clicks || 0;
+                      const viewsCount = p.impressions || 0;
+                      const likesCount = p.likes || 0;
                       return (
                         <div key={p._id || p.post_external_id} className="p-3 bg-surface-inset rounded-lg border border-border-subtle hover:border-border-default transition-all">
                           <div className="flex justify-between items-start gap-2 mb-1.5">
