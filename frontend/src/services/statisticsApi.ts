@@ -1,6 +1,10 @@
 /**
  * Post Statistics API Service
  * Connects to /api/statistics endpoints for Zernio post performance metrics.
+ *
+ * Two sections:
+ * 1. JusAds Campaigns — posts published through Zernio/JusAds
+ * 2. Account Overview — overall social media account performance
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
@@ -15,8 +19,8 @@ export interface PostStats {
   engagement_rate: number;
   reach: number;
   conversions: number;
-  is_stale: boolean;
-  fetched_at: string;
+  is_stale?: boolean;
+  fetched_at?: string;
   likes?: number;
   comments?: number;
   shares?: number;
@@ -31,45 +35,59 @@ export interface MetricsTotals {
   engagement_rate: number;
   reach: number;
   conversions: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+}
+
+export interface PlatformBreakdown {
+  posts: number;
+  impressions: number;
+  likes: number;
+  reach: number;
+}
+
+export interface AccountOverview {
+  total_followers_reached: number;
+  total_engagement: number;
+  platforms: Record<string, PlatformBreakdown>;
 }
 
 export interface StatsResponse {
+  // JusAds-published posts (non-external)
+  jusads_posts: PostStats[];
+  jusads_totals: MetricsTotals;
+  jusads_count: number;
+  // Organic/external posts
+  organic_posts: PostStats[];
+  organic_totals: MetricsTotals;
+  organic_count: number;
+  // All posts combined (legacy)
   posts: PostStats[];
   totals: MetricsTotals;
   post_count: number;
+  // Account-level overview
+  account_overview: AccountOverview;
   is_stale: boolean;
   last_refresh: string | null;
-}
-
-export interface SinglePostStats {
-  post_id: string;
-  metrics: MetricsTotals;
-  is_stale: boolean;
-  fetched_at: string;
 }
 
 // ─── API Functions ───────────────────────────────────────────────────────────
 
 export async function fetchPostStatistics(
-  projectId: string,
+  _projectId?: string,
   options?: {
     platform?: string;
-    dateFrom?: string;
-    dateTo?: string;
   }
 ): Promise<StatsResponse> {
-  const params = new URLSearchParams({ project_id: projectId });
+  const params = new URLSearchParams();
   if (options?.platform) params.set("platform", options.platform);
-  if (options?.dateFrom) params.set("date_from", options.dateFrom);
-  if (options?.dateTo) params.set("date_to", options.dateTo);
 
-  const response = await fetch(`${API_BASE}/api/statistics/posts?${params.toString()}`);
+  const url = params.toString()
+    ? `${API_BASE}/api/statistics/posts?${params.toString()}`
+    : `${API_BASE}/api/statistics/posts`;
+
+  const response = await fetch(url);
   if (!response.ok) throw new Error(`Failed to fetch statistics: ${response.status}`);
-  return response.json();
-}
-
-export async function fetchSinglePostStats(postId: string): Promise<SinglePostStats> {
-  const response = await fetch(`${API_BASE}/api/statistics/posts/${postId}`);
-  if (!response.ok) throw new Error(`Failed to fetch post stats: ${response.status}`);
   return response.json();
 }

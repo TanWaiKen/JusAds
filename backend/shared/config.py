@@ -19,11 +19,11 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 # ── Google Vertex AI / Gemini ─────────────────────────────────────────────────
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
-LLM_MODEL_ID = "gemini-3.0-flash"
+LLM_MODEL_ID = "gemini-3.5-flash"
 
 # ── Model Registry (centralised model IDs) ────────────────────────────────────
 # Chat Model (Cheaper)
-MODEL_TEXT = "gemini-3.0-flash"
+MODEL_TEXT = "gemini-3.5-flash"
 # Video Inpainting / Video editing
 MODEL_VIDEO = "gemini-omni-flash-preview"
 # Image Generation

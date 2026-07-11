@@ -233,7 +233,9 @@ export default function DashboardTrends() {
     : [];
 
   // ── Derived: Platform Distribution and Engagement Stats from Zernio
-  const zernioPosts = statsData?.posts || [];
+  const allZernioPosts = statsData?.posts || [];
+  // Only show JusAds-published posts (non-external) in the trends sidebar
+  const zernioPosts = allZernioPosts.filter((p: any) => !p.is_external && !p.isExternal);
   const zernioTiktokCount = zernioPosts.filter((p: any) => {
     const plat = p.platform || p.platforms?.[0]?.platform;
     return plat?.toLowerCase() === "tiktok";

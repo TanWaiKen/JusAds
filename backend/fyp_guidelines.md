@@ -461,23 +461,55 @@ V1-AUGUST2023
  
 11 
  4.6 Sample codes 
-          4.6.1 Name of program: sign_in.cs 
-     
- 
+          4.6.1 Name of program: compliance_pipeline.py (Backend Compliance Pipeline)
+      
+      [Screenshot: Pydantic schemas and output validation setup]
+      Figure 4.x: Pydantic Schemas for Structured Vertex AI Output
                       
-Description here description here description here description here description here 
-description here description here description here description here description here 
-description here description here description here description here description here 
-description here description here description here description here description here.        
+      Explanation:
+      This code snippet implements structured data models using Pydantic (BaseModel) to enforce type safety and reliable schemas for responses from Google Vertex AI (Gemini 3.5 Flash). By passing schemas like ComplianceAnalysisSchema and JudgesEvaluationSchema directly to the model's configuration, the orchestrator guarantees that unstructured textual outputs are validated, parsed, and converted to structured objects. This ensures that downstream nodes in the LangGraph workflow can reliably read values such as risk percentage, explanation, and high-risk indicators without encountering JSON parsing or schema mismatch errors.
+
+      [Screenshot: LangGraph workflow compilation and execution DAG]
+      Figure 4.y: LangGraph Workflow compilation and node mapping
+
+      Explanation:
+      This code block constructs and compiles the state graph (StateGraph) that orchestrates the execution of the compliance checking nodes. Using nodes (fetch_rules_and_personas, transcribe_media, main_brain_analysis, judges_agent, decision_router) and conditional edges, the compliance pipeline runs the appropriate transcription checks for audio/video media and switches to direct text/image checks, preserving shared pipeline state (Compliance_State) before terminating at the END node.
  
  
-      4.6.2  Name of program: sign_up.cs 
-     
+          4.6.2 Name of program: orchestrator.py (Backend Multi-Agent Ad Generation)
+      
+      [Screenshot: LangGraph generation state graph compile and state definition]
+      Figure 4.z: Multi-Agent Generation StateGraph Orchestration
+
+      Explanation:
+      This backend program orchestrates the creative ad generation pipeline using a multi-agent LangGraph workflow. It manages the sharing of the generation state (containing project briefings, target personas, storyboard scene specifications, and generated image URLs) between separate agent nodes. The orchestrator routes execution dynamically from intent analysis to storyboarding (Director Agent), copywriting, and image asset generation (Designer Agent), ensuring cooperative execution of specialized agents.
+
  
-Description here description here description here description here description here 
-description here description here description here description here description here 
-description here description here description here description here description here 
-description here description here description here description here description here.        
+          4.6.3 Name of program: guidedGenerate.tsx (Frontend Interactive Ad Studio)
+      
+      [Screenshot: React guided generation chatbot workspace and scene editor]
+      Figure 4.w: React Interactive Ad Studio Chat Workspace UI
+
+      Explanation:
+      This frontend TypeScript React page provides the user interface for the interactive ad generation workspace. It sets up a real-time conversation screen that communicates with the backend orchestrator via WebSockets. It enables the user to chat with the AI Director, dynamically render generated storyboards, edit visual briefs, view intermediate asset generations, and customize target platform parameters in real-time.
+
+
+          4.6.4 Name of program: compliance.tsx (Frontend Compliance Monitor)
+      
+      [Screenshot: React compliance monitoring interface with progress bar and rule citations]
+      Figure 4.v: React Compliance Monitoring Dashboard
+
+      Explanation:
+      This frontend React page renders the real-time compliance checking dashboard. It connects to the backend WebSocket stream, parsing progress updates to render styled stepper indicators for each node in the LangGraph checking pipeline. It displays the final compliance verdict, overlays visual violations onto images/videos, lists high-risk indicators, and provides links to verified regulatory citations and enforcement cases.
+
+
+          4.6.5 Name of program: statistics.tsx (Frontend Marketing Analytics Dashboard)
+      
+      [Screenshot: React marketing statistics page with chart rendering and Zernio client integrations]
+      Figure 4.u: React Marketing Analytics and Post Performance Chart
+
+      Explanation:
+      This frontend React component renders the post-distribution marketing statistics dashboard. It integrates with the Zernio distribution client APIs, retrieving analytics for published ads (reach, engagement rate, click-through-rate, and conversions). It parses the raw stats dataset, mapping it onto responsive charts to give users a clear, statistical understanding of how their ad copy is performing across platforms.
  
 4.7 Summary  
 • Provide chapter summary.  

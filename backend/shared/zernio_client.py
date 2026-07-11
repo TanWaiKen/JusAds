@@ -95,8 +95,8 @@ async def get_connected_accounts() -> dict:
 
 
 async def get_posts_list(platform: Optional[str] = None) -> dict:
-    """List all posts from Zernio, including both scheduled and organic/external posts.
-    Returns metrics formatted for the frontend.
+    """List all posts from Zernio, split into JusAds-published and organic.
+    Returns metrics formatted for the frontend with clear source separation.
     """
     client = _get_client()
     if not client:
@@ -161,68 +161,36 @@ async def get_posts_list(platform: Optional[str] = None) -> dict:
         ]
         if platform:
             mock_posts = [p for p in mock_posts if p["platform"].lower() == platform.lower()]
-            
-        total_impressions = sum(p["impressions"] for p in mock_posts)
-        total_clicks = sum(p["clicks"] for p in mock_posts)
-        total_reach = sum(p["reach"] for p in mock_posts)
-        total_conversions = sum(p["conversions"] for p in mock_posts)
-        total_likes = sum(p["likes"] for p in mock_posts)
-        total_comments = sum(p["comments"] for p in mock_posts)
-        
-        totals = {
-            "impressions": total_impressions,
-            "clicks": total_clicks,
-            "engagement_rate": (total_clicks / total_impressions * 100) if total_impressions > 0 else 0.0,
-            "reach": total_reach,
-            "conversions": total_conversions,
-            "likes": total_likes,
-            "comments": total_comments,
-        }
-        return {
-            "posts": mock_posts,
-            "totals": totals,
-            "post_count": len(mock_posts),
-            "is_stale": False,
-            "last_refresh": None
-        }
+
+        jusads_posts = [p for p in mock_posts if not p["is_external"]]
+        organic_posts = [p for p in mock_posts if p["is_external"]]
+
+        return _build_response(jusads_posts, organic_posts, mock_posts)
 
     try:
         # Fetch actual analytics (includes all posts, internal and external/organic)
         analytics_data = client.analytics.get_analytics(platform=platform)
         posts_raw = analytics_data.get("posts", [])
-        
+
         posts_formatted = []
-        total_impressions = 0
-        total_clicks = 0
-        total_reach = 0
-        total_likes = 0
-        total_comments = 0
-        
+
         for post in posts_raw:
             metrics = post.get("analytics") or {}
-            
-            # Map values, default to 0 if None
+
             impressions = metrics.get("impressions") or metrics.get("views") or 0
             clicks = metrics.get("clicks") or 0
             likes = metrics.get("likes") or 0
             comments = metrics.get("comments") or 0
             reach = metrics.get("reach") or 0
+            shares = metrics.get("shares") or 0
             engagement_rate = metrics.get("engagementRate") or 0.0
-            
-            # Aggregate totals
-            total_impressions += impressions
-            total_clicks += clicks
-            total_reach += reach
-            total_likes += likes
-            total_comments += comments
-            
-            # Use content preview as the external id or ID if not available
+
             content = post.get("content") or ""
             title = post.get("title") or ""
-            content_preview = title or (content.replace("\n", " ")[:60] + "..." if len(content) > 60 else content.replace("\n", " "))
+            content_preview = title or (content.replace("\n", " ")[:80] if content else "")
             if not content_preview:
                 content_preview = post.get("_id") or "Untitled Post"
-                
+
             posts_formatted.append({
                 "post_external_id": content_preview,
                 "platform": post.get("platform") or "unknown",
@@ -230,36 +198,85 @@ async def get_posts_list(platform: Optional[str] = None) -> dict:
                 "clicks": clicks,
                 "engagement_rate": float(engagement_rate),
                 "reach": reach,
-                "conversions": likes,  # Map conversions to likes/engagement metric for general UX
+                "conversions": likes,
                 "likes": likes,
                 "comments": comments,
-                "shares": metrics.get("shares") or 0,
+                "shares": shares,
                 "is_external": post.get("isExternal") or False,
                 "published_at": post.get("publishedAt"),
-                "post_url": post.get("platformPostUrl")
+                "post_url": post.get("platformPostUrl"),
             })
-            
-        from datetime import datetime
-        totals = {
+
+        # Split into JusAds-published vs organic/external
+        jusads_posts = [p for p in posts_formatted if not p["is_external"]]
+        organic_posts = [p for p in posts_formatted if p["is_external"]]
+
+        return _build_response(jusads_posts, organic_posts, posts_formatted)
+
+    except Exception as e:
+        logger.error("[ZernioClient] posts.list failed: %s", e)
+        return {"error": str(e), "posts": [], "jusads_posts": [], "organic_posts": []}
+
+
+def _build_response(jusads_posts: list, organic_posts: list, all_posts: list) -> dict:
+    """Build the structured response with separate sections for JusAds and organic."""
+    from datetime import datetime
+
+    def _calc_totals(posts: list) -> dict:
+        total_impressions = sum(p["impressions"] for p in posts)
+        total_clicks = sum(p["clicks"] for p in posts)
+        total_reach = sum(p["reach"] for p in posts)
+        total_likes = sum(p.get("likes", 0) for p in posts)
+        total_comments = sum(p.get("comments", 0) for p in posts)
+        total_shares = sum(p.get("shares", 0) for p in posts)
+        return {
             "impressions": total_impressions,
             "clicks": total_clicks,
             "engagement_rate": (total_clicks / total_impressions * 100) if total_impressions > 0 else 0.0,
             "reach": total_reach,
-            "conversions": total_likes,  # using likes as primary conversion proxy
+            "conversions": total_likes,
             "likes": total_likes,
             "comments": total_comments,
+            "shares": total_shares,
         }
-        
-        return {
-            "posts": posts_formatted,
-            "totals": totals,
-            "post_count": len(posts_formatted),
-            "is_stale": False,
-            "last_refresh": datetime.utcnow().isoformat() + "Z"
-        }
-    except Exception as e:
-        logger.error("[ZernioClient] posts.list failed: %s", e)
-        return {"error": str(e), "posts": []}
+
+    jusads_totals = _calc_totals(jusads_posts)
+    organic_totals = _calc_totals(organic_posts)
+    all_totals = _calc_totals(all_posts)
+
+    # Platform breakdown for account overview
+    platforms_breakdown = {}
+    for p in all_posts:
+        plat = p["platform"]
+        if plat not in platforms_breakdown:
+            platforms_breakdown[plat] = {"posts": 0, "impressions": 0, "likes": 0, "reach": 0}
+        platforms_breakdown[plat]["posts"] += 1
+        platforms_breakdown[plat]["impressions"] += p["impressions"]
+        platforms_breakdown[plat]["likes"] += p.get("likes", 0)
+        platforms_breakdown[plat]["reach"] += p["reach"]
+
+    return {
+        # JusAds-published posts only
+        "jusads_posts": jusads_posts,
+        "jusads_totals": jusads_totals,
+        "jusads_count": len(jusads_posts),
+        # Organic/external posts
+        "organic_posts": organic_posts,
+        "organic_totals": organic_totals,
+        "organic_count": len(organic_posts),
+        # All posts combined (legacy compat)
+        "posts": all_posts,
+        "totals": all_totals,
+        "post_count": len(all_posts),
+        # Account overview
+        "account_overview": {
+            "total_followers_reached": all_totals["reach"],
+            "total_engagement": all_totals["likes"] + all_totals["comments"] + all_totals["shares"],
+            "platforms": platforms_breakdown,
+        },
+        "is_stale": False,
+        "last_refresh": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 def _serialize(obj) -> dict:

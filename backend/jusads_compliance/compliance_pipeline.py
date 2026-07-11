@@ -19,7 +19,8 @@ This pipeline does NOT contain any remediation or media editing logic.
 
 import json
 import logging
-from typing import Literal
+from typing import Literal, List, Optional
+from pydantic import BaseModel, Field
 
 from langgraph.graph import StateGraph, END
 from google.genai import types as genai_types
@@ -28,6 +29,7 @@ from shared.models import Compliance_State
 from shared.clients import gemini, supabase
 from shared.config import MODEL_TEXT
 from jusads_compliance.decision_router import route_compliance_decision
+from jusads_compliance.utils import parse_json_res
 from jusads_compliance.progress_tracker import ProgressTracker
 from shared.fallback_queue import fallback_queue
 from jusads_compliance.rules_client import get_rules, get_persona
@@ -47,11 +49,50 @@ logger = logging.getLogger(__name__)
 # Module-level progress tracker instance
 _tracker = ProgressTracker()
 
-# Centralised model ID â€” consistent across all pipeline nodes
+# Centralised model ID — consistent across all pipeline nodes
 _MODEL = MODEL_TEXT
 
 
-# â”€â”€â”€ Node 1: Fetch Rules and Personas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Pydantic Schemas for Structured Outputs ---
+
+class TranscribeSchema(BaseModel):
+    transcript: str = Field(description="The complete spoken transcript of the media.")
+    language: str = Field(description="The language code or name detected in the speech.")
+
+class LanguageComplianceSchema(BaseModel):
+    detected_language: str = Field(description="The language detected in the ad copy or speech.")
+    required_language: str = Field(description="The language required for the target audience/market/ethnicity.")
+    is_compliant: bool = Field(description="Whether the detected language complies with the required language rule.")
+    language_note: str = Field(description="Explanatory note regarding the language check.")
+
+class ViolationTimelineItem(BaseModel):
+    start_seconds: float = Field(description="Start time of the violation in seconds.")
+    end_seconds: float = Field(description="End time of the violation in seconds.")
+    type: str = Field(description="Type of violation, e.g., 'visual', 'audio', 'text'.")
+    description: str = Field(description="Description of the violation.")
+
+class ComplianceAnalysisSchema(BaseModel):
+    risk_percentage: int = Field(description="Compliance risk percentage (0 to 100).")
+    risk_level: str = Field(description="Risk level classification: Low, Moderate, High, or Critical.")
+    compliance_verdict: str = Field(description="Verdict: accepted, needs_remediation, or rejected.")
+    high_risk_indicator: List[str] = Field(default_factory=list, description="List of flagged issues or sensitive content.")
+    violations_timeline: Optional[List[ViolationTimelineItem]] = Field(default=None, description="Timeline of violations (primarily for video).")
+    localization_plan: str = Field(description="Actionable localization advice for the target audience/market.")
+    explanation: str = Field(description="Explanation of the findings (max 300 words).")
+    suggestion: str = Field(description="Actionable suggestion for fixes/remediation (max 200 words).")
+    cultural_fit_score: int = Field(description="Cultural fit score (0 to 100) based on target persona.")
+    language_compliance: LanguageComplianceSchema = Field(description="Language compliance details.")
+
+class JudgesEvaluationSchema(BaseModel):
+    bias_detected: bool = Field(description="Whether any bias was detected in the compliance analysis.")
+    bias_issues: List[str] = Field(default_factory=list, description="List of bias issues identified, if any.")
+    hallucination_score: int = Field(description="Hallucination score from 1 to 5 (1=severe hallucination, 5=fully grounded).")
+    hallucinated_claims: List[str] = Field(default_factory=list, description="List of hallucinated claims, if any.")
+    overall_pass: bool = Field(description="True only if bias_detected is false and hallucination_score >= 4.")
+    explanation: str = Field(description="Brief explanation of the evaluation reasoning.")
+
+
+# ——— Node 1: Fetch Rules and Personas —————————————————————————————————————————
 
 
 def fetch_rules_and_personas(state: Compliance_State) -> dict:
@@ -145,10 +186,13 @@ def transcribe_media(state: Compliance_State) -> dict:
                 genai_types.Part.from_bytes(data=media_bytes, mime_type=mime_type),
                 genai_types.Part.from_text(text=transcribe_prompt),
             ])],
-            config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
+            config=genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=TranscribeSchema,
+            ),
         )
 
-        transcript_data = json.loads(response.text)
+        transcript_data = parse_json_res(response.text)
         transcript = transcript_data.get("transcript", "")
         language = transcript_data.get("language", "unknown")
 
@@ -240,9 +284,12 @@ def main_brain_analysis(state: Compliance_State) -> dict:
             response = gemini.models.generate_content(
                 model=_MODEL,
                 contents=prompt,
-                config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
+                config=genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ComplianceAnalysisSchema,
+                ),
             )
-            analysis = json.loads(response.text)
+            analysis = parse_json_res(response.text)
 
         elif media_type == "image":
             with open(input_path, "rb") as f:
@@ -272,9 +319,12 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                     genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                     genai_types.Part.from_text(text=prompt),
                 ])],
-                config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
+                config=genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ComplianceAnalysisSchema,
+                ),
             )
-            analysis = json.loads(response.text)
+            analysis = parse_json_res(response.text)
 
         elif media_type == "audio":
             # Audio uses the transcript from the transcribe_media node
@@ -302,9 +352,12 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                     genai_types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
                     genai_types.Part.from_text(text=prompt),
                 ])],
-                config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
+                config=genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ComplianceAnalysisSchema,
+                ),
             )
-            analysis = json.loads(response.text)
+            analysis = parse_json_res(response.text)
 
         elif media_type == "video":
             # Video uses the transcript from the transcribe_media node
@@ -335,9 +388,12 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                     genai_types.Part.from_bytes(data=video_bytes, mime_type=mime_type),
                     genai_types.Part.from_text(text=prompt),
                 ])],
-                config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
+                config=genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ComplianceAnalysisSchema,
+                ),
             )
-            analysis = json.loads(response.text)
+            analysis = parse_json_res(response.text)
 
         else:
             analysis = {"error": f"Unknown media type: {media_type}"}
@@ -440,9 +496,16 @@ def judges_agent(state: Compliance_State) -> dict:
         response = gemini.models.generate_content(
             model=_MODEL,
             contents=prompt,
-            config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
+            config=genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=JudgesEvaluationSchema,
+            ),
         )
-        eval_result = json.loads(response.text)
+        try:
+            eval_result = parse_json_res(response.text)
+        except Exception as parse_err:
+            logger.error("[CompliancePipeline] Failed to parse judges_agent JSON. Raw text: %r", response.text)
+            raise parse_err
 
         # Single evaluation metric: hallucination_score (1-5)
         # 1 = severe hallucination, 5 = fully grounded
