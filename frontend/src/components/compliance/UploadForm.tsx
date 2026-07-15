@@ -110,7 +110,7 @@ export function UploadForm({ onSubmit, isSubmitting }: UploadFormProps) {
 
   return (
     <div className="bg-surface-panel rounded-xl p-6 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-      <h3 className="font-label-ui text-label-ui font-bold text-text-primary mb-4">
+      <h3 className="font-label-ui text-label-ui font-semibold text-text-primary mb-4">
         Upload Asset for Compliance Check
       </h3>
 

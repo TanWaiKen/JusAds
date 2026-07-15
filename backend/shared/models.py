@@ -422,11 +422,14 @@ class UpdatePipelineRequest(BaseModel):
 class UpdateProjectRequest(BaseModel):
     """Request body for PATCH /api/projects/{project_id}."""
 
-    name: str
+    name: Optional[str] = None
+    description: Optional[str] = None
 
     @field_validator("name")
     @classmethod
-    def validate_name(cls, v: str) -> str:
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
         stripped = v.strip()
         if not stripped:
             raise ValueError("Project name cannot be empty")

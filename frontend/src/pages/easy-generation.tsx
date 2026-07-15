@@ -10,7 +10,7 @@
  */
 
 import { useReducer, useRef, useEffect, useState, useCallback, createContext, useContext } from "react";
-import { useParams } from "react-router";
+import { useParams, useNavigate } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { PanelRight } from "lucide-react";
@@ -23,6 +23,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { InputPanel } from "@/components/easy-generation/InputPanel";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 import { PreviewPanel } from "@/components/easy-generation/PreviewPanel";
 import { FeedbackSidebar } from "@/components/easy-generation/FeedbackSidebar";
 import { easyGenerationReducer } from "@/reducers/easyGenerationReducer";
@@ -130,6 +132,8 @@ interface SSEErrorEvent {
 
 function EasyGenerationPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [state, dispatch] = useReducer(easyGenerationReducer, INITIAL_EASY_GENERATION_STATE);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -138,6 +142,10 @@ function EasyGenerationPage() {
   const lastRevisionRef = useRef<string>("");
   const lastRequestRef = useRef<EasyGenerationRequest | null>(null);
   const inputPanelRef = useRef<HTMLDivElement>(null);
+
+  const [project, setProject] = useState<any>(null);
+  const [autofillPrompt, setAutofillPrompt] = useState("");
+  const [isAutofilling, setIsAutofilling] = useState(false);
   const previewPanelRef = useRef<HTMLDivElement>(null);
 
   // ─── GSAP page entrance animation ───────────────────────────────────────
@@ -158,10 +166,39 @@ function EasyGenerationPage() {
   // ─── Initialize task and load existing versions on mount ────────────────
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || !user?.profile?.email) return;
 
     async function initialize() {
       try {
+        // Fetch project metadata to check preferred mode
+        const email = user.profile.email;
+        try {
+          const res = await fetch(`${API_BASE}/api/projects?username=${encodeURIComponent(email)}`);
+          if (res.ok) {
+            const projects = await res.json();
+            const proj = projects.find((p: any) => p.id === projectId);
+            if (proj) {
+              setProject(proj);
+              const meta = JSON.parse(proj.description || "{}");
+              if (meta.generation_mode === "advanced") {
+                const tasksRes = await fetch(`${API_BASE}/api/projects/${projectId}/tasks?username=${encodeURIComponent(email)}`);
+                if (tasksRes.ok) {
+                  const tasksList = await tasksRes.json();
+                  const genTasks = tasksList.filter((t: any) => t.type === "generation");
+                  if (genTasks.length > 0) {
+                    navigate(`/dashboard/project/${projectId}/${genTasks[0].id}`, { replace: true });
+                    return;
+                  }
+                }
+                navigate(`/dashboard/project/${projectId}/guided-generate`, { replace: true });
+                return;
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Failed to check project mode preference:", e);
+        }
+
         // Create a new generation task for this Easy Mode session
         const task = await createGenerationTask(projectId!);
         setTaskId(task.id);
@@ -452,6 +489,70 @@ function EasyGenerationPage() {
     dispatch({ type: "REMOVE_REFERENCE_URL", payload: index });
   }, []);
 
+  const handleToggleMode = async (mode: "easy" | "advanced") => {
+    if (mode === "easy") return;
+
+    if (!projectId || !user?.profile?.email || !project) return;
+    try {
+      const email = user.profile.email;
+      let meta: any = {};
+      try {
+        meta = JSON.parse(project.description || "{}");
+      } catch {}
+      meta.generation_mode = "advanced";
+
+      const updateRes = await fetch(`${API_BASE}/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: project.name,
+          description: JSON.stringify(meta),
+        }),
+      });
+
+      if (updateRes.ok) {
+        const tasksRes = await fetch(`${API_BASE}/api/projects/${projectId}/tasks?username=${encodeURIComponent(email)}`);
+        if (tasksRes.ok) {
+          const tasksList = await tasksRes.json();
+          const genTasks = tasksList.filter((t: any) => t.type === "generation");
+          if (genTasks.length > 0) {
+            navigate(`/dashboard/project/${projectId}/${genTasks[0].id}`);
+            return;
+          }
+        }
+        navigate(`/dashboard/project/${projectId}/guided-generate`);
+      }
+    } catch (err) {
+      toast.error("Failed to switch to Advanced Mode");
+    }
+  };
+
+  const handleAutofill = async () => {
+    if (!autofillPrompt.trim()) return;
+    setIsAutofilling(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/generation/autofill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_prompt: autofillPrompt }),
+      });
+
+      if (!res.ok) throw new Error("Autofill failed");
+      const data = await res.json();
+      if (data.selectedTemplate) {
+        handleSelectTemplate(data.selectedTemplate);
+      }
+      if (data.formValues) {
+        handleFormChange(data.formValues);
+      }
+      toast.success("AI Autofill complete!");
+    } catch {
+      toast.error("Failed to parse requirements. Please try again.");
+    } finally {
+      setIsAutofilling(false);
+    }
+  };
+
   const handleGenerate = useCallback(() => {
     startGeneration();
   }, [startGeneration]);
@@ -674,6 +775,12 @@ function EasyGenerationPage() {
               onAddReferenceUrl={handleAddReferenceUrl}
               onRemoveReferenceUrl={handleRemoveReferenceUrl}
               onGenerate={handleGenerate}
+              generationMode="easy"
+              onToggleMode={handleToggleMode}
+              autofillPrompt={autofillPrompt}
+              setAutofillPrompt={setAutofillPrompt}
+              isAutofilling={isAutofilling}
+              onAutofill={handleAutofill}
             />
           </div>
 
@@ -716,6 +823,12 @@ function EasyGenerationPage() {
               onAddReferenceUrl={handleAddReferenceUrl}
               onRemoveReferenceUrl={handleRemoveReferenceUrl}
               onGenerate={handleGenerate}
+              generationMode="easy"
+              onToggleMode={handleToggleMode}
+              autofillPrompt={autofillPrompt}
+              setAutofillPrompt={setAutofillPrompt}
+              isAutofilling={isAutofilling}
+              onAutofill={handleAutofill}
             />
           </div>
 
@@ -775,6 +888,12 @@ function EasyGenerationPage() {
               onAddReferenceUrl={handleAddReferenceUrl}
               onRemoveReferenceUrl={handleRemoveReferenceUrl}
               onGenerate={handleGenerate}
+              generationMode="easy"
+              onToggleMode={handleToggleMode}
+              autofillPrompt={autofillPrompt}
+              setAutofillPrompt={setAutofillPrompt}
+              isAutofilling={isAutofilling}
+              onAutofill={handleAutofill}
             />
           </div>
 

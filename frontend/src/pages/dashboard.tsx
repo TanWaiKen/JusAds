@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Outlet, useNavigate, useLocation } from "react-router";
+import { Outlet, useNavigate, useLocation, useParams } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { Menu, Loader2 } from "lucide-react";
@@ -23,7 +23,17 @@ export default function DashboardShell() {
   const { user, status } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { projectId } = useParams<{ projectId?: string }>();
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+
+  // Collapse sidebar when a project is selected
+  useEffect(() => {
+    if (projectId) {
+      setSidebarOpen(false);
+    } else {
+      setSidebarOpen(true);
+    }
+  }, [projectId]);
 
   // Track desktop vs mobile
   useEffect(() => {

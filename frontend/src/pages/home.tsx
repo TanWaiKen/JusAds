@@ -1,7 +1,9 @@
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
+import { PromptRecommendations } from "@/components/prompt-search/PromptRecommendations";
+import { toast } from "sonner";
 import {
   Sparkles,
   Layers,
@@ -19,6 +21,28 @@ export default function DashboardHome() {
   const { user } = useAuth();
   const displayName = user?.profile.name ?? user?.profile.email ?? "Creative Lead";
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const [profile, setProfile] = useState<any>({});
+
+  useEffect(() => {
+    const email = user?.profile?.email;
+    if (!email) return;
+
+    fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/profile/${email}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) {
+          setProfile({
+            productName: data.company_name,
+            productCategory: data.product_category,
+            userEmail: email,
+          });
+        } else {
+          setProfile({ userEmail: email });
+        }
+      })
+      .catch(() => setProfile({ userEmail: email }));
+  }, [user]);
 
   // Stats data
   const stats = [
@@ -252,15 +276,16 @@ export default function DashboardHome() {
             </div>
           </div>
 
-          {/* Market Sentiment Mini Panel */}
+          {/* Prompt Recommendations Feed */}
           <div className="sentiment-panel bg-surface-card border border-border-default p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300">
-            <h3 className="text-body-md font-bold text-text-heading mb-4 flex items-center gap-2">
-              <TrendingUp size={16} className="text-[#0080FF]" /> Market Sentiment & Trends
-            </h3>
-            <div className="p-4 bg-surface-inset rounded-xl border border-border-subtle text-label-ui text-text-body leading-relaxed">
-              Family-focused protective hooks and mid-evening shopping surges represent the highest converting localized opportunities in Singapore and Malaysia this week. Go to the{" "}
-              <strong className="text-text-heading">Trends tab</strong> to select signals.
-            </div>
+            <PromptRecommendations
+              profile={profile}
+              onUse={(prompt) => {
+                navigator.clipboard.writeText(prompt);
+                toast.success("Prompt copied to clipboard! Go to Create to start generating.");
+              }}
+              maxCards={3}
+            />
           </div>
         </div>
 

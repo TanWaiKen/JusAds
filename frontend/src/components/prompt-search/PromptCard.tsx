@@ -43,7 +43,7 @@ export function PromptCard({ suggestion, onUse }: PromptCardProps): React.ReactE
             loading="lazy"
           />
           {/* Score badge */}
-          <span className="absolute left-2 top-2 rounded bg-yellow-400 px-1.5 py-0.5 text-[10px] font-bold text-black">
+          <span className="absolute left-2 top-2 rounded bg-yellow-400 px-1.5 py-0.5 text-[10px] font-semibold text-black">
             {Math.round(suggestion.score * 100)}% match
           </span>
         </div>
@@ -52,7 +52,7 @@ export function PromptCard({ suggestion, onUse }: PromptCardProps): React.ReactE
       {/* Content */}
       <div className="flex flex-col gap-2 p-3">
         {/* Title */}
-        <h4 className="text-xs font-bold text-foreground line-clamp-2">
+        <h4 className="text-xs font-semibold text-foreground line-clamp-2">
           {suggestion.title}
         </h4>
 
@@ -95,7 +95,7 @@ export function PromptCard({ suggestion, onUse }: PromptCardProps): React.ReactE
                 onUse(suggestion.content || suggestion.description);
               }
             }}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-[#171717] px-3 py-2 text-[11px] font-bold text-white hover:bg-[#333] transition-colors cursor-pointer"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-[#171717] px-3 py-2 text-[11px] font-semibold text-white hover:bg-[#333] transition-colors cursor-pointer"
           >
             <Zap size={12} />
             Try it now

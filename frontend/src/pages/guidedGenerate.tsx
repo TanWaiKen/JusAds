@@ -227,7 +227,7 @@ export function GuidedGenerate() {
       {step === 1 && (
         <div className="step-content mx-auto flex w-full max-w-3xl flex-col items-center gap-8 pt-12">
           <div className="text-center">
-            <h1 className="text-2xl font-semibold tracking-tight">Create an Ad</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.96px]">Create an Ad</h1>
             <p className="mt-2 text-muted-foreground">
               Choose how you'd like to create your advertisement
             </p>
@@ -273,7 +273,7 @@ export function GuidedGenerate() {
       {step === 2 && (
         <div className="step-content mx-auto flex w-full max-w-4xl flex-col gap-6 pt-8">
           <div className="text-center">
-            <h1 className="text-2xl font-semibold tracking-tight">What would you like to create?</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.96px]">What would you like to create?</h1>
             <p className="mt-2 text-muted-foreground">
               Select the type of ad you want to generate
             </p>
@@ -321,7 +321,7 @@ export function GuidedGenerate() {
       {step === 3 && selectedType && (
         <div className="step-content mx-auto flex w-full max-w-2xl flex-col gap-6 pt-8">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="text-2xl font-semibold tracking-[-0.96px]">
               {selectedType.label}
             </h1>
             <p className="mt-1 text-muted-foreground">

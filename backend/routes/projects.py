@@ -99,7 +99,11 @@ async def update_project(project_id: str, body: UpdateProjectRequest) -> JSONRes
         return JSONResponse(status_code=503, content={"error": "Database unavailable"})
 
     try:
-        result = store.update_project_name(project_id=project_id, name=body.name)
+        result = store.update_project_name(
+            project_id=project_id,
+            name=body.name,
+            description=body.description,
+        )
         return JSONResponse(content=result)
     except Exception as e:
         logger.error("Failed to update project %s: %s", project_id, e)

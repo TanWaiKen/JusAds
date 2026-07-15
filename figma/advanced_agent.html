@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AdLocalize | Advanced Node Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Hanken+Grotesk:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-high": "#e4e9ed",
+                    "secondary-fixed": "#d3e4fe",
+                    "inverse-on-surface": "#edf1f5",
+                    "inverse-surface": "#2c3134",
+                    "surface-tint": "#5f5e5e",
+                    "surface-variant": "#dfe3e7",
+                    "on-tertiary": "#ffffff",
+                    "inverse-primary": "#c8c6c5",
+                    "on-primary-fixed-variant": "#474746",
+                    "surface-dim": "#d6dade",
+                    "primary-fixed-dim": "#c8c6c5",
+                    "secondary-container": "#d0e1fb",
+                    "on-tertiary-container": "#818486",
+                    "surface-container-highest": "#dfe3e7",
+                    "outline-variant": "#c4c7c7",
+                    "secondary": "#505f76",
+                    "on-secondary-container": "#54647a",
+                    "on-secondary": "#ffffff",
+                    "background": "#f6fafe",
+                    "on-secondary-fixed": "#0b1c30",
+                    "primary-fixed": "#e5e2e1",
+                    "surface-container-low": "#f0f4f8",
+                    "on-tertiary-fixed-variant": "#444749",
+                    "on-surface-variant": "#444748",
+                    "outline": "#747878",
+                    "surface-container-lowest": "#ffffff",
+                    "on-background": "#171c1f",
+                    "on-error": "#ffffff",
+                    "primary": "#000000",
+                    "tertiary-fixed": "#e0e3e5",
+                    "on-primary-fixed": "#1c1b1b",
+                    "on-primary": "#ffffff",
+                    "tertiary": "#000000",
+                    "on-primary-container": "#858383",
+                    "secondary-fixed-dim": "#b7c8e1",
+                    "surface": "#f6fafe",
+                    "surface-container": "#eaeef2",
+                    "surface-bright": "#f6fafe",
+                    "tertiary-container": "#191c1e",
+                    "on-error-container": "#93000a",
+                    "on-surface": "#171c1f",
+                    "on-secondary-fixed-variant": "#38485d",
+                    "on-tertiary-fixed": "#191c1e",
+                    "error": "#ba1a1a",
+                    "primary-container": "#1c1b1b",
+                    "error-container": "#ffdad6"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "xl": "40px",
+                    "xs": "4px",
+                    "gutter": "24px",
+                    "xxl": "64px",
+                    "md": "16px",
+                    "container-max": "1440px",
+                    "sm": "8px",
+                    "lg": "24px"
+            },
+            "fontFamily": {
+                    "body-sm": ["Inter"],
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "body-lg": ["Inter"],
+                    "label-caps": ["JetBrains Mono"],
+                    "setting-label": ["Inter"],
+                    "headline-md": ["Hanken Grotesk"],
+                    "headline-lg": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "body-sm": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                    "body-lg": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "label-caps": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "setting-label": ["13px", {"lineHeight": "1.2", "fontWeight": "500"}],
+                    "headline-md": ["20px", {"lineHeight": "1.4", "fontWeight": "500"}],
+                    "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #f6fafe;
+            color: #171c1f;
+            overflow: hidden;
+        }
+
+        .node-canvas-grid {
+            background-image: 
+                radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+
+        .pill-node {
+            box-shadow: 0px 4px 20px rgba(0,0,0,0.04);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .pill-node:hover {
+            box-shadow: 0px 6px 24px rgba(0,0,0,0.06);
+            transform: translateY(-1px);
+        }
+
+        .pill-node.active {
+            outline: 2px solid #000000;
+            outline-offset: 2px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e2e8f0;
+            border-radius: 10px;
+        }
+
+        #inspector-drawer {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .node-connector {
+            stroke: #94a3b8;
+            stroke-width: 2;
+            fill: none;
+        }
+    </style>
+</head>
+<body class="font-body-sm text-body-sm h-screen flex flex-col">
+<!-- TopNavBar -->
+<header class="flex justify-between items-center px-lg w-full border-b border-outline-variant bg-surface-container-lowest h-16 z-40">
+<div class="flex items-center gap-md">
+<span class="font-headline-md text-headline-md tracking-tight text-primary">AdLocalize</span>
+<div class="h-4 w-[1px] bg-outline-variant"></div>
+<nav class="flex gap-md">
+<a class="font-setting-label text-setting-label text-on-surface-variant hover:text-primary transition-colors" href="#">Easy Mode</a>
+<a class="font-setting-label text-setting-label text-primary border-b-2 border-primary pb-1" href="#">Advanced Mode</a>
+</nav>
+</div>
+<div class="flex items-center gap-lg">
+<div class="relative hidden md:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+<input class="bg-surface-container-low border-none rounded-full pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary" placeholder="Search workflow..." type="text"/>
+</div>
+<div class="flex items-center gap-md">
+<button class="text-on-surface-variant hover:text-primary transition-transform active:scale-90"><span class="material-symbols-outlined">notifications</span></button>
+<button class="text-on-surface-variant hover:text-primary transition-transform active:scale-90"><span class="material-symbols-outlined">help_outline</span></button>
+<button class="bg-primary text-on-primary px-lg py-sm rounded-lg font-setting-label transition-transform active:scale-95">Publish</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a creative director in a bright, minimalist studio. Soft daylight illuminates her features against a background of clean white walls and architectural details. The overall aesthetic is calm, modern, and high-end professional." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4Z2pC0qIqunkYFUCHn_cIFybYS67k-uQj-JEyqRtGuNoPTk7q2tIBDNw8L_s1cyUz7tr-ELHuzqDcfgemNTVk2GNSM4BEdfOrbrCpjgOupsqQ9pZiQmW0MGuOBtHNsiOCjZnwui7lsQYq_RQpG6CCD4NvO_StIi6Fx6zu_VinD5cEiKM-0g5jzE3H8rmUxvBKTkzzIdFVYsceYdQ4Htk-WQUzO6A6HIK2kUS3VsC2bqxa3A49CEgqM6-V53CuLrdtTe66G_gEcII"/>
+</div>
+</div>
+</div>
+</header>
+<div class="flex-1 flex overflow-hidden">
+<!-- SideNav (Left Panel) -->
+<aside class="flex flex-col h-full py-lg gap-md bg-surface-container-low w-64 border-r border-outline-variant z-30 overflow-y-auto custom-scrollbar">
+<div class="px-md mb-md">
+<div class="flex items-center gap-sm px-sm mb-4">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">folder_open</span>
+<span class="font-bold text-primary">Library</span>
+</div>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-lowest border-none rounded-lg pl-9 pr-3 py-2 text-xs focus:ring-1 focus:ring-primary shadow-sm" placeholder="Filter nodes..." type="text"/>
+</div>
+</div>
+<div class="flex flex-col gap-unit">
+<!-- Inputs Section -->
+<div class="px-md">
+<button class="w-full flex items-center justify-between py-1 text-on-surface-variant hover:text-primary">
+<span class="font-label-caps text-label-caps uppercase tracking-widest text-[10px]">Inputs</span>
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</button>
+<div class="mt-2 flex flex-col gap-1">
+<div class="flex items-center gap-sm p-2 rounded-lg bg-surface-container-lowest border border-transparent hover:border-primary cursor-grab transition-all group" draggable="true">
+<span class="material-symbols-outlined text-[18px] text-secondary">database</span>
+<span class="font-setting-label">Product Feed</span>
+<span class="material-symbols-outlined ml-auto text-[14px] opacity-0 group-hover:opacity-100">add</span>
+</div>
+<div class="flex items-center gap-sm p-2 rounded-lg bg-surface-container-lowest border border-transparent hover:border-primary cursor-grab transition-all group" draggable="true">
+<span class="material-symbols-outlined text-[18px] text-secondary">image</span>
+<span class="font-setting-label">Media Assets</span>
+<span class="material-symbols-outlined ml-auto text-[14px] opacity-0 group-hover:opacity-100">add</span>
+</div>
+</div>
+</div>
+<!-- Agents Section -->
+<div class="px-md mt-md">
+<button class="w-full flex items-center justify-between py-1 text-on-surface-variant hover:text-primary">
+<span class="font-label-caps text-label-caps uppercase tracking-widest text-[10px]">Agents</span>
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</button>
+<div class="mt-2 flex flex-col gap-1">
+<div class="flex items-center gap-sm p-2 rounded-lg bg-surface-container-lowest border border-transparent hover:border-primary cursor-grab transition-all group" draggable="true">
+<span class="material-symbols-outlined text-[18px] text-secondary">translate</span>
+<span class="font-setting-label">Localization LLM</span>
+<span class="material-symbols-outlined ml-auto text-[14px] opacity-0 group-hover:opacity-100">add</span>
+</div>
+<div class="flex items-center gap-sm p-2 rounded-lg bg-surface-container-lowest border border-transparent hover:border-primary cursor-grab transition-all group" draggable="true">
+<span class="material-symbols-outlined text-[18px] text-secondary">auto_fix</span>
+<span class="font-setting-label">Style Enhancer</span>
+<span class="material-symbols-outlined ml-auto text-[14px] opacity-0 group-hover:opacity-100">add</span>
+</div>
+<div class="flex items-center gap-sm p-2 rounded-lg bg-surface-container-lowest border border-transparent hover:border-primary cursor-grab transition-all group" draggable="true">
+<span class="material-symbols-outlined text-[18px] text-secondary">check_circle</span>
+<span class="font-setting-label">Policy Guard</span>
+<span class="material-symbols-outlined ml-auto text-[14px] opacity-0 group-hover:opacity-100">add</span>
+</div>
+</div>
+</div>
+<!-- Outputs Section -->
+<div class="px-md mt-md">
+<button class="w-full flex items-center justify-between py-1 text-on-surface-variant hover:text-primary">
+<span class="font-label-caps text-label-caps uppercase tracking-widest text-[10px]">Outputs</span>
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</button>
+<div class="mt-2 flex flex-col gap-1">
+<div class="flex items-center gap-sm p-2 rounded-lg bg-surface-container-lowest border border-transparent hover:border-primary cursor-grab transition-all group" draggable="true">
+<span class="material-symbols-outlined text-[18px] text-secondary">rocket_launch</span>
+<span class="font-setting-label">Meta Ad Manager</span>
+<span class="material-symbols-outlined ml-auto text-[14px] opacity-0 group-hover:opacity-100">add</span>
+</div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Center Canvas -->
+<main class="flex-1 relative overflow-hidden bg-background node-canvas-grid cursor-crosshair" id="canvas-area">
+<!-- Floating Workspace Controls -->
+<div class="absolute bottom-lg left-1/2 -translate-x-1/2 flex items-center gap-sm bg-surface-container-lowest px-md py-sm rounded-full shadow-xl border border-outline-variant z-20">
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-colors"><span class="material-symbols-outlined">zoom_in</span></button>
+<div class="w-[1px] h-4 bg-outline-variant"></div>
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-colors"><span class="material-symbols-outlined">zoom_out</span></button>
+<div class="w-[1px] h-4 bg-outline-variant"></div>
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-colors"><span class="material-symbols-outlined">center_focus_strong</span></button>
+<div class="w-[1px] h-4 bg-outline-variant"></div>
+<button class="px-md font-setting-label text-primary">100%</button>
+</div>
+<!-- Example Nodes -->
+<div class="absolute inset-0 pointer-events-none">
+<svg class="w-full h-full">
+<path class="node-connector" d="M 320 200 C 400 200, 420 280, 500 280"></path>
+<path class="node-connector" d="M 720 280 C 800 280, 820 280, 900 280"></path>
+<circle cx="320" cy="200" fill="#000" r="4"></circle>
+<circle cx="500" cy="280" fill="#000" r="4"></circle>
+<circle cx="720" cy="280" fill="#000" r="4"></circle>
+<circle cx="900" cy="280" fill="#000" r="4"></circle>
+</svg>
+</div>
+<!-- Node 1: Input -->
+<div class="pill-node pointer-events-auto absolute left-[120px] top-[160px] bg-surface-container-lowest rounded-full py-3 px-6 flex items-center gap-md border border-transparent active cursor-pointer" onclick="openInspector('Product Feed', 'Input', 'Retrieves real-time SKU data from your Google Merchant Center feed.')">
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+<span class="material-symbols-outlined text-[20px]">database</span>
+</div>
+<div>
+<p class="font-bold text-primary">Product Feed</p>
+<p class="text-[10px] text-on-surface-variant font-label-caps uppercase">Source Node</p>
+</div>
+<div class="ml-4 w-2 h-2 rounded-full bg-primary"></div>
+</div>
+<!-- Node 2: Agent -->
+<div class="pill-node pointer-events-auto absolute left-[500px] top-[240px] bg-surface-container-lowest rounded-full py-3 px-6 flex items-center gap-md border border-transparent cursor-pointer" onclick="openInspector('Localization LLM', 'Agent', 'Uses GPT-4o to translate and culturally adapt ad copy for EMEA markets.')">
+<div class="w-2 h-2 rounded-full bg-primary"></div>
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">translate</span>
+</div>
+<div>
+<p class="font-bold text-primary">Localization LLM</p>
+<p class="text-[10px] text-on-surface-variant font-label-caps uppercase">Agent Processor</p>
+</div>
+<div class="ml-4 w-2 h-2 rounded-full bg-primary"></div>
+</div>
+<!-- Node 3: Output -->
+<div class="pill-node pointer-events-auto absolute left-[900px] top-[240px] bg-surface-container-lowest rounded-full py-3 px-6 flex items-center gap-md border border-transparent cursor-pointer" onclick="openInspector('Meta Ad Manager', 'Output', 'Syncs generated creative assets and copy directly to active campaigns.')">
+<div class="w-2 h-2 rounded-full bg-primary"></div>
+<div class="w-8 h-8 rounded-full bg-inverse-surface flex items-center justify-center text-inverse-on-surface">
+<span class="material-symbols-outlined text-[20px]">rocket_launch</span>
+</div>
+<div>
+<p class="font-bold text-primary">Meta Ads</p>
+<p class="text-[10px] text-on-surface-variant font-label-caps uppercase">Export Sync</p>
+</div>
+</div>
+</main>
+<!-- Right Panel (Inspector) -->
+<aside class="fixed top-16 right-0 h-[calc(100vh-64px)] w-80 bg-surface-container-lowest border-l border-outline-variant z-50 translate-x-full shadow-2xl" id="inspector-drawer">
+<div class="p-lg flex flex-col h-full">
+<div class="flex items-center justify-between mb-lg">
+<h2 class="font-headline-md text-primary">Inspector</h2>
+<button class="p-1 hover:bg-surface-container-low rounded-lg" onclick="closeInspector()">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar" id="inspector-content">
+<div class="mb-lg">
+<div class="inline-block px-2 py-1 rounded bg-secondary-container text-on-secondary-container font-label-caps text-[10px] uppercase mb-2" id="ins-type-chip">Agent</div>
+<h3 class="font-headline-md font-bold mb-1" id="ins-title">Localization LLM</h3>
+<p class="text-on-surface-variant leading-relaxed" id="ins-desc">Uses GPT-4o to translate and culturally adapt ad copy for EMEA markets.</p>
+</div>
+<div class="space-y-md">
+<div>
+<label class="font-setting-label block mb-2">Target Language</label>
+<select class="w-full bg-surface-container-low border-none rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-primary">
+<option>German (DE)</option>
+<option>French (FR)</option>
+<option>Spanish (ES)</option>
+<option>Italian (IT)</option>
+</select>
+</div>
+<div>
+<label class="font-setting-label block mb-2">Creativity (Temperature)</label>
+<input class="w-full h-1 bg-surface-container-high rounded-full appearance-none cursor-pointer accent-primary" type="range"/>
+<div class="flex justify-between text-[10px] text-on-surface-variant mt-1">
+<span>Precise</span>
+<span>Creative</span>
+</div>
+</div>
+<div>
+<label class="font-setting-label block mb-2">Custom Prompt Override</label>
+<textarea class="w-full bg-surface-container-low border-none rounded-lg p-3 text-sm focus:ring-1 focus:ring-primary resize-none" placeholder="Enter custom instructions..." rows="4"></textarea>
+</div>
+</div>
+</div>
+<div class="pt-lg mt-auto border-t border-outline-variant flex gap-md">
+<button class="flex-1 py-3 font-setting-label bg-primary text-on-primary rounded-lg active:scale-95 transition-transform">Save Node</button>
+<button class="p-3 text-error hover:bg-error-container rounded-lg transition-colors"><span class="material-symbols-outlined">delete</span></button>
+</div>
+</div>
+</aside>
+</div>
+<!-- BottomNavBar (Status Bar / Controls) -->
+<div class="fixed bottom-0 left-0 right-0 z-50 flex justify-center items-center gap-xl px-xl py-md mb-md mx-auto max-w-fit pointer-events-none">
+<div class="flex gap-xl bg-surface-container-highest rounded-full px-xl py-2 shadow-xl pointer-events-auto border border-outline-variant">
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all">
+<span class="material-symbols-outlined text-[20px]">play_arrow</span>
+<span class="font-label-caps text-[10px]">Run</span>
+</button>
+<div class="w-[1px] h-8 bg-outline-variant opacity-30"></div>
+<button class="flex flex-col items-center justify-center bg-primary text-on-primary rounded-full px-6 py-2 transition-all active:scale-95">
+<span class="material-symbols-outlined text-[20px]">visibility</span>
+<span class="font-label-caps text-[10px]">Preview</span>
+</button>
+<div class="w-[1px] h-8 bg-outline-variant opacity-30"></div>
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all">
+<span class="material-symbols-outlined text-[20px]">history</span>
+<span class="font-label-caps text-[10px]">Log</span>
+</button>
+</div>
+</div>
+<script>
+        function openInspector(title, type, desc) {
+            const drawer = document.getElementById('inspector-drawer');
+            const insTitle = document.getElementById('ins-title');
+            const insType = document.getElementById('ins-type-chip');
+            const insDesc = document.getElementById('ins-desc');
+            
+            insTitle.innerText = title;
+            insType.innerText = type;
+            insDesc.innerText = desc;
+            
+            drawer.classList.remove('translate-x-full');
+
+            // Highlight node
+            document.querySelectorAll('.pill-node').forEach(node => {
+                node.classList.remove('active');
+                if (node.innerText.includes(title)) {
+                    node.classList.add('active');
+                }
+            });
+        }
+
+        function closeInspector() {
+            const drawer = document.getElementById('inspector-drawer');
+            drawer.classList.add('translate-x-full');
+            document.querySelectorAll('.pill-node').forEach(node => node.classList.remove('active'));
+        }
+
+        // Simple pan simulation
+        let isPanning = false;
+        let startX, startY;
+        const canvas = document.getElementById('canvas-area');
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.target === canvas) {
+                isPanning = true;
+                startX = e.pageX;
+                startY = e.pageY;
+            }
+        });
+
+        window.addEventListener('mouseup', () => isPanning = false);
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            // Logical implementation for visual movement would go here
+        });
+
+        // Initialize with first node selected
+        setTimeout(() => {
+            openInspector('Localization LLM', 'Agent', 'Uses GPT-4o to translate and culturally adapt ad copy for EMEA markets.');
+        }, 800);
+    </script>
+</body></html>

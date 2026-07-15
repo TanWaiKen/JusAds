@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Creative Agent Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+/* ===== DESIGN TOKENS ===== */
+:root, [data-theme="light"] {
+  --color-bg: #f7f6f2;
+  --color-surface: #f9f8f5;
+  --color-surface-2: #fbfbf9;
+  --color-surface-offset: #f0eeea;
+  --color-border: #d4d1ca;
+  --color-divider: #dcd9d5;
+  --color-text: #28251d;
+  --color-text-muted: #7a7974;
+  --color-text-faint: #bab9b4;
+  --color-primary: #01696f;
+  --color-primary-hover: #0c4e54;
+  --color-primary-glow: rgba(1,105,111,0.18);
+  --color-node-text: #008cf0;
+  --color-node-image: #8b5cf6;
+  --color-node-audio: #f59e0b;
+  --color-node-video: #ef4444;
+  --color-node-orchestrator: #01696f;
+  --color-node-critic: #6b7280;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.12);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+  --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+  --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-theme="dark"] {
+  --color-bg: #0f0f0e;
+  --color-surface: #161614;
+  --color-surface-2: #1c1b19;
+  --color-surface-offset: #222120;
+  --color-border: #2e2d2b;
+  --color-divider: #252422;
+  --color-text: #cdccca;
+  --color-text-muted: #797876;
+  --color-text-faint: #4a4947;
+  --color-primary: #4f98a3;
+  --color-primary-hover: #227f8b;
+  --color-primary-glow: rgba(79,152,163,0.2);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.25);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.35);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.5);
+}
+
+/* ===== BASE ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  background: var(--color-bg);
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+button { cursor: pointer; border: none; background: none; font: inherit; color: inherit; }
+input { font: inherit; color: inherit; }
+
+/* ===== HEADER ===== */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  height: 48px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  z-index: 100;
+}
+.header-left { display: flex; align-items: center; gap: 0.75rem; }
+.logo {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-weight: 600; font-size: var(--text-sm);
+  color: var(--color-text);
+}
+.logo svg { color: var(--color-primary); }
+.breadcrumb {
+  display: flex; align-items: center; gap: 0.25rem;
+  font-size: var(--text-xs); color: var(--color-text-muted);
+}
+.breadcrumb span { color: var(--color-text-faint); }
+.header-center { display: flex; align-items: center; gap: 0.5rem; }
+.pipeline-title {
+  font-size: var(--text-sm); font-weight: 500;
+  color: var(--color-text);
+}
+.header-right { display: flex; align-items: center; gap: 0.5rem; }
+.btn {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs); font-weight: 500;
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+.btn-ghost { color: var(--color-text-muted); }
+.btn-ghost:hover { background: var(--color-surface-offset); color: var(--color-text); }
+.btn-primary {
+  background: var(--color-primary); color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover { background: var(--color-primary-hover); }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  transition: background var(--transition), color var(--transition);
+}
+.icon-btn:hover { background: var(--color-surface-offset); color: var(--color-text); }
+
+/* ===== MAIN LAYOUT ===== */
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ===== LEFT PANEL – Node Library ===== */
+.node-library {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel-header {
+  padding: 0.75rem 1rem 0.5rem;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--color-divider);
+}
+.node-library-scroll { overflow-y: auto; padding: 0.5rem; flex: 1; }
+.node-group { margin-bottom: 0.75rem; }
+.node-group-label {
+  font-size: 10px; font-weight: 600;
+  color: var(--color-text-faint);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.node-item {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-md);
+  cursor: grab;
+  border: 1px solid transparent;
+  transition: background var(--transition), border-color var(--transition);
+  margin-bottom: 0.125rem;
+}
+.node-item:hover {
+  background: var(--color-surface-offset);
+  border-color: var(--color-border);
+}
+.node-item:active { cursor: grabbing; }
+.node-dot {
+  width: 8px; height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+.node-item-label { font-size: var(--text-xs); font-weight: 500; }
+.node-item-desc { font-size: 10px; color: var(--color-text-faint); }
+
+/* ===== CANVAS AREA ===== */
+.canvas-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--color-bg);
+  background-image:
+    radial-gradient(circle, var(--color-border) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.canvas-viewport {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
+/* SVG edges */
+.edges-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.edge-path {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke 0.3s;
+}
+.edge-path.active { stroke: var(--color-primary); }
+.edge-path.running { stroke: var(--color-primary); stroke-dasharray: 8 4; animation: dash 1s linear infinite; }
+.edge-arrow { fill: var(--color-border); }
+.edge-arrow.active { fill: var(--color-primary); }
+@keyframes dash { to { stroke-dashoffset: -12; } }
+
+/* ===== NODE ===== */
+.node {
+  position: absolute;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  min-width: 200px;
+  cursor: grab;
+  transition: box-shadow 0.2s, border-color 0.2s;
+  overflow: visible;
+}
+.node:active { cursor: grabbing; }
+.node.selected { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-glow), var(--shadow-lg); }
+.node.running { border-color: var(--color-primary); animation: node-pulse 1.5s ease-in-out infinite; }
+.node.done { border-color: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,0.15), var(--shadow-md); }
+.node.error { border-color: #ef4444; }
+@keyframes node-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--color-primary-glow), var(--shadow-md); }
+  50% { box-shadow: 0 0 0 6px var(--color-primary-glow), var(--shadow-lg); }
+}
+
+.node-header {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.node-type-dot {
+  width: 10px; height: 10px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+.node-title { font-size: var(--text-xs); font-weight: 600; flex: 1; }
+.node-status-icon { flex-shrink: 0; display: flex; align-items: center; }
+.node-body { padding: 0.625rem 0.75rem; }
+.node-model-tag {
+  display: inline-flex; align-items: center;
+  background: var(--color-surface-offset);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 0.125rem 0.5rem;
+  font-size: 10px; font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  margin-bottom: 0.5rem;
+}
+.node-state-bar {
+  height: 3px;
+  background: var(--color-surface-offset);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-top: 0.375rem;
+}
+.node-state-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.5s ease;
+  background: var(--color-primary);
+}
+.node-state-fill.done { background: #22c55e; }
+.node-output-preview {
+  margin-top: 0.5rem;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  background: var(--color-surface-offset);
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  min-height: 28px;
+  word-break: break-all;
+  line-height: 1.4;
+  display: none;
+}
+.node.done .node-output-preview { display: block; }
+.node-output-preview.image-thumb {
+  display: flex; align-items: center; gap: 0.375rem;
+}
+.thumb-color {
+  width: 20px; height: 20px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+/* PORT (connection point) */
+.port {
+  position: absolute;
+  width: 12px; height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  cursor: crosshair;
+  transition: border-color 0.2s, transform 0.2s;
+  z-index: 10;
+}
+.port:hover { border-color: var(--color-primary); transform: scale(1.3); }
+.port.out { right: -6px; top: 50%; transform: translateY(-50%); }
+.port.out:hover { transform: translateY(-50%) scale(1.3); }
+.port.in { left: -6px; top: 50%; transform: translateY(-50%); }
+.port.in:hover { transform: translateY(-50%) scale(1.3); }
+
+/* ===== RIGHT PANEL – Inspector ===== */
+.inspector {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.inspector-content { flex: 1; overflow-y: auto; padding: 0.75rem; }
+.inspector-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; gap: 0.5rem;
+  color: var(--color-text-faint); font-size: var(--text-xs);
+  text-align: center; padding: 2rem;
+}
+.inspector-node-name { font-size: var(--text-sm); font-weight: 600; margin-bottom: 0.25rem; }
+.inspector-model { font-size: var(--text-xs); color: var(--color-text-muted); font-family: var(--font-mono); margin-bottom: 1rem; }
+.field-label {
+  font-size: 10px; font-weight: 600;
+  color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 0.25rem;
+}
+.field-input, .field-textarea, .field-select {
+  width: 100%;
+  background: var(--color-surface-offset);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.375rem 0.625rem;
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  outline: none;
+  transition: border-color var(--transition);
+  margin-bottom: 0.75rem;
+  resize: none;
+}
+.field-input:focus, .field-textarea:focus, .field-select:focus { border-color: var(--color-primary); }
+.field-textarea { min-height: 72px; line-height: 1.5; }
+.field-select { appearance: none; cursor: pointer; }
+.status-badge {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-size: 10px; font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+.status-badge.idle { background: var(--color-surface-offset); color: var(--color-text-muted); }
+.status-badge.running { background: rgba(79,152,163,0.15); color: var(--color-primary); }
+.status-badge.done { background: rgba(34,197,94,0.12); color: #22c55e; }
+.status-badge.error { background: rgba(239,68,68,0.12); color: #ef4444; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status-badge.running .status-dot { animation: blink 1s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+.output-log {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  min-height: 80px;
+  max-height: 160px;
+  overflow-y: auto;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.log-line { margin-bottom: 0.125rem; }
+.log-line.info { color: var(--color-text-muted); }
+.log-line.success { color: #22c55e; }
+.log-line.running { color: var(--color-primary); }
+.log-line.error { color: #ef4444; }
+.divider { border: none; border-top: 1px solid var(--color-divider); margin: 0.75rem 0; }
+
+/* ===== BOTTOM LOG ===== */
+.bottom-bar {
+  height: 36px;
+  display: flex; align-items: center;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: 0 1rem; gap: 1rem;
+  flex-shrink: 0; z-index: 100;
+}
+.log-stream {
+  flex: 1; font-size: 10px; font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.log-stream .highlight { color: var(--color-primary); }
+.zoom-controls { display: flex; align-items: center; gap: 0.25rem; }
+.zoom-label { font-size: 10px; font-family: var(--font-mono); color: var(--color-text-faint); min-width: 40px; text-align: right; }
+
+/* ===== MINI MAP ===== */
+.minimap {
+  position: absolute;
+  bottom: 1rem; right: 1rem;
+  width: 140px; height: 90px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  z-index: 50;
+}
+.minimap canvas { width: 100%; height: 100%; }
+
+/* ===== CONTEXT MENU ===== */
+.context-menu {
+  position: fixed; z-index: 999;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0.25rem;
+  min-width: 160px;
+  display: none;
+}
+.context-menu.visible { display: block; }
+.context-item {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.context-item:hover { background: var(--color-surface-offset); }
+.context-item.danger:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
+.context-sep { border-top: 1px solid var(--color-divider); margin: 0.25rem 0; }
+
+/* ===== TOOLBAR OVERLAY ===== */
+.canvas-toolbar {
+  position: absolute;
+  top: 0.75rem; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 0.25rem;
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+}
+.toolbar-sep { width: 1px; height: 20px; background: var(--color-divider); margin: 0 0.125rem; }
+
+/* ===== RUN BUTTON ===== */
+.run-btn {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.375rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs); font-weight: 600;
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: background var(--transition), transform 0.1s;
+}
+.run-btn:hover { background: var(--color-primary-hover); }
+.run-btn:active { transform: scale(0.97); }
+.run-btn.running { background: #f59e0b; }
+.run-btn.running i { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
+
+/* ===== TOOLTIP ===== */
+[data-tip] { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 4px); left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+  font-size: 10px; white-space: nowrap;
+  pointer-events: none; opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 200;
+}
+[data-tip]:hover::after { opacity: 1; }
+
+/* company input overlay */
+.company-overlay {
+  position: absolute; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.company-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  width: 380px;
+  box-shadow: var(--shadow-lg);
+}
+.company-card h2 { font-size: var(--text-lg); font-weight: 600; margin-bottom: 0.25rem; }
+.company-card p { font-size: var(--text-xs); color: var(--color-text-muted); margin-bottom: 1.5rem; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.company-card .btn-primary { width: 100%; justify-content: center; margin-top: 0.75rem; padding: 0.625rem; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Creative Pipeline Logo">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+      </svg>
+      CreativeFlow
+    </div>
+    <div class="breadcrumb">
+      <span>/</span> Pipelines <span>/</span> Company Creative Agent
+    </div>
+  </div>
+  <div class="header-center">
+    <span class="pipeline-title" id="pipelineTitle">Untitled Pipeline</span>
+  </div>
+  <div class="header-right">
+    <button class="icon-btn" data-tip="Undo" onclick="undo()"><i data-lucide="undo-2" width="15" height="15"></i></button>
+    <button class="icon-btn" data-tip="Redo"><i data-lucide="redo-2" width="15" height="15"></i></button>
+    <button class="icon-btn" data-tip="Export JSON" onclick="exportJSON()"><i data-lucide="download" width="15" height="15"></i></button>
+    <button class="icon-btn" data-tip="Toggle theme" onclick="toggleTheme()" id="themeBtn"><i data-lucide="sun" width="15" height="15"></i></button>
+    <button class="btn btn-primary" id="runBtn" onclick="runPipeline()">
+      <i data-lucide="play" width="13" height="13"></i> Run Pipeline
+    </button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT: Node Library -->
+  <aside class="node-library">
+    <div class="panel-header">Node Library</div>
+    <div class="node-library-scroll">
+      <div class="node-group">
+        <div class="node-group-label">Agents</div>
+        <div class="node-item" draggable="true" data-type="orchestrator" ondragstart="onDragStart(event,'orchestrator')">
+          <div class="node-dot" style="background:#01696f"></div>
+          <div>
+            <div class="node-item-label">Orchestrator</div>
+            <div class="node-item-desc">Coordinates all agents</div>
+          </div>
+        </div>
+        <div class="node-item" draggable="true" data-type="text" ondragstart="onDragStart(event,'text')">
+          <div class="node-dot" style="background:#008cf0"></div>
+          <div>
+            <div class="node-item-label">Text Agent</div>
+            <div class="node-item-desc">Gemini 2.5 Flash</div>
+          </div>
+        </div>
+        <div class="node-item" draggable="true" data-type="image" ondragstart="onDragStart(event,'image')">
+          <div class="node-dot" style="background:#8b5cf6"></div>
+          <div>
+            <div class="node-item-label">Image Agent</div>
+            <div class="node-item-desc">Imagen 4</div>
+          </div>
+        </div>
+        <div class="node-item" draggable="true" data-type="audio" ondragstart="onDragStart(event,'audio')">
+          <div class="node-dot" style="background:#f59e0b"></div>
+          <div>
+            <div class="node-item-label">Audio Agent</div>
+            <div class="node-item-desc">Chirp 3 HD / Lyria</div>
+          </div>
+        </div>
+        <div class="node-item" draggable="true" data-type="video" ondragstart="onDragStart(event,'video')">
+          <div class="node-dot" style="background:#ef4444"></div>
+          <div>
+            <div class="node-item-label">Video Agent</div>
+            <div class="node-item-desc">Veo 3.1 Fast</div>
+          </div>
+        </div>
+        <div class="node-item" draggable="true" data-type="critic" ondragstart="onDragStart(event,'critic')">
+          <div class="node-dot" style="background:#6b7280"></div>
+          <div>
+            <div class="node-item-label">Critic Agent</div>
+            <div class="node-item-desc">Quality control</div>
+          </div>
+        </div>
+      </div>
+      <div class="node-group">
+        <div class="node-group-label">Inputs</div>
+        <div class="node-item" draggable="true" data-type="input" ondragstart="onDragStart(event,'input')">
+          <div class="node-dot" style="background:#94a3b8"></div>
+          <div>
+            <div class="node-item-label">Company Brief</div>
+            <div class="node-item-desc">Name, industry, tone</div>
+          </div>
+        </div>
+      </div>
+      <div class="node-group">
+        <div class="node-group-label">Outputs</div>
+        <div class="node-item" draggable="true" data-type="output" ondragstart="onDragStart(event,'output')">
+          <div class="node-dot" style="background:#10b981"></div>
+          <div>
+            <div class="node-item-label">Creative Pack</div>
+            <div class="node-item-desc">Final compiled output</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CANVAS -->
+  <div class="canvas-wrap" id="canvasWrap"
+    ondrop="onDrop(event)" ondragover="onDragOver(event)"
+    onmousedown="onCanvasMouseDown(event)"
+    onmousemove="onCanvasMouseMove(event)"
+    onmouseup="onCanvasMouseUp(event)"
+    onwheel="onWheel(event)"
+    oncontextmenu="onContextMenu(event)">
+
+    <!-- Canvas toolbar overlay -->
+    <div class="canvas-toolbar">
+      <button class="icon-btn" data-tip="Fit view" onclick="fitView()"><i data-lucide="maximize-2" width="14" height="14"></i></button>
+      <button class="icon-btn" data-tip="Zoom in" onclick="zoom(0.1)"><i data-lucide="zoom-in" width="14" height="14"></i></button>
+      <button class="icon-btn" data-tip="Zoom out" onclick="zoom(-0.1)"><i data-lucide="zoom-out" width="14" height="14"></i></button>
+      <div class="toolbar-sep"></div>
+      <button class="icon-btn" data-tip="Select all" onclick="selectAll()"><i data-lucide="box-select" width="14" height="14"></i></button>
+      <button class="icon-btn" data-tip="Delete selected" onclick="deleteSelected()"><i data-lucide="trash-2" width="14" height="14"></i></button>
+      <div class="toolbar-sep"></div>
+      <button class="icon-btn" data-tip="Add preset pipeline" onclick="loadPreset()"><i data-lucide="layout-template" width="14" height="14"></i></button>
+    </div>
+
+    <!-- Viewport (transform container) -->
+    <div class="canvas-viewport" id="viewport">
+      <!-- Edges SVG -->
+      <svg class="edges-svg" id="edgesSvg">
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <polygon class="edge-arrow" id="arrowPoly" points="0 0, 8 3, 0 6" />
+          </marker>
+          <marker id="arrowhead-active" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="var(--color-primary)" />
+          </marker>
+        </defs>
+      </svg>
+      <!-- Nodes injected here -->
+    </div>
+
+    <!-- Mini map -->
+    <div class="minimap"><canvas id="minimapCanvas" width="140" height="90"></canvas></div>
+  </div>
+
+  <!-- RIGHT: Inspector -->
+  <aside class="inspector">
+    <div class="panel-header">Inspector</div>
+    <div class="inspector-content" id="inspectorContent">
+      <div class="inspector-empty">
+        <i data-lucide="mouse-pointer-2" width="24" height="24"></i>
+        <span>Select a node to inspect its properties</span>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- BOTTOM STATUS BAR -->
+<div class="bottom-bar">
+  <span id="logStream" class="log-stream">Ready. Drag nodes to canvas or load a preset pipeline.</span>
+  <div class="zoom-controls">
+    <button class="icon-btn" onclick="zoom(-0.1)" style="width:20px;height:20px"><i data-lucide="minus" width="12" height="12"></i></button>
+    <span class="zoom-label" id="zoomLabel">100%</span>
+    <button class="icon-btn" onclick="zoom(0.1)" style="width:20px;height:20px"><i data-lucide="plus" width="12" height="12"></i></button>
+  </div>
+</div>
+
+<!-- CONTEXT MENU -->
+<div class="context-menu" id="contextMenu">
+  <div class="context-item" onclick="ctxDuplicate()"><i data-lucide="copy" width="13" height="13"></i> Duplicate</div>
+  <div class="context-item" onclick="ctxConnect()"><i data-lucide="git-branch" width="13" height="13"></i> Connect to…</div>
+  <div class="context-sep"></div>
+  <div class="context-item danger" onclick="ctxDelete()"><i data-lucide="trash-2" width="13" height="13"></i> Delete</div>
+</div>
+
+<!-- COMPANY BRIEF OVERLAY -->
+<div class="company-overlay" id="companyOverlay">
+  <div class="company-card">
+    <h2>🏢 Company Creative Pipeline</h2>
+    <p>Enter your company brief to seed the agents. You can edit these later in the Inspector.</p>
+    <div>
+      <div class="field-label">Company Name</div>
+      <input class="field-input" id="inpCompany" placeholder="e.g. NovaTech Solutions" value="NovaTech Solutions" />
+      <div class="field-row">
+        <div>
+          <div class="field-label">Industry</div>
+          <input class="field-input" id="inpIndustry" placeholder="AI & Cloud" value="AI & Cloud" />
+        </div>
+        <div>
+          <div class="field-label">Tone</div>
+          <input class="field-input" id="inpTone" placeholder="Professional" value="Professional" />
+        </div>
+      </div>
+      <div class="field-label">Target Audience</div>
+      <input class="field-input" id="inpAudience" placeholder="Enterprise CTOs" value="Enterprise CTOs" />
+      <button class="btn btn-primary" onclick="closeOverlay()">
+        <i data-lucide="arrow-right" width="14" height="14"></i> Open Pipeline Canvas
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== STATE =====
+let nodes = [];
+let edges = [];
+let selectedNodeId = null;
+let dragType = null;
+let pan = { x: 60, y: 60 };
+let scale = 1;
+let isDraggingNode = false;
+let isDraggingCanvas = false;
+let dragNodeId = null;
+let dragOffsetX = 0, dragOffsetY = 0;
+let lastMouseX = 0, lastMouseY = 0;
+let isRunning = false;
+let ctxTargetId = null;
+let companyBrief = { company: 'NovaTech Solutions', industry: 'AI & Cloud', tone: 'Professional', audience: 'Enterprise CTOs' };
+let nodeCounter = 0;
+let history = [];
+let historyPtr = -1;
+
+const NODE_META = {
+  orchestrator: { label: 'Orchestrator', model: 'gemini-2.5-flash', color: '#01696f', icon: 'cpu' },
+  text:         { label: 'Text Agent',   model: 'gemini-2.5-flash', color: '#008cf0', icon: 'type' },
+  image:        { label: 'Image Agent',  model: 'imagen-4',         color: '#8b5cf6', icon: 'image' },
+  audio:        { label: 'Audio Agent',  model: 'chirp-3-hd',       color: '#f59e0b', icon: 'music' },
+  video:        { label: 'Video Agent',  model: 'veo-3-fast',       color: '#ef4444', icon: 'video' },
+  critic:       { label: 'Critic Agent', model: 'gemini-2.5-flash', color: '#6b7280', icon: 'shield-check' },
+  input:        { label: 'Company Brief',model: 'user-input',       color: '#94a3b8', icon: 'file-text' },
+  output:       { label: 'Creative Pack',model: 'compiled',         color: '#10b981', icon: 'package' },
+};
+
+const FAKE_OUTPUTS = {
+  orchestrator: () => `Planning pipeline for ${companyBrief.company}…`,
+  text: () => `"${companyBrief.company} — Beyond Limits." \n3 variations generated.`,
+  image: () => `imagen4://brand_visual_v1.png\n1024×1024 · 4 assets`,
+  audio: () => `chirp3://novaTech_vo.mp3\n12s voiceover · HD`,
+  video: () => `veo3://promo_15s.mp4\n15s · 1080p · with audio`,
+  critic: () => `Score: 9.2/10 ✓ APPROVED\nAll assets pass brand guidelines.`,
+  input: () => `${companyBrief.company}\n${companyBrief.industry} · ${companyBrief.tone}`,
+  output: () => `Creative pack compiled!\n6 assets ready for download.`,
+};
+
+// ===== VIEWPORT =====
+function getViewport() { return document.getElementById('viewport'); }
+function applyTransform() {
+  getViewport().style.transform = `translate(${pan.x}px,${pan.y}px) scale(${scale})`;
+  document.getElementById('zoomLabel').textContent = Math.round(scale * 100) + '%';
+  drawMinimap();
+}
+
+// ===== DRAG FROM LIBRARY =====
+function onDragStart(e, type) { dragType = type; e.dataTransfer.effectAllowed = 'copy'; }
+function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+function onDrop(e) {
+  e.preventDefault();
+  if (!dragType) return;
+  const rect = document.getElementById('canvasWrap').getBoundingClientRect();
+  const x = (e.clientX - rect.left - pan.x) / scale;
+  const y = (e.clientY - rect.top - pan.y) / scale;
+  addNode(dragType, x, y);
+  dragType = null;
+  saveHistory();
+}
+
+// ===== NODE CREATION =====
+function addNode(type, x, y) {
+  const meta = NODE_META[type];
+  const id = 'node_' + (++nodeCounter);
+  const node = { id, type, x, y, status: 'idle', progress: 0, output: '', config: { prompt: '', model: meta.model } };
+  nodes.push(node);
+  renderNode(node);
+  return node;
+}
+
+function renderNode(node) {
+  const meta = NODE_META[node.type];
+  const el = document.createElement('div');
+  el.className = 'node';
+  el.id = node.id;
+  el.style.left = node.x + 'px';
+  el.style.top = node.y + 'px';
+  el.style.width = '200px';
+  el.innerHTML = `
+    <div class="port in" data-nodeid="${node.id}" data-port="in" onmousedown="portMouseDown(event,'${node.id}','in')"></div>
+    <div class="node-header">
+      <div class="node-type-dot" style="background:${meta.color}"></div>
+      <span class="node-title">${meta.label}</span>
+      <span class="node-status-icon" id="${node.id}_icon"></span>
+    </div>
+    <div class="node-body">
+      <div class="node-model-tag">${meta.model}</div>
+      <div class="node-state-bar"><div class="node-state-fill" id="${node.id}_fill" style="width:0%"></div></div>
+      <div class="node-output-preview" id="${node.id}_preview"></div>
+    </div>
+    <div class="port out" data-nodeid="${node.id}" data-port="out" onmousedown="portMouseDown(event,'${node.id}','out')"></div>
+  `;
+  el.addEventListener('mousedown', e => nodeMouseDown(e, node.id));
+  el.addEventListener('dblclick', () => selectNode(node.id));
+  getViewport().appendChild(el);
+  updateNodeStatus(node);
+}
+
+function updateNodeStatus(node) {
+  const el = document.getElementById(node.id);
+  if (!el) return;
+  el.className = 'node ' + node.status;
+  const fill = document.getElementById(node.id + '_fill');
+  if (fill) {
+    fill.style.width = node.progress + '%';
+    fill.className = 'node-state-fill' + (node.status === 'done' ? ' done' : '');
+  }
+  const icon = document.getElementById(node.id + '_icon');
+  if (icon) {
+    if (node.status === 'running') icon.innerHTML = '<i data-lucide="loader" width="12" height="12" style="animation:spin 1s linear infinite"></i>';
+    else if (node.status === 'done') icon.innerHTML = '<i data-lucide="check-circle" width="12" height="12" style="color:#22c55e"></i>';
+    else if (node.status === 'error') icon.innerHTML = '<i data-lucide="x-circle" width="12" height="12" style="color:#ef4444"></i>';
+    else icon.innerHTML = '';
+    lucide.createIcons();
+  }
+  const preview = document.getElementById(node.id + '_preview');
+  if (preview && node.status === 'done') {
+    preview.textContent = node.output;
+  }
+}
+
+// ===== DRAGGING NODES =====
+function nodeMouseDown(e, id) {
+  if (e.target.classList.contains('port')) return;
+  e.stopPropagation();
+  selectNode(id);
+  isDraggingNode = true;
+  dragNodeId = id;
+  const node = nodes.find(n => n.id === id);
+  const rect = document.getElementById('canvasWrap').getBoundingClientRect();
+  dragOffsetX = (e.clientX - rect.left - pan.x) / scale - node.x;
+  dragOffsetY = (e.clientY - rect.top - pan.y) / scale - node.y;
+}
+
+function onCanvasMouseDown(e) {
+  if (e.target.id === 'canvasWrap' || e.target.id === 'viewport' || e.target.classList.contains('canvas-viewport')) {
+    selectedNodeId = null;
+    renderInspector(null);
+    isDraggingCanvas = true;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    document.querySelectorAll('.node.selected').forEach(n => n.classList.remove('selected'));
+  }
+}
+
+function onCanvasMouseMove(e) {
+  if (isDraggingNode && dragNodeId) {
+    const node = nodes.find(n => n.id === dragNodeId);
+    if (!node) return;
+    const rect = document.getElementById('canvasWrap').getBoundingClientRect();
+    node.x = (e.clientX - rect.left - pan.x) / scale - dragOffsetX;
+    node.y = (e.clientY - rect.top - pan.y) / scale - dragOffsetY;
+    const el = document.getElementById(node.id);
+    if (el) { el.style.left = node.x + 'px'; el.style.top = node.y + 'px'; }
+    renderEdges();
+    drawMinimap();
+  } else if (isDraggingCanvas) {
+    pan.x += e.clientX - lastMouseX;
+    pan.y += e.clientY - lastMouseY;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    applyTransform();
+  }
+}
+
+function onCanvasMouseUp(e) {
+  if (isDraggingNode) saveHistory();
+  isDraggingNode = false;
+  isDraggingCanvas = false;
+  dragNodeId = null;
+}
+
+// ===== PORT / EDGE DRAWING =====
+let connectingFrom = null;
+let tempLine = null;
+
+function portMouseDown(e, nodeId, port) {
+  e.stopPropagation();
+  if (port === 'out') {
+    connectingFrom = { nodeId, port };
+    document.addEventListener('mousemove', onDrawEdge);
+    document.addEventListener('mouseup', onFinishEdge);
+  }
+}
+
+function getPortPos(nodeId, port) {
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node) return { x: 0, y: 0 };
+  const w = 200;
+  const h = 90;
+  if (port === 'out') return { x: node.x + w, y: node.y + h / 2 };
+  return { x: node.x, y: node.y + h / 2 };
+}
+
+function onDrawEdge(e) {
+  if (!connectingFrom) return;
+  const rect = document.getElementById('canvasWrap').getBoundingClientRect();
+  const mx = (e.clientX - rect.left - pan.x) / scale;
+  const my = (e.clientY - rect.top - pan.y) / scale;
+  const from = getPortPos(connectingFrom.nodeId, 'out');
+  if (tempLine) tempLine.remove();
+  const svg = document.getElementById('edgesSvg');
+  tempLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tempLine.setAttribute('class', 'edge-path');
+  tempLine.setAttribute('stroke-dasharray', '6 3');
+  tempLine.setAttribute('d', bezierPath(from.x, from.y, mx, my));
+  tempLine.setAttribute('marker-end', 'url(#arrowhead)');
+  svg.appendChild(tempLine);
+}
+
+function onFinishEdge(e) {
+  if (tempLine) { tempLine.remove(); tempLine = null; }
+  document.removeEventListener('mousemove', onDrawEdge);
+  document.removeEventListener('mouseup', onFinishEdge);
+  if (!connectingFrom) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (el && el.classList.contains('port') && el.dataset.port === 'in') {
+    const toId = el.dataset.nodeid;
+    if (toId !== connectingFrom.nodeId && !edges.find(ed => ed.from === connectingFrom.nodeId && ed.to === toId)) {
+      edges.push({ id: 'e_' + Date.now(), from: connectingFrom.nodeId, to: toId, active: false });
+      renderEdges();
+      saveHistory();
+      log(`Connected <span class="highlight">${NODE_META[nodes.find(n=>n.id===connectingFrom.nodeId)?.type]?.label}</span> → <span class="highlight">${NODE_META[nodes.find(n=>n.id===toId)?.type]?.label}</span>`);
+    }
+  }
+  connectingFrom = null;
+}
+
+function bezierPath(x1, y1, x2, y2) {
+  const dx = Math.abs(x2 - x1) * 0.5;
+  return `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`;
+}
+
+function renderEdges() {
+  const svg = document.getElementById('edgesSvg');
+  svg.querySelectorAll('.edge-rendered').forEach(e => e.remove());
+  edges.forEach(edge => {
+    const from = getPortPos(edge.from, 'out');
+    const to = getPortPos(edge.to, 'in');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('class', 'edge-path edge-rendered ' + (edge.running ? 'running' : edge.active ? 'active' : ''));
+    path.setAttribute('d', bezierPath(from.x, from.y, to.x, to.y));
+    path.setAttribute('marker-end', edge.active || edge.running ? 'url(#arrowhead-active)' : 'url(#arrowhead)');
+    path.addEventListener('contextmenu', ev => { ev.preventDefault(); ctxTargetId = 'edge:' + edge.id; showContextMenu(ev); });
+    svg.appendChild(path);
+  });
+  drawMinimap();
+}
+
+// ===== ZOOM & PAN =====
+function onWheel(e) {
+  e.preventDefault();
+  const rect = document.getElementById('canvasWrap').getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const delta = e.deltaY > 0 ? -0.08 : 0.08;
+  const newScale = Math.max(0.2, Math.min(2, scale + delta));
+  pan.x = mx - (mx - pan.x) * (newScale / scale);
+  pan.y = my - (my - pan.y) * (newScale / scale);
+  scale = newScale;
+  applyTransform();
+}
+
+function zoom(delta) {
+  scale = Math.max(0.2, Math.min(2, scale + delta));
+  applyTransform();
+}
+
+function fitView() {
+  if (!nodes.length) return;
+  const xs = nodes.map(n => n.x);
+  const ys = nodes.map(n => n.y);
+  const minX = Math.min(...xs) - 40, maxX = Math.max(...xs) + 240;
+  const minY = Math.min(...ys) - 40, maxY = Math.max(...ys) + 130;
+  const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
+  scale = Math.min(0.95, Math.min(wrap.width / (maxX - minX), wrap.height / (maxY - minY)));
+  pan.x = (wrap.width - (maxX + minX) * scale) / 2;
+  pan.y = (wrap.height - (maxY + minY) * scale) / 2;
+  applyTransform();
+}
+
+function selectAll() { nodes.forEach(n => { const el = document.getElementById(n.id); if(el) el.classList.add('selected'); }); }
+
+// ===== INSPECTOR =====
+function selectNode(id) {
+  selectedNodeId = id;
+  document.querySelectorAll('.node').forEach(el => el.classList.remove('selected'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('selected');
+  renderInspector(id);
+}
+
+function renderInspector(id) {
+  const container = document.getElementById('inspectorContent');
+  if (!id) {
+    container.innerHTML = `<div class="inspector-empty"><i data-lucide="mouse-pointer-2" width="24" height="24"></i><span>Select a node to inspect its properties</span></div>`;
+    lucide.createIcons();
+    return;
+  }
+  const node = nodes.find(n => n.id === id);
+  if (!node) return;
+  const meta = NODE_META[node.type];
+  const statusLabels = { idle: 'Idle', running: 'Running', done: 'Done', error: 'Error' };
+  container.innerHTML = `
+    <div class="inspector-node-name">${meta.label}</div>
+    <div class="inspector-model">${meta.model}</div>
+    <div class="status-badge ${node.status}" id="inspStatus">
+      <div class="status-dot"></div>${statusLabels[node.status]}
+    </div>
+    <div class="field-label">Node ID</div>
+    <input class="field-input" value="${node.id}" readonly style="opacity:0.5;cursor:default" />
+    <div class="field-label">Model</div>
+    <select class="field-select" id="inspModel" onchange="updateNodeConfig('${id}','model',this.value)">
+      <option value="gemini-2.5-flash" ${node.config.model==='gemini-2.5-flash'?'selected':''}>gemini-2.5-flash</option>
+      <option value="gemini-2.0-flash" ${node.config.model==='gemini-2.0-flash'?'selected':''}>gemini-2.0-flash</option>
+      <option value="imagen-4" ${node.config.model==='imagen-4'?'selected':''}>imagen-4</option>
+      <option value="nano-banana-2" ${node.config.model==='nano-banana-2'?'selected':''}>nano-banana-2</option>
+      <option value="veo-3-fast" ${node.config.model==='veo-3-fast'?'selected':''}>veo-3-fast</option>
+      <option value="veo-3.1" ${node.config.model==='veo-3.1'?'selected':''}>veo-3.1</option>
+      <option value="chirp-3-hd" ${node.config.model==='chirp-3-hd'?'selected':''}>chirp-3-hd</option>
+      <option value="lyria" ${node.config.model==='lyria'?'selected':''}>lyria</option>
+    </select>
+    <div class="field-label">System Prompt</div>
+    <textarea class="field-textarea" placeholder="Override system prompt…" onchange="updateNodeConfig('${id}','prompt',this.value)">${node.config.prompt}</textarea>
+    <hr class="divider" />
+    <div class="field-label">Output Log</div>
+    <div class="output-log" id="inspLog">${node.output ? node.output : '<span style="opacity:0.4">No output yet</span>'}</div>
+    <hr class="divider" />
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:0.25rem" onclick="runSingleNode('${id}')">
+      <i data-lucide="play" width="12" height="12"></i> Run This Node
+    </button>
+  `;
+  lucide.createIcons();
+}
+
+function updateNodeConfig(id, key, value) {
+  const node = nodes.find(n => n.id === id);
+  if (node) node.config[key] = value;
+}
+
+// ===== RUN PIPELINE =====
+async function runPipeline() {
+  if (isRunning) return;
+  isRunning = true;
+  const btn = document.getElementById('runBtn');
+  btn.innerHTML = '<i data-lucide="loader" width="13" height="13"></i> Running…';
+  btn.classList.add('running');
+  lucide.createIcons();
+
+  // Reset all nodes
+  nodes.forEach(n => { n.status = 'idle'; n.progress = 0; n.output = ''; updateNodeStatus(n); });
+  edges.forEach(e => { e.active = false; e.running = false; });
+  renderEdges();
+
+  // Topological execution order
+  const order = topoSort();
+  for (let i = 0; i < order.length; i++) {
+    const node = order[i];
+    await runSingleNodeInternal(node, i, order.length);
+    // Activate outgoing edges
+    edges.filter(e => e.from === node.id).forEach(e => { e.running = false; e.active = true; });
+    renderEdges();
+  }
+
+  isRunning = false;
+  btn.innerHTML = '<i data-lucide="play" width="13" height="13"></i> Run Pipeline';
+  btn.classList.remove('running');
+  lucide.createIcons();
+  log(`<span class="highlight">✓ Pipeline complete!</span> All ${order.length} nodes executed.`);
+}
+
+async function runSingleNode(id) {
+  const node = nodes.find(n => n.id === id);
+  if (!node) return;
+  await runSingleNodeInternal(node, 0, 1);
+}
+
+async function runSingleNodeInternal(node, idx, total) {
+  const meta = NODE_META[node.type];
+  node.status = 'running';
+  node.progress = 0;
+  updateNodeStatus(node);
+  edges.filter(e => e.to === node.id).forEach(e => { e.running = true; });
+  renderEdges();
+  log(`Running <span class="highlight">${meta.label}</span> [${idx+1}/${total}]…`);
+  if (selectedNodeId === node.id) renderInspector(node.id);
+
+  // Simulate progress
+  const steps = 8 + Math.floor(Math.random() * 6);
+  for (let s = 0; s <= steps; s++) {
+    node.progress = Math.round((s / steps) * 100);
+    updateNodeStatus(node);
+    await sleep(180 + Math.random() * 120);
+  }
+
+  node.status = 'done';
+  node.progress = 100;
+  node.output = FAKE_OUTPUTS[node.type]();
+  updateNodeStatus(node);
+  edges.filter(e => e.to === node.id).forEach(e => { e.running = false; });
+  if (selectedNodeId === node.id) renderInspector(node.id);
+  log(`<span style="color:#22c55e">✓</span> ${meta.label} complete`);
+}
+
+function topoSort() {
+  if (!nodes.length) return [];
+  const visited = new Set();
+  const result = [];
+  const adj = {};
+  nodes.forEach(n => adj[n.id] = []);
+  edges.forEach(e => adj[e.from] && adj[e.from].push(e.to));
+
+  function dfs(id) {
+    if (visited.has(id)) return;
+    visited.add(id);
+    (adj[id] || []).forEach(dfs);
+    result.unshift(nodes.find(n => n.id === id));
+  }
+
+  nodes.forEach(n => dfs(n.id));
+  return result.filter(Boolean);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ===== LOG =====
+function log(html) {
+  document.getElementById('logStream').innerHTML = html;
+}
+
+// ===== MINIMAP =====
+function drawMinimap() {
+  const canvas = document.getElementById('minimapCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 140, 90);
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  ctx.fillStyle = isDark ? '#161614' : '#f7f6f2';
+  ctx.fillRect(0, 0, 140, 90);
+  if (!nodes.length) return;
+  const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const minX = Math.min(...xs) - 20, maxX = Math.max(...xs) + 220;
+  const minY = Math.min(...ys) - 20, maxY = Math.max(...ys) + 110;
+  const w = maxX - minX || 1, h = maxY - minY || 1;
+  const sx = 120 / w, sy = 70 / h;
+  const s = Math.min(sx, sy);
+  const ox = 10, oy = 10;
+  edges.forEach(edge => {
+    const fn = nodes.find(n => n.id === edge.from);
+    const tn = nodes.find(n => n.id === edge.to);
+    if (!fn || !tn) return;
+    ctx.beginPath();
+    ctx.strokeStyle = edge.active ? '#4f98a3' : isDark ? '#2e2d2b' : '#d4d1ca';
+    ctx.lineWidth = 1;
+    ctx.moveTo(ox + (fn.x + 200 - minX) * s, oy + (fn.y + 45 - minY) * s);
+    ctx.lineTo(ox + (tn.x - minX) * s, oy + (tn.y + 45 - minY) * s);
+    ctx.stroke();
+  });
+  nodes.forEach(node => {
+    const meta = NODE_META[node.type];
+    ctx.fillStyle = meta.color;
+    ctx.globalAlpha = node.status === 'done' ? 1 : 0.6;
+    const nx = ox + (node.x - minX) * s;
+    const ny = oy + (node.y - minY) * s;
+    ctx.fillRect(nx, ny, 26 * s, 16 * s);
+    ctx.globalAlpha = 1;
+  });
+}
+
+// ===== PRESET PIPELINE =====
+function loadPreset() {
+  // Clear
+  nodes = []; edges = [];
+  getViewport().querySelectorAll('.node').forEach(e => e.remove());
+  document.getElementById('edgesSvg').querySelectorAll('.edge-rendered').forEach(e => e.remove());
+  nodeCounter = 0;
+
+  const n0 = addNode('input', 60, 200);
+  const n1 = addNode('orchestrator', 320, 200);
+  const n2 = addNode('text', 600, 80);
+  const n3 = addNode('image', 600, 220);
+  const n4 = addNode('audio', 600, 360);
+  const n5 = addNode('video', 600, 500);
+  const n6 = addNode('critic', 880, 280);
+  const n7 = addNode('output', 1140, 280);
+
+  [
+    [n0, n1], [n1, n2], [n1, n3], [n1, n4], [n1, n5],
+    [n2, n6], [n3, n6], [n4, n6], [n5, n6], [n6, n7]
+  ].forEach(([a, b]) => edges.push({ id: 'e_' + Date.now() + Math.random(), from: a.id, to: b.id, active: false }));
+
+  renderEdges();
+  setTimeout(fitView, 50);
+  saveHistory();
+  log(`<span class="highlight">Preset loaded</span> — 8 nodes, 10 connections. Hit "Run Pipeline" to execute.`);
+}
+
+// ===== CONTEXT MENU =====
+function showContextMenu(e) {
+  e.preventDefault();
+  const menu = document.getElementById('contextMenu');
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.add('visible');
+  document.addEventListener('click', hideContextMenu, { once: true });
+}
+function hideContextMenu() { document.getElementById('contextMenu').classList.remove('visible'); }
+function onContextMenu(e) {
+  if (e.target.closest('.node')) {
+    const node = e.target.closest('.node');
+    ctxTargetId = node.id;
+    showContextMenu(e);
+  }
+}
+function ctxDuplicate() {
+  if (!ctxTargetId) return;
+  const src = nodes.find(n => n.id === ctxTargetId);
+  if (!src) return;
+  addNode(src.type, src.x + 30, src.y + 30);
+  saveHistory();
+}
+function ctxDelete() {
+  if (!ctxTargetId) return;
+  deleteNodeById(ctxTargetId);
+  saveHistory();
+}
+function ctxConnect() { log('Click an output port, then an input port to connect nodes.'); }
+
+function deleteSelected() { if (selectedNodeId) { deleteNodeById(selectedNodeId); saveHistory(); } }
+function deleteNodeById(id) {
+  nodes = nodes.filter(n => n.id !== id);
+  edges = edges.filter(e => e.from !== id && e.to !== id);
+  const el = document.getElementById(id);
+  if (el) el.remove();
+  renderEdges();
+  selectedNodeId = null;
+  renderInspector(null);
+}
+
+// ===== HISTORY =====
+function saveHistory() {
+  const state = JSON.parse(JSON.stringify({ nodes, edges }));
+  history = history.slice(0, historyPtr + 1);
+  history.push(state);
+  historyPtr = history.length - 1;
+}
+function undo() {
+  if (historyPtr <= 0) return;
+  historyPtr--;
+  restoreState(history[historyPtr]);
+}
+function restoreState(state) {
+  nodes = []; edges = state.edges;
+  getViewport().querySelectorAll('.node').forEach(e => e.remove());
+  state.nodes.forEach(n => { nodes.push(n); renderNode(n); });
+  renderEdges();
+}
+
+// ===== EXPORT =====
+function exportJSON() {
+  const data = JSON.stringify({ pipeline: 'Company Creative Agent', company: companyBrief, nodes: nodes.map(n => ({ id: n.id, type: n.type, x: Math.round(n.x), y: Math.round(n.y), config: n.config })), edges: edges.map(e => ({ from: e.from, to: e.to })) }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'creative-pipeline.json';
+  a.click();
+  log('Pipeline exported as <span class="highlight">creative-pipeline.json</span>');
+}
+
+// ===== THEME =====
+function toggleTheme() {
+  const el = document.documentElement;
+  const isDark = el.dataset.theme === 'dark';
+  el.dataset.theme = isDark ? 'light' : 'dark';
+  drawMinimap();
+}
+
+// ===== OVERLAY =====
+function closeOverlay() {
+  companyBrief.company = document.getElementById('inpCompany').value || 'NovaTech Solutions';
+  companyBrief.industry = document.getElementById('inpIndustry').value || 'AI & Cloud';
+  companyBrief.tone = document.getElementById('inpTone').value || 'Professional';
+  companyBrief.audience = document.getElementById('inpAudience').value || 'Enterprise CTOs';
+  document.getElementById('companyOverlay').style.display = 'none';
+  document.getElementById('pipelineTitle').textContent = companyBrief.company + ' Creative Pipeline';
+  loadPreset();
+}
+
+// ===== KEYBOARD =====
+document.addEventListener('keydown', e => {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+    deleteSelected();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); undo(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'a') { e.preventDefault(); selectAll(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runPipeline();
+});
+
+// ===== INIT =====
+lucide.createIcons();
+applyTransform();
+</script>
+</body>
+</html>

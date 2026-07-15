@@ -9,6 +9,7 @@ Each table has: create, list/get, update, delete.
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from shared.clients import supabase
 from shared.models import CheckRecord, HistoryResponse
@@ -60,8 +61,8 @@ class SupabaseComplianceStore:
     def update_task_pipeline(self, project_id, task_id, status, pipeline_state):
         return update_task(project_id, task_id, status, pipeline_state)
 
-    def update_project_name(self, project_id, name):
-        return update_project(project_id, name)
+    def update_project_name(self, project_id, name=None, description=None):
+        return update_project(project_id, name=name, description=description)
 
     def delete_project(self, project_id):
         return delete_project(project_id)
@@ -112,12 +113,15 @@ def list_projects(user_id: str) -> list[dict]:
     return rows
 
 
-def update_project(project_id: str, name: str) -> dict:
-    """Update a project's name. Returns the updated row dict."""
+def update_project(project_id: str, name: Optional[str] = None, description: Optional[str] = None) -> dict:
+    """Update a project's name and/or description. Returns the updated row dict."""
     update_data = {
-        "name": name.strip(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if name is not None:
+        update_data["name"] = name.strip()
+    if description is not None:
+        update_data["description"] = description.strip()
     response = (
         supabase.table("projects")
         .update(update_data)

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AdLocalize | Easy Mode Workspace</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-high": "#e4e9ed",
+                    "secondary-fixed": "#d3e4fe",
+                    "inverse-on-surface": "#edf1f5",
+                    "inverse-surface": "#2c3134",
+                    "surface-tint": "#5f5e5e",
+                    "surface-variant": "#dfe3e7",
+                    "on-tertiary": "#ffffff",
+                    "inverse-primary": "#c8c6c5",
+                    "on-primary-fixed-variant": "#474746",
+                    "surface-dim": "#d6dade",
+                    "primary-fixed-dim": "#c8c6c5",
+                    "secondary-container": "#d0e1fb",
+                    "on-secondary-container": "#54647a",
+                    "on-secondary": "#ffffff",
+                    "background": "#f6fafe",
+                    "on-secondary-fixed": "#0b1c30",
+                    "primary-fixed": "#e5e2e1",
+                    "surface-container-low": "#f0f4f8",
+                    "on-tertiary-fixed-variant": "#444749",
+                    "on-surface-variant": "#444748",
+                    "outline": "#747878",
+                    "surface-container-lowest": "#ffffff",
+                    "on-background": "#171c1f",
+                    "on-error": "#ffffff",
+                    "primary": "#000000",
+                    "tertiary-fixed": "#e0e3e5",
+                    "on-primary-fixed": "#1c1b1b",
+                    "on-primary": "#ffffff",
+                    "tertiary": "#000000",
+                    "on-primary-container": "#858383",
+                    "secondary-fixed-dim": "#b7c8e1",
+                    "surface": "#f6fafe",
+                    "surface-container": "#eaeef2",
+                    "surface-bright": "#f6fafe",
+                    "tertiary-container": "#191c1e",
+                    "on-error-container": "#93000a",
+                    "on-surface": "#171c1f",
+                    "on-secondary-fixed-variant": "#38485d",
+                    "on-tertiary-fixed": "#191c1e",
+                    "error": "#ba1a1a",
+                    "primary-container": "#1c1b1b",
+                    "error-container": "#ffdad6"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "xl": "40px",
+                    "xs": "4px",
+                    "gutter": "24px",
+                    "xxl": "64px",
+                    "md": "16px",
+                    "container-max": "1440px",
+                    "sm": "8px",
+                    "lg": "24px"
+            },
+            "fontFamily": {
+                    "body-sm": ["Inter"],
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "body-lg": ["Inter"],
+                    "label-caps": ["JetBrains Mono"],
+                    "setting-label": ["Inter"],
+                    "headline-md": ["Hanken Grotesk"],
+                    "headline-lg": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "body-sm": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                    "body-lg": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "label-caps": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "setting-label": ["13px", {"lineHeight": "1.2", "fontWeight": "500"}],
+                    "headline-md": ["20px", {"lineHeight": "1.4", "fontWeight": "500"}],
+                    "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+            line-height: 1;
+        }
+        .canvas-shadow {
+            box-shadow: 0px 4px 20px rgba(0,0,0,0.04);
+        }
+        .refine-drawer {
+            transform: translateX(100%);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .refine-drawer.open {
+            transform: translateX(0);
+        }
+        .step-transition {
+            transition: all 0.3s ease;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-sm overflow-hidden">
+<!-- TopNavBar -->
+<header class="flex justify-between items-center px-lg w-full border-b border-outline-variant bg-surface-container-lowest h-16 z-40 relative">
+<div class="flex items-center gap-md">
+<span class="font-headline-md text-headline-md tracking-tight text-primary">AdLocalize</span>
+<div class="h-6 w-px bg-outline-variant mx-sm"></div>
+<nav class="flex gap-lg">
+<a class="font-setting-label text-setting-label text-primary border-b-2 border-primary pb-1" href="#">Easy Mode</a>
+<a class="font-setting-label text-setting-label text-on-surface-variant hover:text-primary transition-colors" href="#">Advanced Mode</a>
+</nav>
+</div>
+<div class="flex items-center gap-lg">
+<div class="relative hidden md:block">
+<input class="bg-surface-container-low border-none rounded-full px-md py-1.5 text-sm w-64 focus:ring-1 focus:ring-primary transition-all" placeholder="Search projects..." type="text"/>
+</div>
+<div class="flex items-center gap-md">
+<button class="text-on-surface-variant hover:text-primary transition-transform active:scale-90">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-transform active:scale-90">
+<span class="material-symbols-outlined">help_outline</span>
+</button>
+<button class="bg-primary text-on-primary px-lg py-2 rounded-lg font-setting-label text-setting-label hover:opacity-90 active:scale-95 transition-all">
+                    Publish
+                </button>
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container-high ml-sm cursor-pointer">
+<img class="w-full h-full object-cover" data-alt="A professional corporate headshot of a creative director in a minimalist studio setting. The lighting is soft and directional, casting subtle shadows that emphasize depth. The background is a clean, neutral grey with a slight hint of warm tones to match the Zen Precision aesthetic. The overall mood is reliable, calm, and focused." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDgYQBB9CVcU6ryc-eIczMMWVteMw_BfQsDv_1eaExKNQeFGeOpZvS1LxMWvcwCS4lG83Kar78q7F03W1ipT9nEDcNEst3-tJwbnz_81GCoIQCi9zamjlq8lhfGoZaoYlan6XiEebsvj7ousIt0J1HA_u99zCXopk-pvGknjPD5Voo6hcGQr2vE9oU47K0Dqi_0wABQg2H5skvQX4TCXgQULRdpfewtqMQ6BklYELVuoF_pDPyN1OC0HNzN_SqkCHcNpSQ5ITZ7FAY"/>
+</div>
+</div>
+</div>
+</header>
+<div class="flex h-[calc(100vh-64px)]">
+<!-- Left Panel: Stepper Sidebar -->
+<aside class="w-80 bg-surface-container-low flex flex-col h-full py-lg gap-md border-r border-outline-variant overflow-y-auto hide-scrollbar">
+<div class="px-lg mb-md">
+<h2 class="font-headline-md text-headline-md font-bold text-primary">New Project</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant opacity-70">Follow the steps to generate your ad.</p>
+</div>
+<!-- Stepper Container -->
+<div class="flex flex-col gap-unit px-md">
+<!-- Step 1: Format -->
+<div class="step-container bg-surface-container-high rounded-xl p-md mb-sm">
+<div class="flex items-center gap-md mb-sm">
+<div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold">1</div>
+<span class="font-setting-label text-setting-label font-bold text-primary">Ad Format</span>
+</div>
+<div class="flex flex-col gap-sm">
+<label class="flex items-center gap-md p-sm rounded-lg bg-surface-container-lowest cursor-pointer border border-transparent hover:border-primary transition-all group">
+<input checked="" class="text-primary focus:ring-primary" name="format" type="radio"/>
+<span class="font-body-sm text-body-sm">Instagram Reel</span>
+<span class="material-symbols-outlined ml-auto text-on-surface-variant group-hover:text-primary">movie</span>
+</label>
+<label class="flex items-center gap-md p-sm rounded-lg bg-surface-container-lowest cursor-pointer border border-transparent hover:border-primary transition-all group">
+<input class="text-primary focus:ring-primary" name="format" type="radio"/>
+<span class="font-body-sm text-body-sm">TikTok Ad</span>
+<span class="material-symbols-outlined ml-auto text-on-surface-variant group-hover:text-primary">bolt</span>
+</label>
+</div>
+</div>
+<!-- Step 2: Goal -->
+<div class="step-container hover:bg-surface-container-high rounded-xl p-md mb-sm transition-all">
+<div class="flex items-center gap-md mb-sm">
+<div class="w-8 h-8 rounded-full border border-outline text-on-surface-variant flex items-center justify-center font-bold">2</div>
+<span class="font-setting-label text-setting-label font-bold text-on-surface-variant">Campaign Goal</span>
+</div>
+<div class="flex flex-col gap-sm">
+<select class="w-full bg-surface-container-lowest border-none rounded-lg font-body-sm text-body-sm py-2 px-md focus:ring-1 focus:ring-primary">
+<option>Brand Awareness</option>
+<option>Direct Conversions</option>
+<option>App Installs</option>
+</select>
+</div>
+</div>
+<!-- Step 3: Tone -->
+<div class="step-container hover:bg-surface-container-high rounded-xl p-md mb-sm transition-all">
+<div class="flex items-center gap-md mb-sm">
+<div class="w-8 h-8 rounded-full border border-outline text-on-surface-variant flex items-center justify-center font-bold">3</div>
+<span class="font-setting-label text-setting-label font-bold text-on-surface-variant">Visual Tone</span>
+</div>
+<div class="grid grid-cols-2 gap-sm">
+<button class="bg-surface-container-lowest p-sm rounded-lg text-xs font-label-caps text-center hover:bg-primary hover:text-on-primary transition-all">MINIMAL</button>
+<button class="bg-surface-container-lowest p-sm rounded-lg text-xs font-label-caps text-center hover:bg-primary hover:text-on-primary transition-all">VIBRANT</button>
+<button class="bg-surface-container-lowest p-sm rounded-lg text-xs font-label-caps text-center hover:bg-primary hover:text-on-primary transition-all">PROFESSIONAL</button>
+<button class="bg-surface-container-lowest p-sm rounded-lg text-xs font-label-caps text-center hover:bg-primary hover:text-on-primary transition-all">URBAN</button>
+</div>
+</div>
+<div class="mt-lg">
+<button class="w-full bg-primary text-on-primary py-3 rounded-xl font-setting-label text-setting-label hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-md shadow-lg shadow-primary/10">
+<span class="material-symbols-outlined">auto_awesome</span>
+                        Generate Ad Drafts
+                    </button>
+</div>
+</div>
+</aside>
+<!-- Center Canvas: Grid of Ad Cards -->
+<main class="flex-1 overflow-y-auto bg-surface p-xl relative">
+<div class="max-w-5xl mx-auto">
+<div class="flex justify-between items-end mb-xl">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-primary">Recommended for you</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-xl mt-sm">We've crafted these designs based on your brand history and the 'Minimal' tone profile.</p>
+</div>
+<button class="flex items-center gap-sm text-primary font-setting-label text-setting-label bg-surface-container-high px-md py-2 rounded-full hover:bg-surface-variant transition-all" id="toggleRefine">
+<span class="material-symbols-outlined">tune</span>
+                        Refine Results
+                    </button>
+</div>
+<!-- Bento Grid of Ads -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+<!-- Ad Card 1 -->
+<div class="canvas-shadow bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col group cursor-pointer hover:translate-y-[-4px] transition-all duration-300">
+<div class="relative h-80 overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="A minimalist architectural photograph of a sleek concrete building with clean lines against a soft cerulean sky. The image has high-key lighting and uses a desaturated palette with subtle blue accents. The aesthetic is extremely clean and professional, embodying the Zen Precision style guide with ample negative space and focus on form." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCe0Wm6m-SVgWKtj9nqkhntmg6l5-mWB7hrEgrQHz36wM53BzWxtWKym66eB2SAOfXGDitLcCaVil_33HrjfHwC0qJWndunlNYwlHSW0q2sn7UxcPiQMqwPWlDNrh4qfnBlmXgLiEQetCAUVrWe8vb42nQgScUEb3mgKX3mhXcYF3vQNQ0AqkoprqUde2PHdb4sqC1DhJq4tb6MGeMf89tTtKZXRZvAV1ef4xUKUW1F0PQOQmM4I2QTuDFY-elYi-E9M0cBaPpMTgQ"/>
+<div class="absolute top-md left-md bg-primary/80 backdrop-blur-md text-on-primary px-sm py-1 rounded text-[10px] font-label-caps tracking-widest">VARIATION A</div>
+</div>
+<div class="p-lg flex flex-col gap-sm">
+<h3 class="font-headline-md text-headline-md text-primary">The Modern Edge</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Focus on architectural clean lines and premium positioning.</p>
+<div class="flex justify-between items-center mt-md">
+<span class="bg-secondary-container text-on-secondary-container px-sm py-1 rounded-full text-[10px] font-label-caps">98% FIT</span>
+<div class="flex gap-sm">
+<button class="p-sm rounded-full bg-surface-container hover:bg-primary hover:text-on-primary transition-all">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+<button class="p-sm rounded-full bg-surface-container hover:bg-primary hover:text-on-primary transition-all">
+<span class="material-symbols-outlined text-sm">file_download</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Ad Card 2 -->
+<div class="canvas-shadow bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col group cursor-pointer hover:translate-y-[-4px] transition-all duration-300">
+<div class="relative h-80 overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="Close-up macro shot of premium textured fabric with a single dew drop reflecting a bright studio light. The colors are muted neutrals: sand, charcoal, and ivory. The composition is off-center, creating a dynamic but peaceful visual flow. The lighting is soft and diffused, emphasizing the high-quality textures of the advertising material." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCC1-oc9jXT3_gTLgklQUhSna0vnpTraa9CeopSpKuw-5Ev1c8ZggmxnyOat3K3BRtjjkvWmE6nVzH5yAvcoFUGhZLmwTX3fpQBIKHT3Rmq06HxzrjqRfD71fFALzU28_GBmHQS_-X3GsOCnznwBPZY-zK0AN3KfuFZT26huVfiIpeNyC7w-Wv6oK_OIkscLOhHEEkemmEdEl5MG_INNlZMFKaLmFuDyFp_B6fHKYPIA4fIIKWgUg63bcrzutmlLKwtQHBl1cDN5C4"/>
+<div class="absolute top-md left-md bg-primary/80 backdrop-blur-md text-on-primary px-sm py-1 rounded text-[10px] font-label-caps tracking-widest">VARIATION B</div>
+</div>
+<div class="p-lg flex flex-col gap-sm">
+<h3 class="font-headline-md text-headline-md text-primary">Tactile Luxury</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Emphasis on product quality and detailed textures.</p>
+<div class="flex justify-between items-center mt-md">
+<span class="bg-secondary-container text-on-secondary-container px-sm py-1 rounded-full text-[10px] font-label-caps">94% FIT</span>
+<div class="flex gap-sm">
+<button class="p-sm rounded-full bg-surface-container hover:bg-primary hover:text-on-primary transition-all">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+<button class="p-sm rounded-full bg-surface-container hover:bg-primary hover:text-on-primary transition-all">
+<span class="material-symbols-outlined text-sm">file_download</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Ad Card 3 -->
+<div class="canvas-shadow bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col group cursor-pointer hover:translate-y-[-4px] transition-all duration-300">
+<div class="relative h-80 overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="An abstract composition of floating geometric spheres in a warm, low-contrast desert landscape during golden hour. The spheres are semi-transparent with a frosted glass effect. The lighting is ethereal and warm, suggesting a high-end, artistic approach to marketing. The overall feel is innovative and tranquil, perfectly suited for a sophisticated brand identity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDVH3lVHUtzh_oUa89w8FEf4yUoVnbxdiIOoDpgHhuWDpY7-4xtXROe1O1m4vUdh5VbJmueqt7Sm4KH2COUxVRC5t9CR7OFDvo5I2y02hPtiTbPIVl6AaU6yPcm6EvRn4pHzbh1yyURljpnnQ22nZt21m2KG0JIAgZO1yJe19M-rPvMrkjALaiIhWlQ3csEUNIz7sW7h75uj3rUvPc15MHXEBkEiFEj_PNy6wnjVBrMsxJnfTrEQZ65C5xgW4TdqRvH84qMwuiul2g"/>
+<div class="absolute top-md left-md bg-primary/80 backdrop-blur-md text-on-primary px-sm py-1 rounded text-[10px] font-label-caps tracking-widest">VARIATION C</div>
+</div>
+<div class="p-lg flex flex-col gap-sm">
+<h3 class="font-headline-md text-headline-md text-primary">Abstract Vision</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Using conceptual imagery to stand out in the feed.</p>
+<div class="flex justify-between items-center mt-md">
+<span class="bg-secondary-container text-on-secondary-container px-sm py-1 rounded-full text-[10px] font-label-caps">89% FIT</span>
+<div class="flex gap-sm">
+<button class="p-sm rounded-full bg-surface-container hover:bg-primary hover:text-on-primary transition-all">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+<button class="p-sm rounded-full bg-surface-container hover:bg-primary hover:text-on-primary transition-all">
+<span class="material-symbols-outlined text-sm">file_download</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Right Panel: Refine Drawer (Hidden by default) -->
+<aside class="refine-drawer fixed right-0 top-16 bottom-0 w-96 bg-surface-container-low border-l border-outline-variant z-30 flex flex-col shadow-2xl" id="refineDrawer">
+<div class="p-lg border-b border-outline-variant flex justify-between items-center">
+<h2 class="font-headline-md text-headline-md text-primary">Refine Design</h2>
+<button class="text-on-surface-variant hover:text-primary" id="closeRefine">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="p-lg flex flex-col gap-xl overflow-y-auto">
+<section>
+<h4 class="font-label-caps text-label-caps mb-md opacity-60">COPYWRITING</h4>
+<div class="flex flex-col gap-md">
+<div>
+<label class="font-setting-label text-setting-label block mb-xs">Headline</label>
+<input class="w-full bg-surface-container-lowest border-none rounded-lg p-md text-sm focus:ring-1 focus:ring-primary" type="text" value="Modern Solutions for Global Brands"/>
+</div>
+<div>
+<label class="font-setting-label text-setting-label block mb-xs">Call to Action</label>
+<select class="w-full bg-surface-container-lowest border-none rounded-lg p-md text-sm focus:ring-1 focus:ring-primary">
+<option>Learn More</option>
+<option>Shop Now</option>
+<option>Sign Up</option>
+</select>
+</div>
+</div>
+</section>
+<section>
+<h4 class="font-label-caps text-label-caps mb-md opacity-60">COLOR OVERLAY</h4>
+<div class="grid grid-cols-5 gap-sm">
+<div class="w-full aspect-square rounded-full bg-primary ring-2 ring-offset-2 ring-primary cursor-pointer"></div>
+<div class="w-full aspect-square rounded-full bg-[#3B82F6] cursor-pointer"></div>
+<div class="w-full aspect-square rounded-full bg-[#10B981] cursor-pointer"></div>
+<div class="w-full aspect-square rounded-full bg-[#F59E0B] cursor-pointer"></div>
+<div class="w-full aspect-square rounded-full bg-[#EF4444] cursor-pointer"></div>
+</div>
+</section>
+<section>
+<h4 class="font-label-caps text-label-caps mb-md opacity-60">ADAPTATION</h4>
+<div class="bg-surface-container rounded-xl p-md">
+<div class="flex items-center justify-between mb-sm">
+<span class="text-xs font-setting-label">A/B Testing Variant</span>
+<div class="w-8 h-4 bg-primary rounded-full relative">
+<div class="absolute right-0.5 top-0.5 w-3 h-3 bg-white rounded-full"></div>
+</div>
+</div>
+<p class="text-[11px] text-on-surface-variant opacity-70">Automatically generate 3 smaller variations for secondary testing groups.</p>
+</div>
+</section>
+<div class="mt-auto pt-lg">
+<button class="w-full bg-primary text-on-primary py-3 rounded-lg font-setting-label text-setting-label">Apply Refinements</button>
+</div>
+</div>
+</aside>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 flex justify-center items-center gap-xl px-xl py-md mb-md mx-auto max-w-fit bg-surface-container-highest rounded-t-xl shadow-xl">
+<a class="flex flex-col items-center justify-center bg-primary text-on-primary rounded-full px-6 py-2 transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined">auto_awesome</span>
+<span class="font-label-caps text-label-caps mt-1">GENERATE</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant p-2 rounded-lg transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined">visibility</span>
+<span class="font-label-caps text-label-caps mt-1">PREVIEW</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant p-2 rounded-lg transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined">rocket_launch</span>
+<span class="font-label-caps text-label-caps mt-1">PUBLISH</span>
+</a>
+</nav>
+<script>
+        const refineDrawer = document.getElementById('refineDrawer');
+        const toggleRefine = document.getElementById('toggleRefine');
+        const closeRefine = document.getElementById('closeRefine');
+
+        toggleRefine.addEventListener('click', () => {
+            refineDrawer.classList.add('open');
+        });
+
+        closeRefine.addEventListener('click', () => {
+            refineDrawer.classList.remove('open');
+        });
+
+        // Simple accordion logic for stepper
+        const steps = document.querySelectorAll('.step-container');
+        steps.forEach((step, index) => {
+            step.addEventListener('click', () => {
+                steps.forEach(s => s.classList.remove('bg-surface-container-high'));
+                step.classList.add('bg-surface-container-high');
+            });
+        });
+
+        // Hover animation for ad cards
+        const adCards = document.querySelectorAll('.canvas-shadow');
+        adCards.forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.style.boxShadow = '0px 12px 40px rgba(0,0,0,0.08)';
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.boxShadow = '0px 4px 20px rgba(0,0,0,0.04)';
+            });
+        });
+    </script>
+</body></html>

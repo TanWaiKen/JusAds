@@ -124,8 +124,8 @@ export function CreativePlanApproval({
       <div className="plan-header flex items-start justify-between mb-5">
         <div className="flex items-center gap-2">
           <Sparkles size={18} className="text-accent-blue" />
-          <h3 className="font-bold text-[18px] text-text-heading">Creative Plan</h3>
-          <span className="text-[11px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded font-bold">
+          <h3 className="font-semibold text-[18px] text-text-heading">Creative Plan</h3>
+          <span className="text-[11px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded font-semibold">
             Awaiting Approval
           </span>
         </div>
@@ -144,7 +144,7 @@ export function CreativePlanApproval({
       {/* Platforms + Media Types */}
       <div className="plan-section flex flex-wrap gap-4 mb-5">
         <div>
-          <span className="text-[10px] font-bold uppercase text-text-caption/60 block mb-1.5">Platforms</span>
+          <span className="text-[10px] font-semibold uppercase text-text-caption/60 block mb-1.5">Platforms</span>
           <div className="flex gap-1.5">
             {plan.target_platforms.map((p) => (
               <span key={p} className="px-2.5 py-1 rounded-full bg-surface-inset border border-border-subtle text-[12px] font-semibold text-text-body flex items-center gap-1">
@@ -154,7 +154,7 @@ export function CreativePlanApproval({
           </div>
         </div>
         <div>
-          <span className="text-[10px] font-bold uppercase text-text-caption/60 block mb-1.5">Media Types</span>
+          <span className="text-[10px] font-semibold uppercase text-text-caption/60 block mb-1.5">Media Types</span>
           <div className="flex gap-1.5">
             {plan.media_types.map((m) => (
               <span key={m} className="px-2.5 py-1 rounded-full bg-accent-blue/10 border border-accent-blue/20 text-[12px] font-semibold text-accent-blue flex items-center gap-1">
@@ -168,13 +168,13 @@ export function CreativePlanApproval({
       {/* Trend References */}
       {plan.trend_references.length > 0 && (
         <div className="plan-section mb-5">
-          <span className="text-[10px] font-bold uppercase text-text-caption/60 block mb-2">Trend Inspirations</span>
+          <span className="text-[10px] font-semibold uppercase text-text-caption/60 block mb-2">Trend Inspirations</span>
           <div className="space-y-2">
             {plan.trend_references.map((ref, i) => (
               <div key={i} className="flex items-start gap-3 p-3 bg-surface-inset rounded-lg border border-border-subtle">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] px-1.5 py-0.5 bg-surface-panel border border-border-default rounded font-bold text-text-caption">
+                    <span className="text-[10px] px-1.5 py-0.5 bg-surface-panel border border-border-default rounded font-semibold text-text-caption">
                       {ref.platform}
                     </span>
                     <span className="text-[13px] font-semibold text-text-heading truncate">{ref.title}</span>
@@ -193,7 +193,7 @@ export function CreativePlanApproval({
       {/* Cultural Events */}
       {plan.cultural_event_refs.length > 0 && (
         <div className="plan-section mb-5">
-          <span className="text-[10px] font-bold uppercase text-text-caption/60 block mb-2">Cultural Context</span>
+          <span className="text-[10px] font-semibold uppercase text-text-caption/60 block mb-2">Cultural Context</span>
           <div className="flex flex-wrap gap-2">
             {plan.cultural_event_refs.map((ev, i) => (
               <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">

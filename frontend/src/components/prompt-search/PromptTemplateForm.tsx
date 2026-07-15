@@ -122,7 +122,7 @@ export function PromptTemplateForm({
         <button
           type="button"
           onClick={() => onGenerate(content)}
-          className="self-start inline-flex items-center gap-1.5 rounded-md bg-[#171717] px-3 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition-colors cursor-pointer"
+          className="self-start inline-flex items-center gap-1.5 rounded-md bg-[#171717] px-3 py-1.5 text-[10px] font-semibold text-white hover:bg-[#333] transition-colors cursor-pointer"
         >
           <Zap size={10} />
           Use as-is
@@ -133,7 +133,7 @@ export function PromptTemplateForm({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-      <p className="text-xs font-bold text-foreground">{title}</p>
+      <p className="text-xs font-semibold text-foreground">{title}</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {fields.map((field) => (
@@ -155,7 +155,7 @@ export function PromptTemplateForm({
       <button
         type="button"
         onClick={() => onGenerate(composePrompt(content, fields, values))}
-        className="self-start inline-flex items-center gap-1.5 rounded-md bg-[#171717] px-4 py-2 text-xs font-bold text-white hover:bg-[#333] transition-colors cursor-pointer"
+        className="self-start inline-flex items-center gap-1.5 rounded-md bg-[#171717] px-4 py-2 text-xs font-semibold text-white hover:bg-[#333] transition-colors cursor-pointer"
       >
         <Zap size={12} />
         Generate with these settings

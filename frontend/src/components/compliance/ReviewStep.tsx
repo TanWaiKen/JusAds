@@ -115,13 +115,13 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
           <div className="flex flex-col">
             <span className="text-code-xs text-text-muted uppercase tracking-wider">Risk Percentage</span>
             <div className="flex items-baseline gap-1 mt-1">
-              <span className={`risk-value text-4xl font-bold ${getRiskLevelColor(riskLevel)}`}>0</span>
+              <span className={`risk-value text-4xl font-semibold ${getRiskLevelColor(riskLevel)}`}>0</span>
               <span className="text-lg text-text-muted">%</span>
             </div>
           </div>
           <div className="flex flex-col items-end">
             <span className="text-code-xs text-text-muted uppercase tracking-wider">Risk Level</span>
-            <span className={`text-xl font-bold mt-1 ${getRiskLevelColor(riskLevel)}`}>{riskLevel}</span>
+            <span className={`text-xl font-semibold mt-1 ${getRiskLevelColor(riskLevel)}`}>{riskLevel}</span>
           </div>
         </div>
         <div className="w-full h-3 bg-surface-inset rounded-full overflow-hidden">
@@ -150,25 +150,25 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
         <div className="mt-4 flex flex-wrap gap-3">
           {result.market && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-inset/60">
-              <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Market</span>
+              <span className="text-[10px] font-semibold uppercase text-text-muted tracking-wider">Market</span>
               <span className="text-xs font-medium text-text-primary capitalize">{result.market}</span>
             </div>
           )}
           {result.ethnicity && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-inset/60">
-              <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Ethnicity</span>
+              <span className="text-[10px] font-semibold uppercase text-text-muted tracking-wider">Ethnicity</span>
               <span className="text-xs font-medium text-text-primary capitalize">{result.ethnicity}</span>
             </div>
           )}
           {result.age_group && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-inset/60">
-              <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Age Group</span>
+              <span className="text-[10px] font-semibold uppercase text-text-muted tracking-wider">Age Group</span>
               <span className="text-xs font-medium text-text-primary capitalize">{result.age_group.replace(/_/g, " ")}</span>
             </div>
           )}
           {result.platform && result.platform !== "general" && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-inset/60">
-              <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Platform</span>
+              <span className="text-[10px] font-semibold uppercase text-text-muted tracking-wider">Platform</span>
               <span className="text-xs font-medium text-text-primary capitalize">{result.platform}</span>
             </div>
           )}
@@ -200,7 +200,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
       {/* ═══ Audio Player + Transcript (Audio media type) ═══ */}
       {isAudio && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-3 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
             <FileText size={16} className="text-accent-blue" />
             Audio Analysis
           </h3>
@@ -216,7 +216,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
           {result._transcript && (
             <div className="p-3 bg-surface-inset/50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Transcript</span>
+                <span className="text-[10px] font-semibold uppercase text-text-muted tracking-wider">Transcript</span>
                 {result._transcript.language && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-blue/10 text-accent-blue font-semibold uppercase">
                     {result._transcript.language}
@@ -234,7 +234,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
       {/* ═══ Video Violations Timeline ═══ */}
       {isVideo && violationsTimeline.length > 0 && violationsTimeline.some((v) => typeof v === "object" && v !== null && ("start_seconds" in v || "start" in v)) && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-3">Violations Timeline ({violationsTimeline.length})</h3>
+          <h3 className="text-sm font-semibold text-text-primary mb-3">Violations Timeline ({violationsTimeline.length})</h3>
           <div className="space-y-2">
             {violationsTimeline.map((v, i) => {
               const item = v as Record<string, unknown>;
@@ -258,8 +258,8 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[10px] font-bold uppercase text-text-muted bg-surface-inset px-1.5 py-0.5 rounded">{type}</span>
-                      <span className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">{severity}</span>
+                      <span className="text-[10px] font-semibold uppercase text-text-muted bg-surface-inset px-1.5 py-0.5 rounded">{type}</span>
+                      <span className="text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-400">{severity}</span>
                     </div>
                     <p className="text-[13px] text-text-muted">{desc}</p>
                   </div>
@@ -284,7 +284,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
       {/* ═══ High Risk Indicators ═══ */}
       {highRiskIndicators && highRiskIndicators.length > 0 && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-3">High Risk Indicators ({highRiskIndicators.length})</h3>
+          <h3 className="text-sm font-semibold text-text-primary mb-3">High Risk Indicators ({highRiskIndicators.length})</h3>
           <ul className="space-y-2">
             {highRiskIndicators.map((indicator, i) => (
               <li key={i} className="flex items-start gap-2">
@@ -300,7 +300,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
       {verification && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
               <ShieldCheck size={16} className="text-emerald-500" />
               Verification
             </h3>
@@ -353,7 +353,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
       {/* ═══ Suggestion ═══ */}
       {suggestion && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-2">Suggestion</h3>
+          <h3 className="text-sm font-semibold text-text-primary mb-2">Suggestion</h3>
           <p className="text-[13px] text-text-muted leading-relaxed">{suggestion}</p>
         </div>
       )}
@@ -361,7 +361,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
       {/* ═══ Localization Plan ═══ */}
       {localizationPlan && (
         <div className="result-card bg-surface-card rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-          <h3 className="text-sm font-bold text-text-primary mb-2">Localization Plan</h3>
+          <h3 className="text-sm font-semibold text-text-primary mb-2">Localization Plan</h3>
           <p className="text-[13px] text-text-muted leading-relaxed">{localizationPlan}</p>
         </div>
       )}
@@ -374,7 +374,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <p className="font-bold text-text-primary">All checks passed</p>
+          <p className="font-semibold text-text-primary">All checks passed</p>
           <p className="text-code-xs text-text-muted">This asset meets all compliance requirements.</p>
         </div>
       )}

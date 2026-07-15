@@ -113,12 +113,12 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
             Compliance Score
           </p>
           <div className="flex items-baseline gap-2">
-            <span className={`text-2xl font-bold ${getRiskLevelColor(originalResult.risk_level)}`}>
+            <span className={`text-2xl font-semibold ${getRiskLevelColor(originalResult.risk_level)}`}>
               {originalResult.score}
             </span>
             <span className="text-code-xs font-code-xs text-text-muted">/ 100</span>
             <span
-              className={`ml-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase ${getSeverityBadgeClasses(originalResult.risk_level === "High" ? "error" : originalResult.risk_level === "Medium" ? "warning" : "low")}`}
+              className={`ml-auto px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${getSeverityBadgeClasses(originalResult.risk_level === "High" ? "error" : originalResult.risk_level === "Medium" ? "warning" : "low")}`}
             >
               {originalResult.risk_level} Risk
             </span>
@@ -159,7 +159,7 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
               >
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${getSeverityBadgeClasses(violation.severity)}`}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase ${getSeverityBadgeClasses(violation.severity)}`}
                   >
                     {violation.severity}
                   </span>
@@ -264,14 +264,14 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
                 </p>
                 {remixScore !== null ? (
                   <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-bold text-emerald-500">
+                    <span className="text-2xl font-semibold text-emerald-500">
                       {remixScore}
                     </span>
                     <span className="text-code-xs font-code-xs text-text-muted">/ 100</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[11px] font-bold uppercase">
+                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[11px] font-semibold uppercase">
                       Compliant
                     </span>
                   </div>
@@ -335,7 +335,7 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
                     >
                       verified
                     </span>
-                    <p className="font-label-ui text-label-ui text-text-primary font-bold">
+                    <p className="font-label-ui text-label-ui text-text-primary font-semibold">
                       Compliant Version Ready
                     </p>
                     <p className="text-code-xs font-code-xs text-text-muted">

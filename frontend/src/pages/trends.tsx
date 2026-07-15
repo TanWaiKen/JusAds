@@ -274,6 +274,7 @@ export default function DashboardTrends() {
         setAvailableMarkets(eventsRes.available_markets);
       }
       setStatsData(statsRes);
+      console.log("Statistics Data from Backend:", statsRes);
     } catch (e) {
       setError("Failed to load trends. Data may be outdated or unavailable.");
     } finally {
@@ -324,7 +325,7 @@ export default function DashboardTrends() {
             </span>
           </div>
 
-          <h2 className="text-headline-md font-extrabold text-text-heading mb-2">
+          <h2 className="text-xl font-bold tracking-tight text-text-heading mb-2">
             {synergyEvent
               ? `Trend Synergy: ${synergyEvent.name} × Social Content`
               : "Trend Intelligence Dashboard"}
@@ -373,7 +374,7 @@ export default function DashboardTrends() {
             <div className="bg-surface-elevated border border-border-default rounded-xl p-6 retina-border shadow-xs">
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
                 <div>
-                  <h3 className="font-bold text-[20px] text-text-heading flex items-center gap-2">
+                  <h3 className="font-bold text-base text-text-heading flex items-center gap-2">
                     <Calendar size={18} className="text-accent-blue" />
                     Contextual Event Calendar
                   </h3>
@@ -426,7 +427,7 @@ export default function DashboardTrends() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <Sparkles size={16} className="text-accent-blue" />
-                      <h4 className="font-bold text-[18px] text-accent-blue">
+                      <h4 className="font-bold text-sm text-accent-blue">
                         Detected Synergy: "{synergyEvent.name} × Content"
                       </h4>
                     </div>
@@ -460,7 +461,7 @@ export default function DashboardTrends() {
           {/* Right 4-col: Research Intel & Stats */}
           <div className="lg:col-span-4">
             <div className="bg-surface-elevated border border-border-default rounded-xl p-6 h-full retina-border shadow-xs">
-              <h3 className="font-bold text-[20px] text-text-heading flex items-center gap-2 mb-6">
+              <h3 className="font-bold text-base text-text-heading flex items-center gap-2 mb-6">
                 <BarChart2 size={18} className="text-accent-blue" />
                 Trend Distribution
               </h3>
@@ -489,6 +490,38 @@ export default function DashboardTrends() {
                   <div>
                     <span className="block text-[11px] text-text-caption">Total Likes</span>
                     <span className="text-[22px] font-extrabold text-text-heading font-mono">{formatCount(totalLikes)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Overall Social Accounts Card (Multiple Platforms) */}
+              <div className="mt-6 pt-6 border-t border-border-default space-y-4">
+                <h4 className="font-bold text-[12px] text-text-heading flex items-center gap-2">
+                  <Globe size={14} className="text-accent-blue" />
+                  Overall Social Accounts Overview
+                </h4>
+                <p className="text-[11px] text-text-caption">
+                  Aggregated analytics across all connected organic & ad profiles.
+                </p>
+                
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="p-2 bg-surface-inset rounded-lg border border-border-subtle">
+                    <span className="block text-[8px] uppercase font-bold text-text-caption/60">Total Posts</span>
+                    <span className="font-mono text-[12px] font-bold text-text-heading">
+                      {statsData?.post_count ?? 0}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-surface-inset rounded-lg border border-border-subtle">
+                    <span className="block text-[8px] uppercase font-bold text-text-caption/60">Total Views</span>
+                    <span className="font-mono text-[12px] font-bold text-text-heading">
+                      {formatCount(statsData?.totals?.impressions ?? 0)}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-surface-inset rounded-lg border border-border-subtle">
+                    <span className="block text-[8px] uppercase font-bold text-text-caption/60">Total Likes</span>
+                    <span className="font-mono text-[12px] font-bold text-text-heading">
+                      {formatCount(statsData?.totals?.likes ?? 0)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -531,7 +564,7 @@ export default function DashboardTrends() {
         {/* ── Industry Intel ───────────────────────────────────────────────── */}
         <section>
           <div className="flex justify-between items-center mb-5">
-            <h3 className="font-bold text-[20px] text-text-heading flex items-center gap-2">
+            <h3 className="font-bold text-base text-text-heading flex items-center gap-2">
               <TrendingUp size={18} className="text-accent-blue" />
               Industry Intel
               {totalItems > 0 && (

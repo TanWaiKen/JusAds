@@ -96,7 +96,7 @@ export default function NewProject() {
       {step === 1 && (
         <div className="step-content w-full max-w-md space-y-6 text-center">
           <div>
-            <h2 className="text-xl font-bold text-text-heading mb-1">
+            <h2 className="text-xl font-semibold text-text-heading mb-1">
               Create new project
             </h2>
             <p className="text-label-ui text-text-caption">
@@ -131,7 +131,7 @@ export default function NewProject() {
       {step === 2 && (
         <div className="step-content w-full max-w-xl space-y-6 text-center">
           <div>
-            <h2 className="text-xl font-bold text-text-heading mb-1">
+            <h2 className="text-xl font-semibold text-text-heading mb-1">
               {projectName.trim()}
             </h2>
             <p className="text-label-ui text-text-caption">
@@ -153,7 +153,7 @@ export default function NewProject() {
               ) : (
                 <ShieldCheck size={28} className="text-accent-blue" />
               )}
-              <span className="font-bold text-body-md text-text-heading">
+              <span className="font-semibold text-body-md text-text-heading">
                 Compliance Check
               </span>
               <span className="text-code-sm text-text-caption leading-relaxed">
@@ -173,7 +173,7 @@ export default function NewProject() {
               ) : (
                 <Sparkles size={28} className="text-accent-amber" />
               )}
-              <span className="font-bold text-body-md text-text-heading">
+              <span className="font-semibold text-body-md text-text-heading">
                 Generate from Scratch
               </span>
               <span className="text-code-sm text-text-caption leading-relaxed">

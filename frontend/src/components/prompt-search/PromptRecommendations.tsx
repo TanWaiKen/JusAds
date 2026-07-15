@@ -22,6 +22,7 @@ interface ProfileContext {
   targetEthnicity?: string;
   platform?: string;
   ageGroup?: string;
+  userEmail?: string;
 }
 
 interface PromptRecommendationsProps {
@@ -40,6 +41,7 @@ async function fetchRecommendations(profile: ProfileContext, topK: number): Prom
   if (profile.targetEthnicity) params.set("target_ethnicity", profile.targetEthnicity);
   if (profile.platform) params.set("platform", profile.platform);
   if (profile.ageGroup) params.set("age_group", profile.ageGroup);
+  if (profile.userEmail) params.set("user_email", profile.userEmail);
   params.set("top_k", String(topK));
 
   try {
@@ -72,13 +74,12 @@ export function PromptRecommendations({
   const containerRef = useRef<HTMLDivElement>(null);
   const [recommendations, setRecommendations] = useState<PromptSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showSearch, setShowSearch] = useState(false);
 
   // Auto-load recommendations based on profile on mount.
   // Cache in sessionStorage so they persist across tab switches and page navigations
   // without re-fetching every time (same result for entire session).
   useEffect(() => {
-    const cacheKey = `prompt_recs_${profile.productName}_${profile.productCategory}_${profile.targetEthnicity}_${profile.platform}_${profile.ageGroup}`;
+    const cacheKey = `prompt_recs_${profile.productName}_${profile.productCategory}_${profile.targetEthnicity}_${profile.platform}_${profile.ageGroup}_${profile.userEmail}`;
 
     // Try loading from session cache first
     try {
@@ -104,7 +105,7 @@ export function PromptRecommendations({
       }
     });
     return () => { cancelled = true; };
-  }, [profile.productName, profile.productCategory, profile.targetEthnicity, profile.platform, profile.ageGroup, maxCards]);
+  }, [profile.productName, profile.productCategory, profile.targetEthnicity, profile.platform, profile.ageGroup, profile.userEmail, maxCards]);
 
   useGSAP(
     () => {
@@ -130,21 +131,23 @@ export function PromptRecommendations({
   };
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
-          <Sparkles size={16} className="text-primary" />
-          Recommended for you
-        </h3>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowSearch((v) => !v)}
-            className="text-[10px] font-medium text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-          >
-            {showSearch ? "Hide search" : "Search other prompts"}
-          </button>
+    <div ref={containerRef} className="flex flex-col gap-6">
+      {/* Search box permanently visible at the top */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-foreground">Search Prompt Library</h3>
+        <PromptSearchBox onSelect={onUse} maxResults={4} placeholder="Search for a style, platform, or ad concept..." />
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-border-default my-1" />
+
+      {/* Recommendations Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Sparkles size={16} className="text-primary" />
+            Recommended for you
+          </h3>
           <button
             type="button"
             onClick={handleRefresh}
@@ -155,35 +158,30 @@ export function PromptRecommendations({
             <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
           </button>
         </div>
+
+        {/* Loading state */}
+        {loading && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 size={20} className="animate-spin text-muted-foreground" />
+            <span className="ml-2 text-xs text-muted-foreground">Loading recommendations...</span>
+          </div>
+        )}
+
+        {/* Recommendation grid */}
+        {!loading && recommendations.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {recommendations.map((suggestion, idx) => (
+              <PromptCard key={idx} suggestion={suggestion} onUse={onUse} />
+            ))}
+          </div>
+        )}
+
+        {!loading && recommendations.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-6">
+            No prompt templates found. Try searching manually above.
+          </p>
+        )}
       </div>
-
-      {/* Optional manual search */}
-      {showSearch && (
-        <PromptSearchBox onSelect={onUse} maxResults={4} placeholder="Search for a different style..." />
-      )}
-
-      {/* Loading state */}
-      {loading && (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 size={20} className="animate-spin text-muted-foreground" />
-          <span className="ml-2 text-xs text-muted-foreground">Loading recommendations...</span>
-        </div>
-      )}
-
-      {/* Recommendation grid */}
-      {!loading && recommendations.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {recommendations.map((suggestion, idx) => (
-            <PromptCard key={idx} suggestion={suggestion} onUse={onUse} />
-          ))}
-        </div>
-      )}
-
-      {!loading && recommendations.length === 0 && (
-        <p className="text-xs text-muted-foreground text-center py-6">
-          No prompt templates found. Try searching manually above.
-        </p>
-      )}
     </div>
   );
 }

@@ -44,6 +44,9 @@ from jusads_generation.distribution import (
 
 logger = logging.getLogger(__name__)
 
+from shared.clients import gemini
+from shared.config import MODEL_TEXT
+
 router = APIRouter(prefix="/api", tags=["generation"])
 
 _store: SupabaseComplianceStore | None = None
@@ -689,15 +692,33 @@ async def get_prompt_recommendations(
     platform: str = "tiktok",
     age_group: str = "all_ages",
     top_k: int = 6,
+    user_email: str = "",
 ) -> JSONResponse:
     """Get personalized prompt recommendations based on the user's profile settings.
 
     Builds a query from the user's configured product/category/audience and
     searches the prompt vector DB for the most relevant templates — shown as a
     "Recommended for you" feed without the user needing to type anything.
-
-    Query params are the user's settings (from the Settings panel).
     """
+    product_description = ""
+    target_platforms = [platform] if platform else []
+    target_markets = [target_ethnicity] if target_ethnicity else []
+
+    # Fetch real user business profile details from database if email is provided
+    if user_email:
+        try:
+            from shared.clients import supabase as sb
+            resp = sb.table("business_profiles").select("*").eq("owner_email", user_email).execute()
+            if resp.data:
+                profile = resp.data[0]
+                product_name = profile.get("company_name") or product_name
+                product_category = profile.get("product_category") or product_category
+                product_description = profile.get("product_description") or ""
+                target_platforms = profile.get("target_platforms") or target_platforms
+                target_markets = profile.get("target_markets") or target_markets
+        except Exception as e:
+            logger.warning("[PromptRecommendations] Failed to fetch profile: %s", e)
+
     # Build a contextual query from the user's profile.
     parts = []
     if product_name:
@@ -735,6 +756,34 @@ async def get_prompt_recommendations(
         parts.append("creative advertisement poster social media")
 
     query = " ".join(parts)
+
+    # Enhance query via Gemini using full user background
+    if gemini:
+        try:
+            enhancement_prompt = f"""
+            You are an expert marketing strategist and prompt engineer.
+            Given the following user business profile:
+            - Company/Product Name: {product_name}
+            - Product Category: {product_category}
+            - Product Description: {product_description}
+            - Target Platforms: {', '.join(target_platforms) if isinstance(target_platforms, list) else platform}
+            - Target Markets/Ethnicities: {', '.join(target_markets) if isinstance(target_markets, list) else target_ethnicity}
+            - Audience Age Group: {age_group}
+            
+            Synthesize this user background and write a concise, highly effective 1-2 sentence search query for finding relevant ad prompt templates in a vector database. Focus on target style, core theme, and advertising visual concept. Return ONLY the enhanced query. Do not add quotes, explanation, or markdown.
+            """
+            
+            response = gemini.models.generate_content(
+                model=MODEL_TEXT,
+                contents=enhancement_prompt,
+            )
+            enhanced_query = (response.text or "").strip()
+            if enhanced_query:
+                query = enhanced_query
+                logger.info("[PromptRecommendations] Enhanced query: %s", query)
+        except Exception as e:
+            logger.error("[PromptRecommendations] Gemini enhancement failed, falling back to rule-based: %s", e)
+
     top_k = max(1, min(12, top_k))
 
     try:
@@ -800,4 +849,63 @@ async def get_user_assets(user_email: str = "", limit: int = 50) -> JSONResponse
         return JSONResponse(content={"assets": assets})
     except Exception as e:
         logger.error("[UserAssets] Failed: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+class AutofillRequest(BaseModel):
+    user_prompt: str
+
+
+@router.post("/generation/autofill")
+async def autofill_easy_form(body: AutofillRequest) -> JSONResponse:
+    """Uses Gemini to parse user's natural language requirement into easy generation form fields."""
+    if not gemini:
+        return JSONResponse(status_code=503, content={"error": "AI service unavailable"})
+
+    prompt = f"""
+    You are an AI assistant that extracts advertising campaign parameters from a natural language user request.
+    Analyze the user prompt and populate the following form fields. Return ONLY a valid JSON object. Do not include any explanation or markdown formatting like ```json.
+    
+    The JSON schema is:
+    {{
+      "selectedTemplate": "poster" | "story" | "carousel" | "text_copy",  // poster is square image, story is vertical image, carousel is multi-slide, text_copy is text only. Default to "poster".
+      "formValues": {{
+        "product_name": "...", // The brand or product name (required, default to "Product")
+        "key_message": "...",  // The core marketing message or promotion (required, default to "New Launch")
+        "target_audience": "...", // Who is this ad for? (optional)
+        "brand_tone": "...", // The style or voice (e.g., professional, warm, Gen Z) (optional)
+        "visual_style": "...", // E.g., minimalist, bright, high-contrast (optional)
+        "color_palette": "...", // E.g., blue and white (optional)
+        "slide_count": "...", // Number of slides for carousel (optional)
+        "copy_length": "...", // Short, Medium, Long (optional)
+        "call_to_action": "...", // E.g., Shop Now, Learn More (optional)
+        "language": "...", // E.g., English, Bahasa Melayu (optional)
+        "market": "malaysia" | "singapore", // Choose one. Default to "malaysia".
+        "target_ethnicity": "malay" | "chinese" | "indian" | "all", // Choose one. Default to "all".
+        "age_group": "gen_z" | "millennial" | "gen_x" | "baby_boomer" | "all" // Choose one. Default to "all".
+      }}
+    }}
+    
+    User prompt: "{body.user_prompt}"
+    """
+
+    try:
+        response = gemini.models.generate_content(
+            model=MODEL_TEXT,
+            contents=prompt,
+        )
+        raw_text = response.text or ""
+        raw_text = raw_text.strip()
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            raw_text = "\n".join(lines).strip()
+
+        data = json.loads(raw_text)
+        return JSONResponse(content=data)
+    except Exception as e:
+        logger.error("[Autofill] Failed: %s", e)
         return JSONResponse(status_code=500, content={"error": str(e)})
