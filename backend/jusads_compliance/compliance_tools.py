@@ -1,4 +1,4 @@
-﻿"""
+"""
 compliance_tools.py
 ───────────────────
 Compliance checking tools for text, image, audio, and video ads.
@@ -25,6 +25,7 @@ from jusads_compliance.prompts import (
     AUDIO_COMPLIANCE_PROMPT,
     VIDEO_COMPLIANCE_PROMPT,
     SEGMENTATION_PROMPT,
+    CONTEXT_FRAMEWORK,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,8 @@ def check_text_compliance(text: str, market: str, platform: str, ethnicity: str,
         rules_text=rules_text,
         persona_text=persona_text,
         output_template=UNIFIED_OUTPUT_TEMPLATE,
+        context_framework=CONTEXT_FRAMEWORK,
+        research_context="No live regulatory research available for the initial pass.",
     )
 
     try:
@@ -106,6 +109,8 @@ def check_image_compliance(image_path: str, market: str, platform: str, ethnicit
         rules_text=rules_text,
         persona_text=persona_text,
         output_template=UNIFIED_OUTPUT_TEMPLATE,
+        context_framework=CONTEXT_FRAMEWORK,
+        research_context="No live regulatory research available for the initial pass.",
     )
 
     try:
@@ -225,6 +230,8 @@ def check_audio_compliance(audio_path: str, market: str, platform: str, ethnicit
         rules_text=rules_text,
         persona_text=persona_text,
         output_template=UNIFIED_OUTPUT_TEMPLATE,
+        context_framework=CONTEXT_FRAMEWORK,
+        research_context="No live regulatory research available for the initial pass.",
     )
 
     try:
@@ -272,6 +279,8 @@ def check_video_compliance(video_path: str, market: str, platform: str, ethnicit
         rules_text=rules_text,
         persona_text=persona_text,
         output_template=UNIFIED_OUTPUT_TEMPLATE,
+        context_framework=CONTEXT_FRAMEWORK,
+        research_context="No live regulatory research available for the initial pass.",
     )
 
     try:

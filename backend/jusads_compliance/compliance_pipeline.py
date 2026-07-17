@@ -42,6 +42,7 @@ from jusads_compliance.prompts import (
     IMAGE_PRESCAN_PROMPT,
     VIDEO_PRESCAN_PROMPT,
     UNIFIED_OUTPUT_TEMPLATE,
+    CONTEXT_FRAMEWORK,
 )
 
 logger = logging.getLogger(__name__)
@@ -280,6 +281,8 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 persona_text=persona_text,
                 output_template=UNIFIED_OUTPUT_TEMPLATE,
                 business_context=business_context,
+                context_framework=CONTEXT_FRAMEWORK,
+                research_context="No live regulatory research available for the initial pass.",
             )
             response = gemini.models.generate_content(
                 model=_MODEL,
@@ -312,6 +315,8 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 persona_text=persona_text,
                 output_template=UNIFIED_OUTPUT_TEMPLATE,
                 business_context=business_context,
+                context_framework=CONTEXT_FRAMEWORK,
+                research_context="No live regulatory research available for the initial pass.",
             )
             response = gemini.models.generate_content(
                 model=_MODEL,
@@ -345,6 +350,8 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 persona_text=persona_text,
                 output_template=UNIFIED_OUTPUT_TEMPLATE,
                 business_context=business_context,
+                context_framework=CONTEXT_FRAMEWORK,
+                research_context="No live regulatory research available for the initial pass.",
             )
             response = gemini.models.generate_content(
                 model=_MODEL,
@@ -381,6 +388,8 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 persona_text=persona_text,
                 output_template=UNIFIED_OUTPUT_TEMPLATE,
                 business_context=business_context,
+                context_framework=CONTEXT_FRAMEWORK,
+                research_context="No live regulatory research available for the initial pass.",
             )
             response = gemini.models.generate_content(
                 model=_MODEL,
