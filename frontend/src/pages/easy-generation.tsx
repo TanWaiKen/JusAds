@@ -41,6 +41,8 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { createGenerationTask } from "@/services/taskApi";
+import { useAuth } from "@/hooks/useAuth";
+import { uploadFileToS3 } from "@/services/fileService";
 
 gsap.registerPlugin(useGSAP);
 
@@ -325,6 +327,7 @@ export default function EasyGenerationPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
 
   // Step management: 2 = design type picker, 3 = form
   const [step, setStep] = useState<2 | 3>(2);
@@ -506,21 +509,52 @@ export default function EasyGenerationPage() {
     if (!isFormValid() || !projectId || !selectedType) return;
 
     setSubmitting(true);
+    const uploadToast = Object.keys(slotFiles).length > 0
+      ? toast.loading("Uploading reference assets to S3...")
+      : null;
+
     try {
+      // 1. Upload files to S3
+      const uploadedUrls: string[] = [];
+      const email = user?.profile?.email ?? "demo_user";
+
+      for (const [slotId, info] of Object.entries(slotFiles)) {
+        try {
+          const res = await uploadFileToS3(info.file, {
+            filename: info.file.name,
+            contentType: info.file.type || "application/octet-stream",
+            fileSize: info.file.size,
+            username: email,
+            projectId,
+            assetType: "reference",
+          });
+          uploadedUrls.push(res.public_url);
+        } catch (uploadErr) {
+          console.error(`Failed to upload ${slotId} reference:`, uploadErr);
+          throw new Error(`Failed to upload reference image "${info.file.name}"`);
+        }
+      }
+
+      if (uploadToast) {
+        toast.dismiss(uploadToast);
+      }
+
+      // 2. Create the generation task
       const task = await createGenerationTask(projectId);
+
+      // 3. Navigate to advanced view with prefilled references
       navigate(`/dashboard/project/${projectId}/${task.id}`, {
         state: {
           guidedMode: true,
           designType: selectedType.id,
           guidedInputs: formState,
-          // Extract file names / URLs if backend supports receiving references
-          guidedReferences: Object.entries(slotFiles).map(([slotId, info]) => ({
-            slot: slotId,
-            name: info.file.name,
-          })),
+          guidedReferences: uploadedUrls,
         },
       });
     } catch (err) {
+      if (uploadToast) {
+        toast.dismiss(uploadToast);
+      }
       const message = err instanceof Error ? err.message : "Failed to create generation task";
       toast.error(message);
     } finally {

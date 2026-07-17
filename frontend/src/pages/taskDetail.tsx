@@ -31,6 +31,7 @@ export default function TaskDetailPage() {
     guidedMode?: boolean;
     designType?: string;
     guidedInputs?: Record<string, string>;
+    guidedReferences?: string[];
   } | null;
 
   const [isGuidedMode] = useState(guidedState?.guidedMode === true);
@@ -157,7 +158,8 @@ export default function TaskDetailPage() {
             projectId,
             taskId,
             guidedState.designType!,
-            guidedState.guidedInputs!
+            guidedState.guidedInputs!,
+            guidedState.guidedReferences ?? []
           )) {
             if (event.pipeline_state) {
               setGuidedPipelineState(event.pipeline_state);

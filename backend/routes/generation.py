@@ -622,6 +622,33 @@ async def upload_reference_asset(project_id: str, task_id: str, file: UploadFile
     try:
         s3_url = upload_file_public(tmp_path, s3_key)
         logger.info("[Upload] Uploaded reference: %s -> S3 key: %s", file.filename, s3_key)
+
+        try:
+            from shared.supabase_client import supabase as sb
+            media_type = "image"
+            if file.content_type and "video" in file.content_type:
+                media_type = "video"
+            elif file.content_type and "audio" in file.content_type:
+                media_type = "audio"
+
+            sb.table("generated_ads").insert({
+                "project_id": project_id,
+                "task_id": task_id,
+                "media_type": media_type,
+                "platform": "general",
+                "s3_media_key": s3_key,
+                "status": "completed",
+                "prompt_used": f"Uploaded reference: {file.filename}",
+                "metadata": {
+                    "is_reference": True,
+                    "filename": file.filename,
+                    "s3_url": s3_url
+                }
+            }).execute()
+            logger.info("[Upload] Recorded chatbot reference asset %s in generated_ads", file.filename)
+        except Exception as dberr:
+            logger.error("[Upload] Failed to record reference asset in DB: %s", dberr)
+
         return JSONResponse(content={
             "s3_url": s3_url,
             "s3_key": s3_key,
@@ -838,6 +865,7 @@ async def get_user_assets(user_email: str = "", limit: int = 50) -> JSONResponse
                 "created_at": row.get("created_at", ""),
                 "project_id": str(row.get("project_id", "")),
                 "task_id": str(row.get("task_id", "")),
+                "is_reference": bool(metadata.get("is_reference", False)),
             })
 
         return JSONResponse(content={"assets": assets})

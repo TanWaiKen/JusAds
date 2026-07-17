@@ -97,6 +97,32 @@ async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
             safe_filename, body.content_type, body.file_size,
         )
 
+        if body.asset_type == "reference":
+            try:
+                from shared.supabase_client import supabase as sb
+                media_type = "image"
+                if body.content_type and "video" in body.content_type:
+                    media_type = "video"
+                elif body.content_type and "audio" in body.content_type:
+                    media_type = "audio"
+
+                sb.table("generated_ads").insert({
+                    "project_id": body.project_id,
+                    "media_type": media_type,
+                    "platform": "general",
+                    "s3_media_key": s3_key,
+                    "status": "completed",
+                    "prompt_used": f"Uploaded reference: {body.filename}",
+                    "metadata": {
+                        "is_reference": True,
+                        "filename": body.filename,
+                        "s3_url": public_url
+                    }
+                }).execute()
+                logger.info("[Files] Recorded reference asset %s in generated_ads", body.filename)
+            except Exception as dberr:
+                logger.error("[Files] Failed to record reference asset in DB: %s", dberr)
+
         return JSONResponse(content={
             "upload_url": upload_url,
             "s3_key": s3_key,

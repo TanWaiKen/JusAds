@@ -43,8 +43,8 @@ export default function Header({ onAuthAction }: { onAuthAction: AuthAction }) {
   };
 
   return (
-    <header className="absolute top-0 left-0 right-0 z-50 w-full">
-      <nav className="flex items-center justify-between w-full px-6 md:px-12 py-6">
+    <header className="sticky top-0 z-50 w-full border-b border-border-subtle bg-background/85 backdrop-blur-md">
+      <nav className="mx-auto flex max-w-[1200px] items-center justify-between px-6 py-4 md:px-10">
         <Link to="/" className="flex items-center gap-2 group">
           <img src="/logo-black.png" alt="JusAds Logo" className="h-8 w-auto block dark:hidden group-hover:scale-105 transition-transform duration-200" />
           <img src="/logo-white.png" alt="JusAds Logo" className="h-8 w-auto hidden dark:block group-hover:scale-105 transition-transform duration-200" />
@@ -62,7 +62,7 @@ export default function Header({ onAuthAction }: { onAuthAction: AuthAction }) {
         <div className="flex items-center gap-3">
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-full border border-border-default hover:bg-surface-inset transition-colors cursor-pointer"
+            className="rounded-md p-2 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] hover:bg-surface-inset transition-colors cursor-pointer"
             aria-label="Toggle dark mode"
           >
             <Sun size={16} className="hidden dark:block text-text-heading" />
@@ -76,10 +76,10 @@ export default function Header({ onAuthAction }: { onAuthAction: AuthAction }) {
           )}
           {status === "unauthenticated" && (
             <>
-              <button onClick={handleAuthAction} className="inline-flex items-center bg-white hover:bg-[#f6f6f5] active:scale-[0.98] text-black border-[1.5px] border-black dark:border-white dark:bg-white/10 dark:text-white dark:hover:bg-white/15 px-4 md:px-5 py-2.5 rounded-[6px] text-xs font-bold uppercase tracking-wider transition-premium brutalist-shadow-black dark:shadow-none cursor-pointer">
+              <button onClick={handleAuthAction} className="inline-flex items-center bg-white hover:bg-surface-inset active:scale-[0.98] text-text-heading px-4 py-2 rounded-md text-sm font-medium transition-premium brutalist-shadow-black dark:shadow-none cursor-pointer">
                 Log In
               </button>
-              <button onClick={handleAuthAction} className="inline-flex items-center bg-black hover:bg-neutral-900 active:scale-[0.98] text-white border-[1.5px] border-black dark:bg-white dark:text-black dark:border-white dark:hover:bg-gray-100 px-4 md:px-5 py-2.5 rounded-[6px] text-xs font-bold uppercase tracking-wider transition-premium brutalist-shadow-subtle dark:shadow-none cursor-pointer">
+              <button onClick={handleAuthAction} className="inline-flex items-center bg-[#171717] hover:bg-[#333] active:scale-[0.98] text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 px-4 py-2 rounded-md text-sm font-medium transition-premium brutalist-shadow-subtle dark:shadow-none cursor-pointer">
                 Try for free
               </button>
             </>

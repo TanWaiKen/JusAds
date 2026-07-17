@@ -1,0 +1,28 @@
+.dashboard-shell {
+  --dashboard-surface: #fafafa;
+  --dashboard-ring: rgba(0, 0, 0, 0.08);
+  font-family: "Geist Variable", Arial, sans-serif;
+  font-feature-settings: "liga" 1;
+}
+
+.dashboard-shell .dashboard-header {
+  border-bottom: 0;
+  box-shadow: 0 1px 0 var(--dashboard-ring);
+}
+
+.dashboard-shell .dashboard-main {
+  background: var(--dashboard-surface);
+}
+
+.dashboard-shell .dashboard-content {
+  min-height: 100%;
+}
+
+/* Keep the larger workspace view local to the dashboard. */
+@media (min-width: 1024px) {
+  .dashboard-shell .dashboard-content {
+    width: 80%;
+    min-height: 80%;
+    zoom: 1.25;
+  }
+}

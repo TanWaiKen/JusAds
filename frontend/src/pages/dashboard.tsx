@@ -6,6 +6,7 @@ import { Menu, Loader2 } from "lucide-react";
 import { Sidebar, SIDEBAR_WIDTH } from "@/components/layout/Sidebar";
 import type { SidebarHandle } from "@/components/layout/Sidebar";
 import { useAuth } from "@/hooks/useAuth";
+import "./dashboard.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
@@ -113,7 +114,7 @@ export default function DashboardShell() {
   }
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans">
+    <div className="dashboard-shell relative flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Backdrop — only on mobile when sidebar is open */}
       {!isDesktop && (
         <div
@@ -140,7 +141,7 @@ export default function DashboardShell() {
         {/* Header */}
         <header
           ref={headerRef}
-          className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-border-default bg-surface-card/80 backdrop-blur-md px-6 transition-all duration-300"
+          className="dashboard-header sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-surface-card/80 backdrop-blur-md px-6 transition-all duration-300"
         >
           <div className="header-left flex items-center gap-3">
             {/* Hamburger — always shows when sidebar is closed */}
@@ -177,8 +178,10 @@ export default function DashboardShell() {
         </header>
 
         {/* Page Content */}
-        <main ref={mainRef} className="grow overflow-y-auto overflow-x-hidden">
-          <Outlet />
+        <main ref={mainRef} className="dashboard-main grow overflow-y-auto overflow-x-hidden">
+          <div className="dashboard-content">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
