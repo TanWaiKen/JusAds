@@ -215,7 +215,7 @@ export default function TaskDetailPage() {
       {isGuidedMode && (
         <div className="absolute left-4 top-4 z-10">
           <button
-            onClick={() => navigate(`/dashboard/project/${projectId}/guided-generate`)}
+            onClick={() => navigate(`/dashboard/project/${projectId}/easy`)}
             className="flex items-center gap-1.5 rounded-md border border-border bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" />

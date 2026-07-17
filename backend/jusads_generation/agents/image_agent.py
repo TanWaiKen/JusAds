@@ -1,11 +1,11 @@
-﻿"""
+"""
 image_agent.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-Image_Agent â€” the independent Media Agent that generates ad visuals (Req 5.1).
+──────────────
+Image_Agent — the independent Media Agent that generates ad visuals (Req 5.1).
 
-Workflow: Gemini prompt refinement â†’ Gemini native image generation at the
-resolved ``rules.aspect_ratio`` / ``rules.max_dimension`` (Req 7.1) â†’ ``.jpg``
-uploaded to S3 â†’ a ``generated_ads`` row.
+Workflow: Gemini prompt refinement → Gemini native image generation at the
+resolved ``rules.aspect_ratio`` / ``rules.max_dimension`` (Req 7.1) → ``.jpg``
+uploaded to S3 → a ``generated_ads`` row.
 
 The agent implements the shared :func:`generate` contract from ``base.py`` and
 lives in its own module. It never imports any other Media Agent, so it can
@@ -25,7 +25,8 @@ from typing import Optional
 from PIL import Image, ImageDraw
 
 from shared.clients import gemini, supabase
-from shared.config import MODEL_TEXT
+from shared.config import MODEL_TEXT, MODEL_IMAGE_CREATIVE
+from shared.prompts import IMAGE_AD_GENERATION_PROMPT
 from shared.s3_client import upload_file_public
 
 from ..platform_rules import PlatformRule
@@ -58,43 +59,29 @@ def _refine_prompt(brief: str, guide: str, has_reference: bool = False) -> str:
     """Refine a raw brief into a detailed commercial image prompt via Gemini.
 
     When ``has_reference`` is True, the refinement is instructed to build on the
-    uploaded reference image(s) â€” preserving their subject, colors, and
-    composition â€” rather than inventing an unrelated scene (Test 4 feedback).
+    uploaded reference image(s) — preserving their subject, colors, and
+    composition — rather than inventing an unrelated scene (Test 4 feedback).
 
     Falls back to the raw ``brief`` on any failure so generation can proceed
     (Req 3.2).
     """
     reference_clause = (
         (
-            "\n\nIMPORTANT â€” REFERENCE PROVIDED: The user has attached one or more "
+            "\n\nIMPORTANT — REFERENCE PROVIDED: The user has attached one or more "
             "reference images. Your prompt MUST build on them: preserve the main "
             "subject/product, its colors, materials, and overall composition from "
             "the reference. Describe the scene as a refined, on-brand version of "
-            "what is shown in the reference â€” do not invent an unrelated subject."
+            "what is shown in the reference — do not invent an unrelated subject."
         )
         if has_reference
         else ""
     )
 
-    refine_prompt = f"""You are an expert advertising Art Director.
-
-Convert this idea into a single detailed commercial image generation prompt:
-"{brief}"
-
-Follow this structure: Subject + setting + lighting + materials/textures + composition + ad intent + empty copy space.
-
-Requirements:
-- Clean, modern commercial photography or digital art style
-- High contrast, vibrant colors suitable for social media (Instagram/TikTok)
-- Product-focused composition with clear visual hierarchy
-- Culturally appropriate for Southeast Asian markets (Malaysia/Singapore)
-- Modest, professional presentation (no revealing clothing)
-- Leave clear empty space for ad copy
-- No watermark, no visible logos{reference_clause}
-
-Reference guidelines: {guide[:400]}
-
-Output ONLY the image prompt text (max 80 words), nothing else."""
+    refine_prompt = IMAGE_AD_GENERATION_PROMPT.format(
+        brief=brief,
+        reference_clause=reference_clause,
+        guide=guide[:400],
+    )
 
     try:
         refine_resp = gemini.models.generate_content(
@@ -179,7 +166,7 @@ def _generate_native_image(visual_prompt: str, rules: PlatformRule, reference_pa
         contents.append(visual_prompt)
 
         response = gemini.models.generate_content(
-            model="gemini-3.1-flash-lite-image",
+            model=MODEL_IMAGE_CREATIVE,
             contents=contents,
             config=types.GenerateContentConfig(
                 temperature=1,
@@ -197,7 +184,7 @@ def _generate_native_image(visual_prompt: str, rules: PlatformRule, reference_pa
                     image_size=image_size,
                     output_mime_type="image/jpeg",
                 ),
-                thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
+                thinking_config=types.ThinkingConfig(thinking_level="LOW"),
             ),
         )
 
@@ -268,33 +255,6 @@ async def generate(
     rules: PlatformRule,
     reference_parts: list,
 ) -> AgentResult:
-    """Generate one image ad, upload it to S3, and record a ``generated_ads`` row.
-
-    Implements the shared Media Agent contract (see ``base.generate``). The
-    image is generated at the resolved ``rules.aspect_ratio`` /
-    ``rules.max_dimension`` rather than hardcoded values (Req 7.1). On success
-    returns ``status='completed'`` and records a ``completed`` row (Req 5.4). On
-    an unrecoverable failure it records a ``failed`` row and returns
-    ``status='failed'`` WITHOUT modifying any other agent's output (Req 5.5).
-
-    Args:
-        brief: The user's campaign brief / prompt.
-        project_id: Owning project id.
-        task_id: Owning task id.
-        platform: The resolved, validated target platform.
-        rules: Resolved platform sizing rules (aspect ratio + max dimension).
-        reference_parts: Multimodal reference parts (images/files the user
-            uploaded); passed to Gemini as visual context for generation.
-
-    Returns:
-        An :class:`AgentResult` describing the generated image ad.
-    """
-    logger.info(
-        "[ImageAgent] Generating image ad for platform '%s' (project=%s, task=%s)",
-        platform,
-        project_id,
-        task_id,
-    )
 
     # GoogleSearch for visual trend context (graceful degradation on failure)
     from jusads_generation.search_tools import search_creative_context, derive_search_query

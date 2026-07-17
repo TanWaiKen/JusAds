@@ -1,7 +1,7 @@
-﻿"""
+"""
 audio_agent.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-Audio_Agent â€” one of the four independent Media Agents (Req 5.1).
+──────────────
+Audio_Agent — one of the four independent Media Agents (Req 5.1).
 
 Generates an audio ad end to end: plans a short multi-scene voiceover script,
 generates a sound-effect bed and voiceover per scene, mixes them, concatenates
@@ -27,6 +27,7 @@ from typing import Optional
 
 from shared.clients import gemini, supabase
 from shared.config import MODEL_TEXT
+from shared.prompts import AUDIO_AD_GENERATION_PROMPT
 from shared.s3_client import upload_file_public
 from config import DEFAULT_VOICE
 
@@ -43,7 +44,7 @@ _MIN_TOTAL_DURATION = 1.0
 _MAX_SFX_DURATION = 22.0
 
 
-# â”€â”€â”€ Internal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Internal helpers --------------------------------------------------------
 
 
 async def _plan_audio_script(brief: str) -> list[dict]:
@@ -53,24 +54,10 @@ async def _plan_audio_script(brief: str) -> list[dict]:
     single scene derived from the raw brief when planning fails.
     """
     guide = load_guide("audio")
-    planning_prompt = f"""You are a radio/audio advertising scriptwriter.
-Reference guide:
----
-{guide[:800]}
----
-
-Product/Campaign request: "{brief}"
-
-First think about the product's value proposition and hook, then write a punchy
-voiceover ad script broken into 2-3 short scenes. Each scene needs:
-- A spoken voiceover line (natural, persuasive, with a strong hook in scene 1 and a call-to-action in the final scene)
-- A matching background sound effect description
-
-Return ONLY a JSON array, no markdown:
-[
-  {{"number": 1, "duration": 5, "script": "voiceover line", "sfxPrompt": "ambient sound description"}},
-  ...
-]"""
+    planning_prompt = AUDIO_AD_GENERATION_PROMPT.format(
+        guide=guide[:800],
+        brief=brief,
+    )
 
     try:
         resp = gemini.models.generate_content(
@@ -140,7 +127,7 @@ def _cap_scene_durations(
         remaining -= allotted
 
     if not result:
-        # Ceiling smaller than a single scene â€” keep one clipped scene.
+        # Ceiling smaller than a single scene — keep one clipped scene.
         first = dict(normalized[0])
         first["duration"] = max(_MIN_TOTAL_DURATION, ceiling)
         result = [first]
@@ -254,38 +241,8 @@ def _record_generated_ad(
         return None
 
 
-# â”€â”€â”€ Public contract â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-
-async def generate(
-    *,
-    brief: str,
-    project_id: str,
-    task_id: str,
-    platform: str,
-    rules: dict,
-    reference_parts: Optional[list] = None,
+async def generate(*, brief: str,project_id: str, task_id: str, platform: str, rules: dict, reference_parts: Optional[list] = None,
 ) -> AgentResult:
-    """Generate one audio ad and record it in ``generated_ads``.
-
-    Workflow: plan script â†’ per-scene SFX + voiceover â†’ mix â†’ concatenate,
-    capping the total duration to ``rules['max_duration_seconds']`` (Req 7.1),
-    then upload the resulting ``.mp3`` to S3 and insert a ``completed`` row
-    (Req 5.4). On failure, records a ``failed`` row (Req 5.5) and returns
-    ``status='failed'`` WITHOUT touching any other agent's output (Req 5.2).
-
-    Args:
-        brief: The creative/product prompt for the ad.
-        project_id: Owning project id.
-        task_id: Owning task id.
-        platform: Normalized target platform (e.g. ``"instagram"``).
-        rules: Resolved ``PlatformRule`` sizing (uses ``max_duration_seconds``).
-        reference_parts: Optional multimodal reference parts (unused for audio).
-
-    Returns:
-        An :class:`AgentResult` describing the generated (or failed) output.
-    """
-    logger.info("[AudioAgent] Starting audio generation for platform '%s'", platform)
 
     # GoogleSearch for audio ad trends (graceful degradation on failure)
     from jusads_generation.search_tools import search_creative_context, derive_search_query
@@ -306,20 +263,11 @@ async def generate(
         scenes = await _plan_audio_script(brief)
         scenes = _cap_scene_durations(scenes, max_duration)
         full_script_text = " ".join(s.get("script", "") for s in scenes)
-        logger.info("[AudioAgent] Script planned: %d scene(s)", len(scenes))
 
         # Step 3+4: render each scene (VO + SFX + mix) then concatenate.
         work_dir = Path(tempfile.mkdtemp(prefix="audio_ad_"))
         scene_audio_paths = _render_scenes(scenes, work_dir)
         audio_path = _concat_scenes(scene_audio_paths, work_dir)
-
-        # Fallback: emit a tiny placeholder track so the pipeline still produces output.
-        if not audio_path:
-            logger.warning("[AudioAgent] No scene audio produced; writing placeholder track.")
-            placeholder = str(work_dir / "placeholder.mp3")
-            with open(placeholder, "wb") as f:
-                f.write(b"\x00" * 500)
-            audio_path = placeholder
 
         # Upload to S3.
         s3_key = f"generated_ads/{project_id}/{task_id}/audio_{uuid.uuid4().hex[:6]}.mp3"

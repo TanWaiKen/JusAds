@@ -35,7 +35,7 @@ def _get_store():
     return _store
 
 
-# ── Request Models ────────────────────────────────────────────────────────────
+# -- Request Models ------------------------------------------------------------
 
 
 class CreateProjectRequest(BaseModel):
@@ -55,7 +55,7 @@ class CreateProjectRequest(BaseModel):
         return stripped
 
 
-# ── Project Endpoints ─────────────────────────────────────────────────────────
+# -- Project Endpoints ---------------------------------------------------------
 
 
 @router.post("/projects")
@@ -142,7 +142,7 @@ async def get_project_checks(project_id: str) -> JSONResponse:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-# ── Task Endpoints ────────────────────────────────────────────────────────────
+# -- Task Endpoints ------------------------------------------------------------
 
 
 @router.get("/projects/{project_id}/tasks")
@@ -269,7 +269,7 @@ async def delete_task(project_id: str, task_id: str) -> JSONResponse:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
+# -- Health --------------------------------------------------------------------
 
 
 @router.get("/health")

@@ -27,6 +27,7 @@ export interface PostStats {
   is_external?: boolean;
   published_at?: string;
   post_url?: string;
+  thumbnail_url?: string;
 }
 
 export interface MetricsTotals {

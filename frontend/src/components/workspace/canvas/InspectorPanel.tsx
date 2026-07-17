@@ -10,11 +10,20 @@ interface InspectorPanelProps {
   node: CanvasNode | null;
   onUpdateProps?: (nodeId: string, updates: { label?: string; props?: Record<string, string> }) => void;
   onDelete?: (nodeId: string) => void;
+  onSendRevision?: (nodeLabel: string, comment: string) => void;
 }
 
-export function InspectorPanel({ node, onUpdateProps, onDelete }: InspectorPanelProps) {
+export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }: InspectorPanelProps) {
   const [editLabel, setEditLabel] = useState("");
   const [editProps, setEditProps] = useState<Record<string, string>>({});
+  const [revisionComment, setRevisionComment] = useState("");
+
+  const handleSendRevision = () => {
+    if (onSendRevision && node && revisionComment.trim()) {
+      onSendRevision(node.label, revisionComment.trim());
+      setRevisionComment("");
+    }
+  };
 
   // Sync local state when node changes
   useEffect(() => {
@@ -113,12 +122,38 @@ export function InspectorPanel({ node, onUpdateProps, onDelete }: InspectorPanel
         </div>
       )}
 
-      {/* Output (read-only) */}
+      {/* Output (with media preview) */}
       {node.output && (
         <div className="mb-4">
-          <h4 className="mb-1 text-xs font-medium text-muted-foreground">Output</h4>
+          <h4 className="mb-1 text-xs font-medium text-muted-foreground">Output Preview</h4>
           <div className="rounded-md bg-muted/50 p-2">
-            <p className="text-xs text-foreground whitespace-pre-wrap break-all">{node.output}</p>
+            {node.type === "image" && (node.output.startsWith("/") || node.output.startsWith("http")) ? (
+              <img src={node.output} className="w-full max-h-[200px] object-contain rounded border bg-black/10 dark:bg-white/5" alt={node.label} />
+            ) : node.type === "audio" && (node.output.startsWith("/") || node.output.startsWith("http")) ? (
+              <audio src={node.output} controls className="w-full" />
+            ) : node.type === "video" && (node.output.startsWith("/") || node.output.startsWith("http")) ? (
+              <video src={node.output} controls className="w-full max-h-[200px] rounded border" />
+            ) : (
+              <p className="text-xs text-foreground whitespace-pre-wrap break-all">{node.output}</p>
+            )}
+          </div>
+          
+          {/* Revision request input */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <h4 className="mb-2 text-xs font-medium text-muted-foreground">Request Revision / Feedback</h4>
+            <textarea
+              value={revisionComment}
+              onChange={(e) => setRevisionComment(e.target.value)}
+              placeholder={`Suggest edits for this ${node.type} node (e.g. "make the background brighter", "use a deeper voice")...`}
+              className="w-full text-xs p-2 rounded border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[60px]"
+            />
+            <button
+              onClick={handleSendRevision}
+              disabled={!revisionComment.trim()}
+              className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded bg-primary py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40 hover:bg-primary/90 transition-colors cursor-pointer"
+            >
+              Send Revision to Agent
+            </button>
           </div>
         </div>
       )}

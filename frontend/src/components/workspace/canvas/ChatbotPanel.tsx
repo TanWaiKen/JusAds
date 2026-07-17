@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { API_BASE } from "@/services/taskApi";
+import { consumePrefill } from "@/services/session";
 import {
   streamChat,
   getChatHistory,
@@ -46,6 +47,8 @@ interface ChatbotPanelProps {
   initialPipelineState?: PipelineState;
   onOutputsUpdate?: (ads: GeneratedAdView[]) => void;
   onVideoPlanUpdate?: (plan: VideoPlan | null) => void;
+  triggerPrompt?: string | null;
+  onTriggerPromptUsed?: () => void;
 }
 
 const WELCOME_MESSAGE: Message = {
@@ -133,8 +136,21 @@ export function ChatbotPanel({
   initialPipelineState,
   onOutputsUpdate,
   onVideoPlanUpdate,
+  triggerPrompt,
+  onTriggerPromptUsed,
 }: ChatbotPanelProps) {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+  
+  // React to external prompt trigger (e.g. from Inspector revision or Prompt Library)
+  useEffect(() => {
+    if (triggerPrompt) {
+      setInput(triggerPrompt);
+      onTriggerPromptUsed?.();
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+    }
+  }, [triggerPrompt, onTriggerPromptUsed]);
   // Persist draft input + references in localStorage so they survive page navigation
   const storageKey = `draft_${projectId}_${taskId}`;
 
@@ -148,6 +164,24 @@ export function ChatbotPanel({
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+
+  // On mount: check sessionStorage for prefill data (from "Try Now" flow)
+  const prefillConsumed = useRef(false);
+  useEffect(() => {
+    if (prefillConsumed.current) return;
+    prefillConsumed.current = true;
+    const prefill = consumePrefill();
+    if (prefill) {
+      setInput(prefill.prompt);
+      if (prefill.referenceImageUrl) {
+        setReferences((prev) => [
+          ...prev,
+          { filename: prefill.referenceImageLabel || "Reference Image", url: prefill.referenceImageUrl! },
+        ]);
+      }
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, []);
 
   // Auto-save draft input to localStorage on change
   useEffect(() => {

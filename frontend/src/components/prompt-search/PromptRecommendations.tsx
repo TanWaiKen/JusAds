@@ -29,7 +29,7 @@ interface PromptRecommendationsProps {
   /** User's profile settings for personalized recommendations. */
   profile: ProfileContext;
   /** Called when the user clicks "Try it now" on a card. */
-  onUse: (prompt: string) => void;
+  onUse: (prompt: string, suggestion: PromptSuggestion) => void;
   /** Number of recommendation cards to show. */
   maxCards?: number;
 }
@@ -135,7 +135,7 @@ export function PromptRecommendations({
       {/* Search box permanently visible at the top */}
       <div className="space-y-2">
         <h3 className="text-sm font-semibold text-foreground">Search Prompt Library</h3>
-        <PromptSearchBox onSelect={onUse} maxResults={4} placeholder="Search for a style, platform, or ad concept..." />
+        <PromptSearchBox onSelect={(prompt) => onUse(prompt, { title: "Searched Prompt", description: "", content: prompt, score: 1, sourceMedia: "", sourceLink: "" })} maxResults={4} placeholder="Search for a style, platform, or ad concept..." />
       </div>
 
       {/* Divider */}

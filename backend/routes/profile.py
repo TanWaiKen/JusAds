@@ -32,7 +32,7 @@ class BusinessProfileRequest(BaseModel):
     target_markets: list[str] = []
 
 
-# ── User endpoints ────────────────────────────────────────────────────────────
+# -- User endpoints ------------------------------------------------------------
 
 
 @router.get("/user/{email}")
@@ -75,7 +75,7 @@ async def check_onboarding_status(email: str) -> JSONResponse:
         return JSONResponse(content={"onboarding_complete": False})
 
 
-# ── Business Profile endpoints ────────────────────────────────────────────────
+# -- Business Profile endpoints ------------------------------------------------
 
 
 @router.get("/profile/{email}")

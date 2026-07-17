@@ -1,34 +1,55 @@
 import { useRef, useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { PromptRecommendations } from "@/components/prompt-search/PromptRecommendations";
 import { toast } from "sonner";
+import { fetchPostStatistics } from "@/services/statisticsApi";
+import type { StatsResponse } from "@/services/statisticsApi";
+import { createGenerationTask } from "@/services/taskApi";
+import { setPrefill } from "@/services/session";
 import {
-  Sparkles,
-  Layers,
   Eye,
-  Send,
+  Users,
+  Heart,
   TrendingUp,
   Clock,
-  Coins,
   Zap,
+  ExternalLink,
+  RefreshCw,
+  Globe,
 } from "lucide-react";
 
 gsap.registerPlugin(useGSAP);
 
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export default function DashboardHome() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const displayName = user?.profile.name ?? user?.profile.email ?? "Creative Lead";
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [profile, setProfile] = useState<any>({});
+  const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
+  // ── Fetch user profile for prompt recommendations ──────────────────────────
   useEffect(() => {
     const email = user?.profile?.email;
     if (!email) return;
-
-    fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/profile/${email}`)
+    fetch(`${API_BASE}/api/profile/${email}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) {
@@ -41,158 +62,110 @@ export default function DashboardHome() {
           setProfile({ userEmail: email });
         }
       })
-      .catch(() => setProfile({ userEmail: email }));
+      .catch(() => setProfile({ userEmail: user?.profile?.email }));
   }, [user]);
 
-  // Stats data
-  const stats = [
+  // ── Fetch real social media statistics ────────────────────────────────────
+  useEffect(() => {
+    setStatsLoading(true);
+    fetchPostStatistics()
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setStatsLoading(false));
+  }, []);
+
+  // ── Derived stats from API ─────────────────────────────────────────────────
+  const overview = stats?.account_overview;
+  const totalFollowersReached = overview?.total_followers_reached ?? 0;
+  const totalEngagement = overview?.total_engagement ?? 0;
+  const organicPosts = stats?.organic_posts ?? [];
+  const platformEntries = Object.entries(overview?.platforms ?? {});
+
+  // ── Summary cards ─────────────────────────────────────────────────────────
+  const summaryCards = [
     {
-      label: "Develop",
-      value: 124,
-      sub: "Draft Assets",
-      icon: Layers,
-      gradient: "from-[#0080FF]/10",
+      label: "Followers Reached",
+      value: totalFollowersReached,
+      icon: Users,
       iconBg: "bg-blue-50 dark:bg-blue-950/30 text-[#0080FF]",
     },
     {
-      label: "Preview",
-      value: 42,
-      sub: "In Review",
-      icon: Eye,
-      gradient: "from-[#FF1493]/10",
+      label: "Total Engagement",
+      value: totalEngagement,
+      icon: Heart,
       iconBg: "bg-pink-50 dark:bg-pink-950/30 text-[#FF1493]",
     },
     {
-      label: "Ship",
-      value: 89,
-      sub: "Active Global",
-      icon: Send,
-      gradient: "from-[#00FFFF]/10",
+      label: "Posts Published",
+      value: stats?.post_count ?? 0,
+      icon: Eye,
       iconBg: "bg-cyan-50 dark:bg-cyan-950/30 text-cyan-500",
     },
   ];
 
-  // Recent activity data
-  const activities = [
-    {
-      title: "Bangkok Launch Ready",
-      description: "Campaign localized to Thai",
-      time: "2m ago",
-      color: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/20",
-    },
-    {
-      title: "New Asset Draft",
-      description: "Video variant #14 generated",
-      time: "14m ago",
-      color: "text-[#0080FF] bg-blue-50 dark:bg-blue-950/20",
-    },
-    {
-      title: "Policy Audit Passed",
-      description: "Meta compliance verified",
-      time: "1h ago",
-      color: "text-purple-500 bg-purple-50 dark:bg-purple-950/20",
-    },
-  ];
+  // ── GSAP entrance ─────────────────────────────────────────────────────────
+  useGSAP(() => {
+    const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
 
-  useGSAP(
-    () => {
-      // Master timeline for orchestrated entrance
-      const tl = gsap.timeline({ defaults: { duration: 0.6, ease: "power3.out" } });
+    tl.fromTo(".dash-header",
+      { y: -20, autoAlpha: 0 },
+      { y: 0, autoAlpha: 1, duration: 0.6, clearProps: "all" }
+    ).fromTo(".dash-header-sub",
+      { y: 10, autoAlpha: 0 },
+      { y: 0, autoAlpha: 1, duration: 0.4, clearProps: "all" },
+      "<0.15"
+    );
 
-      // Header entrance
-      tl.fromTo(".dash-header", { y: -20, opacity: 0 }, { y: 0, opacity: 1, clearProps: "all" })
-        .fromTo(".dash-header-sub", { y: 10, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, clearProps: "all" }, "<0.15");
+    tl.fromTo(".stat-card",
+      { y: 40, autoAlpha: 0, scale: 0.95 },
+      { y: 0, autoAlpha: 1, scale: 1, stagger: 0.1, duration: 0.5, ease: "back.out(1.4)", clearProps: "all" },
+      "-=0.3"
+    );
 
-      // Stats cards stagger in with scale
-      tl.fromTo(".stat-card", {
-        y: 40,
-        opacity: 0,
-        scale: 0.95,
-      }, {
-        y: 0,
-        opacity: 1,
-        scale: 1,
-        stagger: 0.12,
-        duration: 0.5,
-        ease: "back.out(1.4)",
-        clearProps: "all",
-      }, "-=0.3");
+    tl.fromTo(".promo-card",
+      { y: 30, autoAlpha: 0 },
+      { y: 0, autoAlpha: 1, duration: 0.6, clearProps: "all" },
+      "-=0.2"
+    );
 
-      // Animate stat numbers counting up
-      const statNumbers = containerRef.current?.querySelectorAll(".stat-number");
-      statNumbers?.forEach((el) => {
-        const target = parseInt(el.getAttribute("data-value") || "0", 10);
-        const obj = { val: 0 };
-        gsap.to(obj, {
-          val: target,
-          duration: 1.2,
-          delay: 0.6,
-          ease: "power2.out",
-          onUpdate: () => {
-            el.textContent = Math.round(obj.val).toString();
-          },
-        });
+    tl.fromTo(".sentiment-panel",
+      { y: 20, autoAlpha: 0 },
+      { y: 0, autoAlpha: 1, duration: 0.5, clearProps: "all" },
+      "-=0.5"
+    );
+
+    tl.fromTo(".activity-item",
+      { x: 30, autoAlpha: 0 },
+      { x: 0, autoAlpha: 1, stagger: 0.08, duration: 0.4, clearProps: "all" },
+      "-=0.4"
+    );
+  }, { scope: containerRef });
+
+  // ── GSAP count-up for stat cards (runs when stats load) ───────────────────
+  useGSAP(() => {
+    if (statsLoading) return;
+    const statNumbers = containerRef.current?.querySelectorAll(".stat-number");
+    statNumbers?.forEach((el) => {
+      const target = parseInt(el.getAttribute("data-value") || "0", 10);
+      const obj = { val: 0 };
+      gsap.to(obj, {
+        val: target,
+        duration: 1.2,
+        ease: "power2.out",
+        onUpdate: () => { el.textContent = Math.round(obj.val).toLocaleString(); },
       });
-
-      // Promo card slides in
-      tl.fromTo(".promo-card", {
-        y: 30,
-        opacity: 0,
-      }, {
-        y: 0,
-        opacity: 1,
-        duration: 0.7,
-        ease: "power2.out",
-        clearProps: "all",
-      }, "-=0.2");
-
-      // Credit bar animates width
-      tl.from(".credit-bar-fill", {
-        scaleX: 0,
-        transformOrigin: "left center",
-        duration: 1,
-        ease: "power2.inOut",
-        clearProps: "transform",
-      }, "-=0.4");
-
-      // Market sentiment panel
-      tl.fromTo(".sentiment-panel", {
-        y: 20,
-        opacity: 0,
-      }, {
-        y: 0,
-        opacity: 1,
-        duration: 0.5,
-        clearProps: "all",
-      }, "-=0.6");
-
-      // Activity items stagger from right
-      tl.fromTo(".activity-item", {
-        x: 30,
-        opacity: 0,
-      }, {
-        x: 0,
-        opacity: 1,
-        stagger: 0.1,
-        duration: 0.4,
-        ease: "power2.out",
-        clearProps: "all",
-      }, "-=0.5");
-
-      // Removed gradient orb animations
-    },
-    { scope: containerRef }
-  );
+    });
+  }, { scope: containerRef, dependencies: [statsLoading] });
 
   return (
     <div
       ref={containerRef}
-      className="flex flex-col gap-2 pt-4 px-8 pb-8 max-w-5xl mx-auto w-full font-hanken"
+      className="flex flex-col gap-6 pt-4 px-8 pb-8 max-w-5xl mx-auto w-full font-hanken"
     >
-      {/* Welcome Header */}
+      {/* ── Welcome Header ───────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="space-y-1">
-          <h2 className="dash-header text-[24px] font-bold tracking-[-0.04em] text-text-heading flex items-center">
+          <h2 className="dash-header text-[24px] font-bold tracking-[-0.04em] text-text-heading">
             Welcome, {displayName}
           </h2>
           <p className="dash-header-sub text-body-md text-text-caption font-medium tracking-tight">
@@ -200,136 +173,228 @@ export default function DashboardHome() {
           </p>
         </div>
         <div className="dash-header-sub flex items-center gap-3">
-          <div className="flex items-center px-4 py-2 rounded-full border border-border-default">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full border border-border-default">
             <Zap size={14} className="text-text-caption" />
-            <span className="text-label-ui font-semibold text-text-body">
-              AI Engine Active
-            </span>
+            <span className="text-label-ui font-semibold text-text-body">AI Engine Active</span>
           </div>
         </div>
       </div>
 
-      {/* Grid Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {stats.map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={idx}
-              className="stat-card bg-surface-card border border-border-default p-6 rounded-2xl retina-border card-shadow hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group cursor-default"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-label-ui font-semibold text-text-caption">
-                  {stat.label}
-                </span>
-                <span className={`p-2 rounded-lg ${stat.iconBg}`}>
-                  <Icon size={18} />
-                </span>
-              </div>
-              <div
-                className="stat-number text-[36px] font-bold tracking-tight text-text-heading"
-                data-value={stat.value}
-              >
-                0
-              </div>
-              <div className="text-label-ui font-medium text-text-caption mt-1">
-                {stat.sub}
-              </div>
-            </div>
-          );
-        })}
+      {/* ── Social Media Summary Cards ───────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {statsLoading
+          ? [1, 2, 3].map((i) => (
+              <div key={i} className="h-28 rounded-2xl bg-surface-card border border-border-default animate-pulse" />
+            ))
+          : summaryCards.map((card, idx) => {
+              const Icon = card.icon;
+              return (
+                <div
+                  key={idx}
+                  className="stat-card bg-surface-card border border-border-default p-6 rounded-2xl retina-border card-shadow hover:-translate-y-1 transition-all duration-300 cursor-default"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-label-ui font-semibold text-text-caption">{card.label}</span>
+                    <span className={`p-2 rounded-lg ${card.iconBg}`}>
+                      <Icon size={18} />
+                    </span>
+                  </div>
+                  <div
+                    className="stat-number text-[32px] font-bold tracking-tight text-text-heading font-mono"
+                    data-value={card.value}
+                  >
+                    0
+                  </div>
+                </div>
+              );
+            })}
       </div>
 
-      {/* Main Grid: Description, Trend Sentiment & Activities */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Engine Info & Trends */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="promo-card rounded-2xl border border-border-default overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-500">
-            <div className="bg-surface-card p-8 h-full flex flex-col justify-between relative overflow-hidden">
-              <div className="space-y-4 relative z-10">
-                <h3 className="text-[24px] font-semibold tracking-tight text-text-heading flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600 dark:bg-blue-500">
-                    <Zap size={16} className="text-white" />
-                  </span>
-                  AI Compliance Engine
-                </h3>
-                <p className="text-[15px] text-text-body leading-relaxed">
-                  JusAds leverages state-of-the-art LLMs specifically tuned for linguistic nuances and cultural context in SEA markets. Our platform automates the transformation of master creatives into hyper-localized assets for Meta, Google, and TikTok.
-                </p>
-              </div>
-
-              {/* Credits usage meter */}
-              <div className="mt-8 pt-6 border-t border-border-subtle space-y-2 relative z-10">
-                <div className="flex justify-between items-center text-code-sm font-semibold">
-                  <span className="text-text-caption flex items-center gap-1.5">
-                    <Coins size={15} /> Workspace Usage Credits
-                  </span>
-                  <span className="text-text-heading">14,240 / 50,000</span>
-                </div>
-                <div className="w-full h-2.5 bg-surface-inset rounded-full overflow-hidden">
-                  <div
-                    className="credit-bar-fill h-full bg-blue-600 dark:bg-blue-500 rounded-full"
-                    style={{ width: "28.5%" }}
-                  />
-                </div>
-              </div>
-            </div>
+      {/* ── Platform Breakdown (from account_overview.platforms) ─────────── */}
+      {!statsLoading && platformEntries.length > 0 && (
+        <div className="promo-card bg-surface-card border border-border-default rounded-2xl p-6 retina-border shadow-xs">
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="font-bold text-[16px] text-text-heading flex items-center gap-2">
+              <Globe size={16} className="text-accent-blue" />
+              Platform Breakdown
+            </h3>
+            <button
+              onClick={() => navigate("/dashboard/social-media")}
+              className="text-[12px] font-semibold text-accent-blue hover:opacity-80 transition-opacity flex items-center gap-1"
+            >
+              View all posts <ExternalLink size={11} />
+            </button>
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {platformEntries.map(([platform, data]) => {
+              const platformColor =
+                platform === "tiktok"
+                  ? "text-[#fe2c55] bg-pink-50 dark:bg-pink-950/20"
+                  : "text-[#e1306c] bg-purple-50 dark:bg-purple-950/20";
+              const label = platform.charAt(0).toUpperCase() + platform.slice(1);
+              return (
+                <div
+                  key={platform}
+                  className="flex items-center justify-between p-4 rounded-xl bg-surface-inset border border-border-subtle"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`p-2 rounded-lg text-[13px] font-bold ${platformColor}`}>
+                      {label}
+                    </span>
+                  </div>
+                  <div className="flex gap-6 text-right">
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-text-caption/60">Reach</span>
+                      <span className="font-mono text-[14px] font-bold text-text-heading">{formatCount(data.reach)}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-text-caption/60">Likes</span>
+                      <span className="font-mono text-[14px] font-bold text-text-heading">{formatCount(data.likes)}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-text-caption/60">Posts</span>
+                      <span className="font-mono text-[14px] font-bold text-text-heading">{data.posts}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-          {/* Prompt Recommendations Feed */}
+      {/* ── Main Grid: Prompts + Recent Posts ────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left 2 cols: Prompt Recommendations */}
+        <div className="lg:col-span-2 space-y-6">
           <div className="sentiment-panel bg-surface-card border border-border-default p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300">
             <PromptRecommendations
               profile={profile}
-              onUse={(prompt) => {
-                navigator.clipboard.writeText(prompt);
-                toast.success("Prompt copied to clipboard! Go to Create to start generating.");
+              onUse={async (prompt, suggestion) => {
+                const loadingToast = toast.loading("Initializing generation workspace...");
+                try {
+                  const email = user?.profile?.email ?? "demo_user";
+
+                  // 1. Create a new "Untitled" project
+                  const createRes = await fetch(`${API_BASE}/api/projects`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      name: "Untitled",
+                      username: email,
+                    }),
+                  });
+                  if (!createRes.ok) throw new Error("Failed to create project");
+                  const project = await createRes.json();
+                  const projectId = project.id;
+
+                  // 2. Create a generation task
+                  const task = await createGenerationTask(projectId);
+
+                  // 3. Store prefill data in sessionStorage
+                  setPrefill({
+                    prompt,
+                    referenceImageUrl: suggestion.sourceMedia || undefined,
+                    referenceImageLabel: suggestion.title || "Reference Image",
+                  });
+
+                  // 4. Navigate to Advanced Mode
+                  toast.dismiss(loadingToast);
+                  navigate(`/dashboard/project/${projectId}/${task.id}`);
+                  toast.success("Workspace ready — prompt prefilled.");
+                } catch (err) {
+                  toast.dismiss(loadingToast);
+                  toast.error("Could not load workspace. Prompt copied to clipboard instead.");
+                  navigator.clipboard.writeText(prompt);
+                }
               }}
               maxCards={3}
             />
           </div>
         </div>
 
-        {/* Right 1 Col: Recent Activities */}
+        {/* Right 1 col: Recent Organic Posts */}
         <div className="bg-surface-card border border-border-default p-6 rounded-2xl shadow-sm">
-          <h3 className="text-body-md font-bold text-text-heading mb-6 flex items-center gap-2">
-            <Clock size={16} className="text-[#FF1493]" /> Recent Activity
-          </h3>
-          <div className="space-y-6">
-            {activities.map((item, idx) => (
-              <div
-                key={idx}
-                className="activity-item flex gap-4 items-start group cursor-default"
-              >
-                <div
-                  className={`p-2 rounded-lg shrink-0 ${item.color} mt-2 group-hover:scale-110 transition-transform duration-200`}
-                >
-                  <Sparkles size={14} className="stroke-[2.5]" />
-                </div>
-                <div className="gap-2 flex flex-col flex-1 min-w-0">
-                  <h4 className="text-label-ui font-semibold text-text-heading group-hover:text-[#0080FF] transition-colors truncate">
-                    {item.title}
-                  </h4>
-                  <p className="text-label-ui text-text-caption truncate">
-                    {item.description}
-                  </p>
-                  <span className="text-code-xs font-bold text-text-caption uppercase tracking-wider block pt-1">
-                    {item.time}
-                  </span>
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-body-md font-bold text-text-heading flex items-center gap-2">
+              <TrendingUp size={16} className="text-[#FF1493]" /> Recent Posts
+            </h3>
+            {statsLoading && <RefreshCw size={14} className="animate-spin text-text-caption" />}
           </div>
 
-          {/* Quick action */}
-          <div className="mt-6 pt-4 border-t border-border-subtle">
-            <button className="w-full py-2.5 px-4 rounded-xl text-code-sm font-semibold text-[#0080FF] bg-[#0080FF]/5 hover:bg-[#0080FF]/10 transition-colors duration-200 flex items-center justify-center gap-2">
-              <Sparkles size={14} />
-              View All Activity
+          {!statsLoading && organicPosts.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Globe size={28} className="text-text-caption/30 mb-2" />
+              <p className="text-[13px] text-text-caption">No posts yet.</p>
+              <p className="text-[12px] text-text-caption/60 mt-1">
+                Connect accounts in Social Media.
+              </p>
+            </div>
+          )}
+
+          {!statsLoading && organicPosts.length > 0 && (
+            <div className="space-y-3">
+              {organicPosts.slice(0, 4).map((post, idx) => {
+                const platformName = post.platform || "unknown";
+                const platformColor =
+                  platformName.toLowerCase() === "tiktok"
+                    ? "text-[#fe2c55]"
+                    : "text-[#e1306c]";
+                const title =
+                  post.post_external_id?.length > 50
+                    ? post.post_external_id.slice(0, 50) + "…"
+                    : post.post_external_id || "Untitled Post";
+                return (
+                  <div
+                    key={idx}
+                    className="activity-item flex gap-3 items-start p-3 rounded-xl bg-surface-inset border border-border-subtle hover:border-border-default transition-all group"
+                  >
+                    <div className="shrink-0 mt-0.5">
+                      <Clock size={14} className="text-text-caption/50" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-medium text-text-body truncate">{title}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className={`text-[10px] font-bold uppercase ${platformColor}`}>
+                          {platformName}
+                        </span>
+                        <span className="text-[10px] text-text-caption font-mono">
+                          {formatCount(post.impressions)} views
+                        </span>
+                        {(post.likes ?? 0) > 0 && (
+                          <span className="text-[10px] text-text-caption font-mono">
+                            {formatCount(post.likes ?? 0)} likes
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {post.post_url && (
+                      <a
+                        href={post.post_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-accent-blue"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-5 pt-4 border-t border-border-subtle">
+            <button
+              onClick={() => navigate("/dashboard/social-media")}
+              className="w-full py-2.5 px-4 rounded-xl text-code-sm font-semibold text-accent-blue bg-accent-blue/5 hover:bg-accent-blue/10 transition-colors flex items-center justify-center gap-2"
+            >
+              <Globe size={14} />
+              View All Social Media
             </button>
           </div>
         </div>
       </div>
-
     </div>
   );
 }

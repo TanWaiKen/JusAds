@@ -1,14 +1,14 @@
 ﻿"""
 remediation_pipeline.py
-Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+───────────────────────
 Remediation Pipeline (Pipeline 2) Ã¢â‚¬â€ an independent LangGraph StateGraph
 that remediates non-compliant media assets.
 
 Flow:
-  1. fetch_compliance_result  Ã¢â€ â€™ retrieve compliance check by task_id
-  2. confirm_aspect_ratio     Ã¢â€ â€™ LangGraph interrupt() for image/video aspect ratio
-  3. media_remediation        Ã¢â€ â€™ route to media-specific handler
-  4. upload_and_finalize      Ã¢â€ â€™ S3 upload + Supabase record update
+  1. fetch_compliance_result  → retrieve compliance check by task_id
+  2. confirm_aspect_ratio     → LangGraph interrupt() for image/video aspect ratio
+  3. media_remediation        → route to media-specific handler
+  4. upload_and_finalize      → S3 upload + Supabase record update
 """
 
 import json
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 _tracker = ProgressTracker()
 
 
-# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Node 1: Fetch Compliance Result Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+# --- Node 1: Fetch Compliance Result -----------------------------------------
 
 
 def fetch_compliance_result(state: dict) -> dict:
@@ -102,7 +102,7 @@ def fetch_compliance_result(state: dict) -> dict:
         }
 
 
-# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Node 2: Confirm Aspect Ratio Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+# --- Node 2: Confirm Aspect Ratio --------------------------------------------
 
 
 def confirm_aspect_ratio(state: dict) -> dict:
@@ -117,7 +117,7 @@ def confirm_aspect_ratio(state: dict) -> dict:
 
     _tracker.start_step(task_id, "confirm_aspect_ratio")
 
-    # Skip for text and audio Ã¢â‚¬â€ no aspect ratio needed
+    # Skip for text and audio Ã¢‚¬€ no aspect ratio needed
     if media_type not in ("image", "video"):
         logger.info("[RemediationPipeline] Skipping aspect ratio for media_type=%s", media_type)
         _tracker.complete_step(task_id, "confirm_aspect_ratio", f"Skipped for {media_type}")
@@ -183,17 +183,8 @@ def confirm_aspect_ratio(state: dict) -> dict:
         }
 
 
-# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Node 3: Media Remediation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-
 
 def media_remediation(state: dict) -> dict:
-    """Route to media-specific remediation handler.
-
-    - Image: inpaint with max 3 retries, quality >= 70
-    - Video: I2V (image-to-video) generation per violation segment
-    - Text: AI-powered text rewrite
-    - Audio: ElevenLabs TTS recreation
-    """
     task_id = state["task_id"]
     media_type = state["media_type"]
 
@@ -282,7 +273,7 @@ def _remediate_image(state: dict) -> dict:
             urllib.request.urlretrieve(seg_url, tmp_seg)
             mask_path = _make_binary_mask(tmp_seg, tmp_original)
         else:
-            # No segmentation available Ã¢â‚¬â€ create a full-image mask as fallback
+            # No segmentation available Ã¢‚¬€ create a full-image mask as fallback
             img = Image.open(tmp_original)
             mask = Image.new("L", img.size, 255)
             mask_path = os.path.join(tempfile.gettempdir(), f"remediate_fullmask_{state['task_id']}.png")
@@ -385,11 +376,11 @@ def _remediate_video(state: dict) -> dict:
     output_path = os.path.join(tempfile.gettempdir(), f"remediated_video_{state['task_id']}.mp4")
 
     if not violations_timeline:
-        # No specific violations Ã¢â‚¬â€ just return original
+        # No specific violations Ã¢‚¬€ just return original
         return {"output_path": tmp_video, "strategy": "video_i2v", "note": "no violations to fix"}
 
     # For each violation segment, extract a reference keyframe
-    # In production this would use I2V APIs Ã¢â‚¬â€ here we structure the call
+    # In production this would use I2V APIs Ã¢‚¬€ here we structure the call
     try:
         from google.genai import types
 
@@ -413,7 +404,7 @@ def _remediate_video(state: dict) -> dict:
             f"Replace the following violations: {violations_desc}"
         )
 
-        # For now, mark as processed Ã¢â‚¬â€ actual I2V would be via external API
+        # For now, mark as processed Ã¢‚¬€ actual I2V would be via external API
         logger.info("[RemediationPipeline] Video I2V remediation prepared for %d segments", len(violations_timeline))
         output_path = tmp_video  # In full implementation, this would be the composited output
 
@@ -481,7 +472,7 @@ def _remediate_audio(state: dict) -> dict:
     remediation_plan = state.get("remediation_plan", {})
     suggestion = remediation_plan.get("suggestion", "")
 
-    # Get replacement text Ã¢â‚¬â€ from suggestion or compliance result
+    # Get replacement text Ã¢‚¬€ from suggestion or compliance result
     replacement_text = suggestion
     if not replacement_text:
         replacement_text = compliance_result.get("suggestion", "Compliant audio replacement.")
@@ -511,7 +502,6 @@ def _remediate_audio(state: dict) -> dict:
         return {"error": f"Audio TTS remediation failed: {e}"}
 
 
-# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Node 4: Upload and Finalize Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
 def upload_and_finalize(state: dict) -> dict:
@@ -564,7 +554,7 @@ def upload_and_finalize(state: dict) -> dict:
         logger.error("[RemediationPipeline] upload_and_finalize failed: %s", e)
         _tracker.fail_step(task_id, "upload_and_finalize", str(e))
 
-        # Preserve original Ã¢â‚¬â€ set status to remix_failed
+        # Preserve original Ã¢‚¬€ set status to remix_failed
         try:
             supabase.table("compliance_checks").update({
                 "status": "remix_failed",
@@ -574,8 +564,6 @@ def upload_and_finalize(state: dict) -> dict:
 
         return {"status": "remix_failed"}
 
-
-# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Helper Functions Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
 def _make_binary_mask(segmented_path: str, original_path: str) -> str:
@@ -649,7 +637,7 @@ def _check_image_quality(original_path: str, edited_path: str) -> int:
         return 75  # Assume acceptable on error
 
 
-# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Build the Remediation Pipeline Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+# --- Build the Remediation Pipeline ------------------------------------------
 
 
 _graph = StateGraph(Remediation_State)
@@ -660,7 +648,7 @@ _graph.add_node("confirm_aspect_ratio", confirm_aspect_ratio)
 _graph.add_node("media_remediation", media_remediation)
 _graph.add_node("upload_and_finalize", upload_and_finalize)
 
-# Wire edges: fetch Ã¢â€ â€™ confirm Ã¢â€ â€™ remediate Ã¢â€ â€™ upload Ã¢â€ â€™ END
+# Wire edges: fetch -> confirm -> remediate -> upload -> END
 _graph.set_entry_point("fetch_compliance_result")
 _graph.add_edge("fetch_compliance_result", "confirm_aspect_ratio")
 _graph.add_edge("confirm_aspect_ratio", "media_remediation")

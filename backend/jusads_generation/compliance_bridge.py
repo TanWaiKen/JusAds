@@ -43,7 +43,7 @@ from .agents.base import AgentResult
 
 logger = logging.getLogger(__name__)
 
-# ─── Constants ───────────────────────────────────────────────────────────────
+# --- Constants ---------------------------------------------------------------
 
 COMPLIANCE_TIMEOUT_SECONDS = 120
 """Max seconds a Generated_Ad may wait for a compliance verdict (Req 8.3)."""
@@ -63,7 +63,7 @@ DEFAULT_AGE_GROUP = "all_ages"
 _PASS_STATUS = "pass"
 
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
+# --- Helpers -----------------------------------------------------------------
 
 
 def _resolve_ad_context(ad: AgentResult) -> dict:
@@ -382,7 +382,7 @@ def summarize_reasons(compliance_result: dict) -> dict:
     return reasons
 
 
-# ─── Public API ──────────────────────────────────────────────────────────────
+# --- Public API --------------------------------------------------------------
 
 
 async def run_compliance_for_ad(
@@ -464,7 +464,7 @@ async def run_compliance_for_ad(
         if s3_media_key:
             downloaded = _download_media(s3_media_key)
             if downloaded is None:
-                # Cannot obtain media → cannot run compliance → non-final (Req 8.5).
+                # Cannot obtain media -> cannot run compliance -> non-final (Req 8.5).
                 result = {"error": "media download failed; compliance incomplete"}
                 persisted = _record_on_generated_ad(
                     ad_id=ad_id,

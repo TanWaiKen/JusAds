@@ -26,12 +26,12 @@ from config import ZERNIO_API_KEY, ZERNIO_ACCOUNT_TIKTOK, ZERNIO_ACCOUNT_INSTAGR
 
 logger = logging.getLogger(__name__)
 
-# ─── Constants ────────────────────────────────────────────────────────────────
+# --- Constants ----------------------------------------------------------------
 
 _TIMEOUT_SECONDS = 30
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# --- Helpers ------------------------------------------------------------------
 
 
 def _resolve_account_id(platform: str) -> Optional[str]:
@@ -48,7 +48,7 @@ def _resolve_account_id(platform: str) -> Optional[str]:
     return mapping.get(platform.lower().strip()) or None
 
 
-# ─── Public API ───────────────────────────────────────────────────────────────
+# --- Public API ---------------------------------------------------------------
 
 
 class DistributionError(Exception):

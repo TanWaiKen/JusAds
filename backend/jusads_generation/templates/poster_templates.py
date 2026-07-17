@@ -11,7 +11,7 @@ Requirements: 1.3, 3.1, 3.2, 3.3, 3.4, 13.1
 
 from . import PromptTemplate
 
-# ─── Product Hero Shot ────────────────────────────────────────────────────────
+# --- Product Hero Shot --------------------------------------------------------
 
 POSTER_PRODUCT_HERO: PromptTemplate = {
     "template_id": "poster_product_hero",
@@ -143,7 +143,7 @@ POSTER_PRODUCT_HERO: PromptTemplate = {
     "tags": ["product", "hero-shot", "clean", "commercial"],
 }
 
-# ─── Exports ──────────────────────────────────────────────────────────────────
+# --- Exports ------------------------------------------------------------------
 
 TEMPLATES: list[PromptTemplate] = [
     POSTER_PRODUCT_HERO,

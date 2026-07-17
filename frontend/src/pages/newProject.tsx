@@ -73,7 +73,7 @@ export default function NewProject() {
       if (mediaType === "compliance") {
         navigate(`/dashboard/project/${data.id}/compliance`);
       } else {
-        navigate(`/dashboard/project/${data.id}/generate`);
+        navigate(`/dashboard/project/${data.id}/easy`);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Could not create project";

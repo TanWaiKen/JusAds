@@ -18,9 +18,9 @@ from shared.models import TriageOutcome, TriageResult
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Constants
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 VALID_PLATFORMS = {"tiktok", "meta", "instagram", "general"}
 VALID_MARKETS = {"malaysia", "singapore"}
@@ -43,9 +43,9 @@ PRODUCT_VIOLATION_KEYWORDS = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Helper functions
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 def _extract_product_type(violations: list[str], localization_plan: str = "") -> Optional[str]:
@@ -110,9 +110,9 @@ def _build_cannot_fix_guidance(
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Main triage function
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 def triage_decide(
@@ -152,7 +152,7 @@ def triage_decide(
         ValueError: If risk_percentage is outside [0, 100], or platform/market
                      is not in the allowed set.
     """
-    # ── Input validation ──────────────────────────────────────────────────
+    # -- Input validation --------------------------------------------------
     if not isinstance(risk_percentage, int) or risk_percentage < 0 or risk_percentage > 100:
         raise ValueError(
             f"risk_percentage must be an integer in [0, 100], got {risk_percentage!r}"
@@ -166,7 +166,7 @@ def triage_decide(
             f"market must be one of {VALID_MARKETS}, got {market!r}"
         )
 
-    # ── Step 1: Confidence below threshold → escalate to human ────────────
+    # -- Step 1: Confidence below threshold -> escalate to human ------------
     if confidence in ("low", "medium"):
         return TriageResult(
             outcome=TriageOutcome.CANNOT_FIX,
@@ -179,7 +179,7 @@ def triage_decide(
             platform_ban=False,
         )
 
-    # ── Step 2: Platform-level product ban (early exit) ───────────────────
+    # -- Step 2: Platform-level product ban (early exit) -------------------
     product_type = _extract_product_type(violations, localization_plan)
     if _is_platform_banned(product_type, platform, market):
         return TriageResult(
@@ -193,7 +193,7 @@ def triage_decide(
             platform_ban=True,
         )
 
-    # ── Step 3: Product/concept itself is the violation ───────────────────
+    # -- Step 3: Product/concept itself is the violation -------------------
     if _product_is_violation(violations, localization_plan):
         return TriageResult(
             outcome=TriageOutcome.CANNOT_FIX,
@@ -202,7 +202,7 @@ def triage_decide(
             platform_ban=False,
         )
 
-    # ── Step 4: Any violations → not compliant, needs editing ─────────────
+    # -- Step 4: Any violations -> not compliant, needs editing -------------
     if len(violations) > 0:
         return TriageResult(
             outcome=TriageOutcome.EDIT,
@@ -211,7 +211,7 @@ def triage_decide(
             platform_ban=False,
         )
 
-    # ── Step 5: High risk score → not compliant ───────────────────────────
+    # -- Step 5: High risk score -> not compliant ---------------------------
     if risk_percentage >= 40:
         return TriageResult(
             outcome=TriageOutcome.EDIT,
@@ -220,7 +220,7 @@ def triage_decide(
             platform_ban=False,
         )
 
-    # ── Step 6: Low risk, no violations, high confidence → COMPLIANT ─────
+    # -- Step 6: Low risk, no violations, high confidence -> COMPLIANT -----
     return TriageResult(
         outcome=TriageOutcome.COMPLIANT,
         reasoning="Risk below threshold with no violations and high confidence",

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/capcut", tags=["capcut-draft"])
 
-# ── pycapcut import ───────────────────────────────────────────────────────────
+# -- pycapcut import -----------------------------------------------------------
 try:
     import pycapcut as cc
     CAPCUT_AVAILABLE = True
@@ -40,7 +40,7 @@ except ImportError:
         cc = None
         logger.warning("[CapCutDraft] No CapCut library available")
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# -- Config --------------------------------------------------------------------
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 DRAFTS_DIR = Path(tempfile.gettempdir()) / "jusads_capcut_drafts"
 DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -304,7 +304,7 @@ async def install_to_capcut(draft_name: str) -> JSONResponse:
         raise HTTPException(status_code=500, detail=f"Failed to install draft: {str(e)}")
 
 
-# ── Internal helpers ──────────────────────────────────────────────────────────
+# -- Internal helpers ----------------------------------------------------------
 
 def _create_image_overlay_draft(
     video_path: str,
@@ -325,7 +325,7 @@ def _create_image_overlay_draft(
         # Create the draft project
         script = draft_folder.create_draft(draft_name, width, height, fps, allow_replace=True)
 
-        # ── Track 1: Main video (background layer) ────────────────────────────
+        # -- Track 1: Main video (background layer) ----------------------------
         script.add_track(cc.TrackType.video, "main_video", relative_index=1)
 
         video_duration = _get_media_duration(video_path)
@@ -337,7 +337,7 @@ def _create_image_overlay_draft(
         )
         script.add_segment(video_seg, "main_video")
 
-        # ── Track 2: Image overlay (foreground layer, on top of video) ────────
+        # -- Track 2: Image overlay (foreground layer, on top of video) --------
         script.add_track(cc.TrackType.video, "image_overlay", relative_index=2)
 
         image_start_us = int(image_start_sec * 1_000_000)
@@ -358,7 +358,7 @@ def _create_image_overlay_draft(
 
         script.add_segment(image_seg, "image_overlay")
 
-        # ── Add transition between segments on main video track ───────────────
+        # -- Add transition between segments on main video track ---------------
         # Transitions in pycapcut are added between consecutive segments.
         # We split the video into two parts and add a transition between them.
         # Instead, add a transition effect on the image overlay segment.
@@ -408,7 +408,7 @@ def _create_image_overlay_draft(
         except Exception as e:
             logger.warning("[CapCutDraft] Could not add transition: %s", e)
 
-        # ── Save the draft ────────────────────────────────────────────────────
+        # -- Save the draft ----------------------------------------------------
         script.save()
 
         logger.info("[CapCutDraft] Draft '%s' created successfully at: %s", draft_name, drafts_path)
@@ -472,7 +472,7 @@ def _find_capcut_drafts_folder() -> Optional[str]:
     return None
 
 
-# ── Dual Output: Draft + Rendered Video (Task 9) ──────────────────────────────
+# -- Dual Output: Draft + Rendered Video (Task 9) ------------------------------
 
 
 def _render_video_ffmpeg(

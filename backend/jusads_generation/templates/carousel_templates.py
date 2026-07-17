@@ -12,7 +12,7 @@ Requirements: 1.3, 3.1, 3.2, 3.3, 3.4, 13.1
 
 from . import PromptTemplate
 
-# ─── Product Story Carousel ───────────────────────────────────────────────────
+# --- Product Story Carousel ---------------------------------------------------
 
 PRODUCT_STORY_CAROUSEL: PromptTemplate = {
     "template_id": "carousel_product_story",
@@ -170,7 +170,7 @@ PRODUCT_STORY_CAROUSEL: PromptTemplate = {
     "tags": ["carousel", "product-story", "multi-slide", "sequential", "e-commerce"],
 }
 
-# ─── Feature Showcase Carousel ────────────────────────────────────────────────
+# --- Feature Showcase Carousel ------------------------------------------------
 
 FEATURE_SHOWCASE_CAROUSEL: PromptTemplate = {
     "template_id": "carousel_feature_showcase",
@@ -312,7 +312,7 @@ FEATURE_SHOWCASE_CAROUSEL: PromptTemplate = {
     "tags": ["carousel", "feature-showcase", "tech", "product-features", "benefits"],
 }
 
-# ─── Exported list ────────────────────────────────────────────────────────────
+# --- Exported list ------------------------------------------------------------
 
 TEMPLATES: list[PromptTemplate] = [
     PRODUCT_STORY_CAROUSEL,

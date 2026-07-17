@@ -93,7 +93,7 @@ class ExecuteVideoPlanRequest(BaseModel):
 
 import asyncio
 
-# In-memory store for background generation tasks. Maps run_id → asyncio.Queue of SSE chunks.
+# In-memory store for background generation tasks. Maps run_id -> asyncio.Queue of SSE chunks.
 # When the client disconnects and reconnects, they poll the queue by run_id.
 _active_runs: dict[str, asyncio.Queue] = {}
 _run_complete: dict[str, bool] = {}
@@ -106,12 +106,6 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
     The generation runs as a BACKGROUND TASK — if the client disconnects mid-stream,
     the pipeline continues running and persists results to Supabase. When the user
     comes back, the frontend fetches the persisted generated_ads + pipeline_state.
-
-    Delegates to the ``jusads_generation`` orchestrator (Req 1.5, 1.6), which emits the
-    same SSE event shapes the frontend already parses (`{text}`, `{node,status,data}`,
-    `{pipeline_state}`, `{error}`). The user turn is persisted before generation begins
-    (Req 6.3); a persistence failure surfaces an error event without discarding the turn
-    (Req 6.7).
     """
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
@@ -126,7 +120,7 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
         "viewport": {"panX": 0, "panY": 0, "zoom": 1}
     }
 
-    # ── Guided mode: assemble the effective message from form inputs ──
+    # -- Guided mode: assemble the effective message from form inputs --
     # Easy Mode detection: if revision_instruction or advanced_overrides are present,
     # use the Easy Mode prompt assembly path (Req 13.3, 14.1, 14.5).
     easy_mode_provenance: dict | None = None
@@ -252,7 +246,7 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
             except Exception as se:
                 logger.error("[BG] Failed to persist final state: %s", se)
 
-        # ── Easy Mode provenance persistence (Req 17.1, 17.2) ──
+        # -- Easy Mode provenance persistence (Req 17.1, 17.2) --
         # Store the provenance record in generated_ads.metadata.easy_mode namespace
         if easy_mode_provenance and final_state:
             try:
@@ -644,7 +638,7 @@ async def upload_reference_asset(project_id: str, task_id: str, file: UploadFile
             pass
 
 
-# ─── Guided Form Schema ───────────────────────────────────────────────────────
+# --- Guided Form Schema -------------------------------------------------------
 
 
 @router.get("/guided-form-schema")
@@ -655,7 +649,7 @@ async def get_guided_form_schema() -> JSONResponse:
     return JSONResponse(content=get_form_schema())
 
 
-# ─── Prompt Search (Phase F) ──────────────────────────────────────────────────
+# --- Prompt Search (Phase F) --------------------------------------------------
 
 
 @router.get("/prompt-suggestions")

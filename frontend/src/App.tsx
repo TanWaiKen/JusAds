@@ -12,14 +12,10 @@ import DashboardProfile from "./pages/profile";
 import DashboardTrends from "./pages/trends";
 import DashboardAssets from "./pages/assets";
 import DashboardCompliance from "./pages/compliance";
-import Generate from "./pages/generate";
 import ProjectOverviewPage from "./pages/projectOverview";
 import TaskDetailPage from "./pages/taskDetail";
-import GenerateInitiator from "./pages/generateInitiator";
-import GuidedGenerate from "./pages/guidedGenerate";
 import NotFoundPage from "./pages/notFound";
 import CapcutDraftPage from "./pages/capcut-draft";
-import StatisticsPage from "./pages/statistics";
 import EasyGenerationPage from "./pages/easy-generation";
 
 function App() {
@@ -52,16 +48,12 @@ function App() {
               <Route path="profile" element={<DashboardProfile />} />
               <Route path="assets" element={<DashboardAssets />} />
               <Route path="trends" element={<DashboardTrends />} />
-              <Route path="statistics" element={<StatisticsPage />} />
               <Route path="compliance" element={<DashboardCompliance />} />
-              <Route path="generate" element={<Generate />} />
 
               {/* Project-scoped routes — static segments before dynamic :taskId */}
               <Route path="project/:projectId" element={<ProjectOverviewPage />} />
               <Route path="project/:projectId/compliance" element={<DashboardCompliance />} />
               <Route path="project/:projectId/compliance/:taskId" element={<DashboardCompliance />} />
-              <Route path="project/:projectId/generate" element={<GenerateInitiator />} />
-              <Route path="project/:projectId/guided-generate" element={<GuidedGenerate />} />
               <Route path="project/:projectId/easy" element={<EasyGenerationPage />} />
               <Route path="project/:projectId/:taskId" element={<TaskDetailPage />} />
 

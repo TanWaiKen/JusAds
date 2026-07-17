@@ -1,7 +1,7 @@
 ﻿"""
 ai_designer.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-AIDesigner â€” plans HOW to edit an image using a single Gemini Flash call.
+──────────────
+AIDesigner — plans HOW to edit an image using a single Gemini Flash call.
 
 Produces an EditPlan containing mode (INPAINT_INSERT or INPAINT_REMOVE)
 and an inpaint_prompt (â‰¤ 60 words).
@@ -38,7 +38,7 @@ def _validate_mode(mode_str: str) -> str:
     if mode_str in valid_modes:
         return mode_str
     logger.warning(
-        "[AIDesigner] Invalid mode '%s' â€” defaulting to INPAINT_INSERT", mode_str
+        "[AIDesigner] Invalid mode '%s' — defaulting to INPAINT_INSERT", mode_str
     )
     return EditMode.INPAINT_INSERT.value
 
@@ -105,7 +105,7 @@ Return JSON: {{"mode": "INPAINT_INSERT"|"INPAINT_REMOVE",
         reasoning = plan.get("reasoning", "")
 
         if not inpaint_prompt:
-            # Empty prompt from Gemini â€” fall back
+            # Empty prompt from Gemini — fall back
             raise ValueError("Gemini returned empty inpaint_prompt")
 
         logger.info(
@@ -122,7 +122,7 @@ Return JSON: {{"mode": "INPAINT_INSERT"|"INPAINT_REMOVE",
         )
 
     except Exception as e:
-        logger.warning("[AIDesigner] Gemini call failed: %s â€” using SCULPT fallback", e)
+        logger.warning("[AIDesigner] Gemini call failed: %s — using SCULPT fallback", e)
         return _fallback_edit_plan(violations, market, platform, ethnicity, age_group, localization_plan)
 
 

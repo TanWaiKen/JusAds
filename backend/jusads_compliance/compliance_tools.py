@@ -1,6 +1,6 @@
 ﻿"""
 compliance_tools.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+───────────────────
 Compliance checking tools for text, image, audio, and video ads.
 Queries rules and personas from Supabase (direct DB queries).
 """
@@ -416,7 +416,7 @@ def segment_violations_clipseg(image_path: str, high_risk_indicators: list):
     """Segment non-compliant regions using CLIPSeg (text-to-segmentation).
 
     Flow:
-      1. Gemini converts high_risk_indicators â†’ short visual prompts for CLIPSeg
+      1. Gemini converts high_risk_indicators → short visual prompts for CLIPSeg
       2. CLIPSeg segments the image using all prompts
       3. Union all prompt masks into a single binary mask
       4. Save overlay visualization
@@ -439,7 +439,7 @@ def segment_violations_clipseg(image_path: str, high_risk_indicators: list):
     image = Image.open(image_path).convert("RGB")
     w, h = image.size
 
-    # Step 1: Gemini converts indicators â†’ visual prompts
+    # Step 1: Gemini converts indicators -> visual prompts
     prompt_text = f"""Convert these compliance violation indicators into short visual descriptions
 that a segmentation model can use to find the violating regions in an image.
 
@@ -534,8 +534,8 @@ def extract_violation_clips(video_path: str, violations_timeline: list):
     for v in violations_timeline:
         if isinstance(v, str):
             # Parse "[SS-SS] description" or "[MM:SS-MM:SS] description"
-            sec_match = re.search(r"\[(\d+\.?\d*)\s*[-â€“]\s*(\d+\.?\d*)\]", v)
-            mmss_match = re.search(r"\[(\d{1,2}):(\d{2})\s*[-â€“]\s*(\d{1,2}):(\d{2})\]", v)
+            sec_match = re.search(r"\[(\d+\.?\d*)\s*[-–]\s*(\d+\.?\d*)\]", v)
+            mmss_match = re.search(r"\[(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})\]", v)
             if mmss_match:
                 start = int(mmss_match.group(1)) * 60 + int(mmss_match.group(2))
                 end = int(mmss_match.group(3)) * 60 + int(mmss_match.group(4))
@@ -606,7 +606,7 @@ def extract_violation_clips(video_path: str, violations_timeline: list):
         except Exception as e:
             logger.error(f"Failed to extract clip {i}: {e}")
 
-    logger.info(f"Merged {len(parsed)} violations â†’ {len(merged)} segments â†’ {len(clips)} clips")
+    logger.info(f"Merged {len(parsed)} violations → {len(merged)} segments → {len(clips)} clips")
     return {"clips": clips, "merged_count": len(merged), "original_count": len(parsed)}
 
 

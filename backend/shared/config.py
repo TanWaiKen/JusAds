@@ -16,50 +16,50 @@ logger = logging.getLogger(__name__)
 # Load .env from backend/ directory
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
-# ── Google Vertex AI / Gemini ─────────────────────────────────────────────────
+# -- Google Vertex AI / Gemini -------------------------------------------------
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
-LLM_MODEL_ID = "gemini-3.5-flash"
+SMALL_TEXT_MODEL = os.environ.get("LLM_MODEL_ID", "gemini-2.5-flash")
 
-# ── Model Registry (centralised model IDs) ────────────────────────────────────
+# -- Model Registry (centralised model IDs) ------------------------------------
 # Chat Model (Cheaper)
-MODEL_TEXT = "gemini-3.5-flash"
-# Video Inpainting / Video editing
-MODEL_VIDEO = "gemini-omni-flash-preview"
+MODEL_TEXT = os.environ.get("LLM_MODEL_ID", "gemini-3.5-flash")
+# Video Generation / Video Inpainting / Video editing
+MODEL_VIDEO = os.environ.get("MODEL_VIDEO", "gemini-omni-flash-preview")
 # Image Generation
-MODEL_IMAGE_CREATIVE = "gemini-3.1-flash-lite-image"
+MODEL_IMAGE_CREATIVE = os.environ.get("MODEL_IMAGE_CREATIVE", "gemini-3.1-flash-image")
 # Scene Extraction
-MODEL_SCENE_EXTRACTION = "image-4.0"
+MODEL_SCENE_EXTRACTION = os.environ.get("MODEL_SCENE_EXTRACTION", "gemini-3.1-flash-lite-image")
 # Multimodal Analysis / Image Analysis
-MODEL_IMAGE_ANALYSIS = "gemini-3.5-flash"
+MODEL_IMAGE_ANALYSIS = os.environ.get("MODEL_IMAGE_ANALYSIS", "gemini-3.5-flash")
 # Voice Model
-MODEL_VOICE = "eleven_multilingual_v2"
+MODEL_VOICE = os.environ.get("MODEL_VOICE", "eleven_multilingual_v2")
 # Image Inpainting
-MODEL_INPAINT = "imagen-3.0-capability-002"
+MODEL_INPAINT = os.environ.get("MODEL_INPAINT", "gemini-3.1-flash-lite-image")
 
 
-# ── PredictHQ (Events Calendar) ───────────────────────────────────────────────
+# -- PredictHQ (Events Calendar) -----------------------------------------------
 PREDICTHQ_API_KEY = os.environ.get("PREDICTHQ_API_KEY", "")
 
-# ── Tavily Control ────────────────────────────────────────────────────────────
+# -- Tavily Control ------------------------------------------------------------
 TAVILY_ENABLED = os.environ.get("TAVILY_ENABLED", "true").lower() == "true"
 
-# ── AWS Credentials & S3 ──────────────────────────────────────────────────────
+# -- AWS Credentials & S3 ------------------------------------------------------
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 AWS_REGION = os.environ.get("AWS_REGION", "ap-southeast-1")
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "")
 
-# ── API Keys ──────────────────────────────────────────────────────────────────
+# -- API Keys ------------------------------------------------------------------
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 FLUXAI_API_KEY = os.environ.get("FLUXAI_API_KEY", "")
 
-# ── Supabase ──────────────────────────────────────────────────────────────────
+# -- Supabase ------------------------------------------------------------------
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
-# ── ElevenLabs Voice Lookup (from Supabase brand_voices table) ────────────────
+# -- ElevenLabs Voice Lookup (from Supabase brand_voices table) ----------------
 # Voice IDs are stored in the brand_voices table and fetched at runtime.
 # A simple in-process cache avoids repeated DB round-trips.
 
@@ -108,19 +108,19 @@ def get_voice(market: str, ethnicity: str, gender: str = "female") -> dict:
 DEFAULT_VOICE = {"voice_id": "qAJVXEQ6QgjOQ25KuoU8", "lang": "ms"}
 
 
-# ── Zernio Distribution API ───────────────────────────────────────────────────
+# -- Zernio Distribution API ---------------------------------------------------
 ZERNIO_API_KEY = os.environ.get("ZERNIO_API_KEY", "")
 ZERNIO_ACCOUNT_TIKTOK = os.environ.get("ZERNIO_ACCOUNT_TIKTOK", "")
 ZERNIO_ACCOUNT_INSTAGRAM = os.environ.get("ZERNIO_ACCOUNT_INSTAGRAM", "")
 
 
-# ── CapCut / pyJianYingDraft (Intelligent Remediation — video editing) ─────────
+# -- CapCut / pyJianYingDraft (Intelligent Remediation — video editing) ---------
 # pyJianYingDraft is imported directly as a Python library (no separate server).
 # Drafts are saved locally and can be opened in CapCut/JianYing desktop.
 # FFmpeg handles the actual .mp4 rendering for API responses.
 
 
-# ── Startup secret check (Req 3.5, 3.6) ───────────────────────────────────────
+# -- Startup secret check (Req 3.5, 3.6) ---------------------------------------
 # At least one secret is required for the backend to serve requests. If a
 # required secret is missing from the environment configuration, startup must
 # halt before accepting any request, logging the missing secret BY NAME ONLY —

@@ -5,20 +5,11 @@ Run from backend/: python test_video_agent.py
 import asyncio
 import sys
 
-# Load env before anything else
-from config import VERTEX_PROJECT_ID
-
-print(f"VERTEX_PROJECT_ID: {'SET' if VERTEX_PROJECT_ID else 'NOT SET'}")
-
-if not VERTEX_PROJECT_ID:
-    print("ERROR: VERTEX_PROJECT_ID not set in .env. Cannot test Veo.")
-    sys.exit(1)
-
 from jusads_generation.agents.video_agent import generate
 
 
 async def main():
-    print("\n--- Testing Video Agent (Veo 3.0) ---\n")
+    print("\n--- Testing Video Agent (Gemini Omni) ---\n")
 
     result = await generate(
         brief="A refreshing bubble tea being poured into a glass with ice on a sunny day",

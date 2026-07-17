@@ -14,11 +14,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# ─── Type alias ──────────────────────────────────────────────────────────────
+# --- Type alias --------------------------------------------------------------
 
 DesignType = str  # Literal["image_poster", "carousel", "video_ad", "text_copy", "audio_ad"]
 
-# ─── Design Types ────────────────────────────────────────────────────────────
+# --- Design Types ------------------------------------------------------------
 
 DESIGN_TYPES: list[DesignType] = [
     "image_poster",
@@ -38,7 +38,7 @@ DESIGN_TYPE_TO_MEDIA: dict[DesignType, list[str]] = {
     "audio_ad": ["audio"],
 }
 
-# ─── Form Schema ─────────────────────────────────────────────────────────────
+# --- Form Schema -------------------------------------------------------------
 
 FORM_SCHEMA: dict[str, dict[str, list[str]]] = {
     "image_poster": {
@@ -63,7 +63,7 @@ FORM_SCHEMA: dict[str, dict[str, list[str]]] = {
     },
 }
 
-# ─── Design Type Metadata ────────────────────────────────────────────────────
+# --- Design Type Metadata ----------------------------------------------------
 
 DESIGN_TYPE_META: list[dict[str, str]] = [
     {
@@ -99,7 +99,7 @@ DESIGN_TYPE_META: list[dict[str, str]] = [
 ]
 
 
-# ─── Fixed Prompts ───────────────────────────────────────────────────────────
+# --- Fixed Prompts -----------------------------------------------------------
 
 FIXED_PROMPTS: dict[DesignType, str] = {
     "image_poster": (
@@ -268,11 +268,11 @@ FIXED_PROMPTS: dict[DesignType, str] = {
 }
 
 
-# ─── Required fields ─────────────────────────────────────────────────────────
+# --- Required fields ---------------------------------------------------------
 
 _REQUIRED_FIELDS: set[str] = {"product_name", "key_message"}
 
-# ─── Intent signals ──────────────────────────────────────────────────────────
+# --- Intent signals ----------------------------------------------------------
 # These short prefixes ensure the orchestrator's intent detection correctly
 # identifies which media agent(s) to route to. The orchestrator uses Gemini +
 # keyword fallback to detect "generate image/video/audio/text" from the message.
@@ -286,7 +286,7 @@ _INTENT_SIGNALS: dict[DesignType, str] = {
 }
 
 
-# ─── Assembly function ───────────────────────────────────────────────────────
+# --- Assembly function -------------------------------------------------------
 
 
 def assemble_guided_message(
@@ -396,7 +396,7 @@ def assemble_guided_message(
     return assembled
 
 
-# ─── Schema endpoint helper ──────────────────────────────────────────────────
+# --- Schema endpoint helper --------------------------------------------------
 
 
 def get_form_schema() -> dict[str, Any]:

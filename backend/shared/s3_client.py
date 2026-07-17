@@ -72,7 +72,7 @@ def get_public_url(s3_key: str) -> str:
     return f"https://{BUCKET}.s3.{REGION}.amazonaws.com/{encoded_key}"
 
 
-# ─── Upload ───────────────────────────────────────────────────────────────────
+# --- Upload -------------------------------------------------------------------
 
 
 def upload_file(file_path: str, s3_key: str) -> str:
@@ -96,7 +96,7 @@ def upload_file_public(file_path: str, s3_key: str) -> str:
     return get_public_url(s3_key)
 
 
-# ─── Delete ───────────────────────────────────────────────────────────────────
+# --- Delete -------------------------------------------------------------------
 
 
 def delete_prefix(prefix: str) -> int:
@@ -191,7 +191,7 @@ def delete_project_media(project_id: str, owner_email: str | None = None) -> int
     return total
 
 
-# ─── Presigned URL ────────────────────────────────────────────────────────────
+# --- Presigned URL ------------------------------------------------------------
 
 
 def generate_presigned_url(s3_key: str, expiry_seconds: int = 3600) -> str:
@@ -238,7 +238,7 @@ def generate_presigned_upload_url(
         raise
 
 
-# ─── Quota ────────────────────────────────────────────────────────────────────
+# --- Quota --------------------------------------------------------------------
 
 
 def get_user_storage_usage(username: str) -> int:

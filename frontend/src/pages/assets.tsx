@@ -22,6 +22,10 @@ import gsap from "gsap";
 import { PromptRecommendations } from "@/components/prompt-search/PromptRecommendations";
 import { API_BASE } from "@/services/generationApi";
 import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router";
+import { createGenerationTask } from "@/services/taskApi";
+import { toast } from "sonner";
+import { setPrefill } from "@/services/session";
 
 gsap.registerPlugin(useGSAP);
 
@@ -46,6 +50,7 @@ const MEDIA_ICONS: Record<string, typeof ImageIcon> = {
 
 export default function DashboardAssets() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [assets, setAssets] = useState<UserAsset[]>([]);
   const [loadingAssets, setLoadingAssets] = useState(true);
   const [activeTab, setActiveTab] = useState<"my-assets" | "library">("my-assets");
@@ -272,8 +277,43 @@ export default function DashboardAssets() {
           <div className="max-w-5xl">
             <PromptRecommendations
               profile={{}}
-              onUse={(prompt) => {
-                navigator.clipboard.writeText(prompt);
+              onUse={async (prompt, suggestion) => {
+                const loadingToast = toast.loading("Initializing generation workspace...");
+                try {
+                  const email = user?.profile?.email ?? "demo_user";
+
+                  // 1. Create a new "Untitled" project
+                  const createRes = await fetch(`${API_BASE}/api/projects`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      name: "Untitled",
+                      username: email,
+                    }),
+                  });
+                  if (!createRes.ok) throw new Error("Failed to create project");
+                  const project = await createRes.json();
+                  const projectId = project.id;
+
+                  // 2. Create a generation task
+                  const task = await createGenerationTask(projectId);
+
+                  // 3. Store prefill data in sessionStorage
+                  setPrefill({
+                    prompt,
+                    referenceImageUrl: suggestion.sourceMedia || undefined,
+                    referenceImageLabel: suggestion.title || "Reference Image",
+                  });
+
+                  // 4. Navigate to Advanced Mode
+                  toast.dismiss(loadingToast);
+                  navigate(`/dashboard/project/${projectId}/${task.id}`);
+                  toast.success("Workspace ready — prompt prefilled.");
+                } catch (err) {
+                  toast.dismiss(loadingToast);
+                  toast.error("Could not load workspace. Prompt copied to clipboard instead.");
+                  navigator.clipboard.writeText(prompt);
+                }
               }}
               maxCards={6}
             />

@@ -29,6 +29,14 @@ interface GenerationCanvasProps {
 export function GenerationCanvas({ projectId, taskId, initialState }: GenerationCanvasProps) {
   const { state, dispatch } = useCanvasGraph(initialState);
   const [activeTab, setActiveTab] = useState<"chatbot" | "outputs" | "inspector">("chatbot");
+  const [chatbotPrompt, setChatbotPrompt] = useState<string | null>(null);
+
+  // Auto-switch to Inspector tab when a node is selected
+  useEffect(() => {
+    if (state.selectedNodeId) {
+      setActiveTab("inspector");
+    }
+  }, [state.selectedNodeId]);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -196,6 +204,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   return (
     <div className="flex h-full flex-col">
       <CanvasToolbar
+        projectId={projectId}
         isSaving={isSaving}
         onOpenSettings={() => setSettingsOpen(true)}
       />
@@ -277,6 +286,8 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                 complianceEnabled={settings.complianceEnabled}
                 videoV3Enabled={settings.videoV2Enabled}
                 targetEthnicity={settings.targetEthnicity}
+                triggerPrompt={chatbotPrompt}
+                onTriggerPromptUsed={() => setChatbotPrompt(null)}
                 generationOptions={{
                   ageGroup: settings.ageGroup,
                   market: settings.market,
@@ -337,6 +348,10 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                 node={selectedNode}
                 onUpdateProps={(nodeId, updates) => dispatch({ type: "UPDATE_NODE_PROPS", nodeId, ...updates })}
                 onDelete={handleDelete}
+                onSendRevision={(nodeLabel, comment) => {
+                  setChatbotPrompt(`Please revise node "${nodeLabel}" with feedback: ${comment}`);
+                  setActiveTab("chatbot");
+                }}
               />
             )}
           </div>

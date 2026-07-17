@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 
-# ─── Request/Response Models ──────────────────────────────────────────────────
+# --- Request/Response Models --------------------------------------------------
 
 
 class UploadUrlRequest(BaseModel):
@@ -47,7 +47,7 @@ class DownloadUrlRequest(BaseModel):
     s3_key: str
 
 
-# ─── Upload URL ───────────────────────────────────────────────────────────────
+# --- Upload URL ---------------------------------------------------------------
 
 
 @router.post("/upload-url")
@@ -108,7 +108,7 @@ async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-# ─── Download URL ─────────────────────────────────────────────────────────────
+# --- Download URL -------------------------------------------------------------
 
 
 @router.post("/download-url")

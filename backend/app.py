@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from shared.supabase_client import SupabaseComplianceStore
 from shared.s3_client import S3MediaClient
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# -- Routes --------------------------------------------------------------------
 from routes.compliance import router as compliance_router, init_compliance
 from routes.remix import router as remix_router, init_remix
 from routes.projects import router as projects_router, init_store as init_projects_store
@@ -40,9 +40,11 @@ from routes.trends import router as trends_router
 from routes.statistics import router as statistics_router
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("filelock").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# ── Startup secret check (Req 3.5, 3.6) ───────────────────────────────────────
+# -- Startup secret check (Req 3.5, 3.6) ---------------------------------------
 # Halt before serving any request when a required secret is missing. The check
 # logs the missing secret BY NAME ONLY and raises, preventing the app from
 # starting rather than serving in a broken state.
@@ -50,7 +52,7 @@ from config import verify_required_secrets
 
 verify_required_secrets()
 
-# ── App ───────────────────────────────────────────────────────────────────────
+# -- App -----------------------------------------------------------------------
 app = FastAPI(title="JusAds Compliance API")
 
 app.add_middleware(
@@ -75,7 +77,7 @@ async def request_validation_exception_handler(request: Request, exc: RequestVal
     return JSONResponse(status_code=400, content={"error": "; ".join(messages)})
 
 
-# ── Initialize clients ────────────────────────────────────────────────────────
+# -- Initialize clients --------------------------------------------------------
 try:
     s3_client = S3MediaClient()
     logger.info("[Init] S3MediaClient OK")
@@ -90,7 +92,7 @@ except Exception as e:
     logger.warning("[Init] SupabaseComplianceStore failed: %s", e)
     supabase_store = None
 
-# ── Wire routes ───────────────────────────────────────────────────────────────
+# -- Wire routes ---------------------------------------------------------------
 init_compliance(supabase_store, s3_client)
 init_remix(supabase_store)
 init_projects_store(supabase_store)
@@ -109,7 +111,7 @@ app.include_router(capcut_draft_router)
 app.include_router(trends_router)
 app.include_router(statistics_router)
 
-# ── Static files (dev only) ──────────────────────────────────────────────────
+# -- Static files (dev only) --------------------------------------------------
 import os
 IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"

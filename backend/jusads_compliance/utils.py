@@ -6,7 +6,10 @@ Shared utility functions for the compliance pipeline.
 
 import mimetypes
 
-
+# Ensure common web formats are recognized (mimetypes depends on OS registry which may lack them)
+mimetypes.add_type('image/webp', '.webp')
+mimetypes.add_type('video/webm', '.webm')
+mimetypes.add_type('audio/webm', '.weba')
 def detect_media_type(mime_type: str) -> str:
     """Classify a MIME type string into a media category.
 

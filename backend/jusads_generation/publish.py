@@ -23,7 +23,7 @@ from shared.clients import supabase
 
 logger = logging.getLogger(__name__)
 
-# ─── Constants ───────────────────────────────────────────────────────────────
+# --- Constants ---------------------------------------------------------------
 
 PUBLISHABLE_FROM_STATUSES = frozenset({"draft", "completed"})
 """Generation statuses a human may approve for publishing."""
@@ -35,7 +35,7 @@ _COMPLIANCE_BLOCKED_STATUS = "final-non-compliant"
 """Compliance verdict that blocks publishing entirely."""
 
 
-# ─── Errors ──────────────────────────────────────────────────────────────────
+# --- Errors ------------------------------------------------------------------
 
 
 class PublishError(Exception):
@@ -50,7 +50,7 @@ class CompliancePublishBlockedError(PublishError):
     """The ad failed compliance and may not be published."""
 
 
-# ─── Result shape ────────────────────────────────────────────────────────────
+# --- Result shape ------------------------------------------------------------
 
 
 class PublishResult(TypedDict):
@@ -62,7 +62,7 @@ class PublishResult(TypedDict):
     already_published: bool
 
 
-# ─── Public API ──────────────────────────────────────────────────────────────
+# --- Public API --------------------------------------------------------------
 
 
 def publish_ad(project_id: str, ad_id: str) -> PublishResult:
@@ -123,7 +123,7 @@ def publish_ad(project_id: str, ad_id: str) -> PublishResult:
     )
 
 
-# ─── Private helpers ─────────────────────────────────────────────────────────
+# --- Private helpers ---------------------------------------------------------
 
 
 def _get_ad(project_id: str, ad_id: str) -> Optional[dict]:

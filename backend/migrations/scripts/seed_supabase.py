@@ -7,10 +7,10 @@ rules into Supabase.
 
 Usage:
     cd backend
-    python -m agent.scripts.seed_supabase
-    python -m agent.scripts.seed_supabase --rules-only
-    python -m agent.scripts.seed_supabase --personas-only
-    python -m agent.scripts.seed_supabase --platform-rules
+    python -m migrations.scripts.seed_supabase
+    python -m migrations.scripts.seed_supabase --rules-only
+    python -m migrations.scripts.seed_supabase --personas-only
+    python -m migrations.scripts.seed_supabase --platform-rules
 """
 
 import csv
@@ -29,7 +29,7 @@ from config import SUPABASE_URL, SUPABASE_KEY
 
 logger = logging.getLogger(__name__)
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# -- Paths ---------------------------------------------------------------------
 CSV_PATH = Path(__file__).resolve().parent / "regulatory_rules_vector_db_dataset.csv"
 PERSONAS_DIR = Path(__file__).resolve().parent.parent / "personas"
 PERSONA_FILES = {
@@ -60,15 +60,15 @@ def _parse_date(date_str: str) -> str:
             continue
     return "1970-01-01"
 
-# ── Platform Rules Data ───────────────────────────────────────────────────────
+# -- Platform Rules Data -------------------------------------------------------
 PLATFORM_RULES_DATA = [
-    # ── TikTok ────────────────────────────────────────────────────────────────
+    # -- TikTok ----------------------------------------------------------------
     {"platform": "TikTok", "media_type": "video", "aspect_ratio": "9:16", "max_duration_seconds": 600, "max_file_size_mb": 500},
     {"platform": "TikTok", "media_type": "video", "aspect_ratio": "1:1", "max_duration_seconds": 600, "max_file_size_mb": 500},
     {"platform": "TikTok", "media_type": "video", "aspect_ratio": "16:9", "max_duration_seconds": 600, "max_file_size_mb": 500},
     {"platform": "TikTok", "media_type": "image", "aspect_ratio": "9:16", "max_duration_seconds": None, "max_file_size_mb": 20},
     {"platform": "TikTok", "media_type": "image", "aspect_ratio": "1:1", "max_duration_seconds": None, "max_file_size_mb": 20},
-    # ── Instagram ─────────────────────────────────────────────────────────────
+    # -- Instagram -------------------------------------------------------------
     {"platform": "Instagram", "media_type": "video", "aspect_ratio": "9:16", "max_duration_seconds": 90, "max_file_size_mb": 4000},
     {"platform": "Instagram", "media_type": "video", "aspect_ratio": "1:1", "max_duration_seconds": 90, "max_file_size_mb": 4000},
     {"platform": "Instagram", "media_type": "video", "aspect_ratio": "4:5", "max_duration_seconds": 90, "max_file_size_mb": 4000},
@@ -77,7 +77,7 @@ PLATFORM_RULES_DATA = [
     {"platform": "Instagram", "media_type": "image", "aspect_ratio": "9:16", "max_duration_seconds": None, "max_file_size_mb": 30},
     {"platform": "Instagram", "media_type": "image", "aspect_ratio": "4:5", "max_duration_seconds": None, "max_file_size_mb": 30},
     {"platform": "Instagram", "media_type": "image", "aspect_ratio": "1.91:1", "max_duration_seconds": None, "max_file_size_mb": 30},
-    # ── Meta (Facebook) ───────────────────────────────────────────────────────
+    # -- Meta (Facebook) -------------------------------------------------------
     {"platform": "Meta", "media_type": "video", "aspect_ratio": "16:9", "max_duration_seconds": 240, "max_file_size_mb": 4000},
     {"platform": "Meta", "media_type": "video", "aspect_ratio": "1:1", "max_duration_seconds": 240, "max_file_size_mb": 4000},
     {"platform": "Meta", "media_type": "video", "aspect_ratio": "9:16", "max_duration_seconds": 120, "max_file_size_mb": 4000},
@@ -85,19 +85,19 @@ PLATFORM_RULES_DATA = [
     {"platform": "Meta", "media_type": "image", "aspect_ratio": "1:1", "max_duration_seconds": None, "max_file_size_mb": 30},
     {"platform": "Meta", "media_type": "image", "aspect_ratio": "1.91:1", "max_duration_seconds": None, "max_file_size_mb": 30},
     {"platform": "Meta", "media_type": "image", "aspect_ratio": "4:5", "max_duration_seconds": None, "max_file_size_mb": 30},
-    # ── YouTube ───────────────────────────────────────────────────────────────
+    # -- YouTube ---------------------------------------------------------------
     {"platform": "YouTube", "media_type": "video", "aspect_ratio": "16:9", "max_duration_seconds": 43200, "max_file_size_mb": 256000},
     {"platform": "YouTube", "media_type": "video", "aspect_ratio": "9:16", "max_duration_seconds": 60, "max_file_size_mb": 256000},
     {"platform": "YouTube", "media_type": "video", "aspect_ratio": "1:1", "max_duration_seconds": 43200, "max_file_size_mb": 256000},
     {"platform": "YouTube", "media_type": "image", "aspect_ratio": "16:9", "max_duration_seconds": None, "max_file_size_mb": 2},
-    # ── X (Twitter) ───────────────────────────────────────────────────────────
+    # -- X (Twitter) -----------------------------------------------------------
     {"platform": "X", "media_type": "video", "aspect_ratio": "16:9", "max_duration_seconds": 140, "max_file_size_mb": 512},
     {"platform": "X", "media_type": "video", "aspect_ratio": "1:1", "max_duration_seconds": 140, "max_file_size_mb": 512},
     {"platform": "X", "media_type": "video", "aspect_ratio": "9:16", "max_duration_seconds": 140, "max_file_size_mb": 512},
     {"platform": "X", "media_type": "image", "aspect_ratio": "16:9", "max_duration_seconds": None, "max_file_size_mb": 5},
     {"platform": "X", "media_type": "image", "aspect_ratio": "1:1", "max_duration_seconds": None, "max_file_size_mb": 5},
     {"platform": "X", "media_type": "image", "aspect_ratio": "4:5", "max_duration_seconds": None, "max_file_size_mb": 5},
-    # ── Shopee ────────────────────────────────────────────────────────────────
+    # -- Shopee ----------------------------------------------------------------
     {"platform": "Shopee", "media_type": "image", "aspect_ratio": "1:1", "max_duration_seconds": None, "max_file_size_mb": 2},
     {"platform": "Shopee", "media_type": "video", "aspect_ratio": "1:1", "max_duration_seconds": 60, "max_file_size_mb": 30},
     {"platform": "Shopee", "media_type": "video", "aspect_ratio": "9:16", "max_duration_seconds": 60, "max_file_size_mb": 30},

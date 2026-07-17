@@ -63,46 +63,70 @@ def get_persona(
 ) -> dict:
     """Fetch persona data from Supabase.
 
+    Lookup order:
+      1. Exact match on market + ethnicity + age_group (if provided)
+      2. Fallback to age_group='base' for the same market + ethnicity
+      3. Any row for market + ethnicity
+      4. Empty dict (graceful degradation)
+
     Args:
         market: Country/market (e.g. 'malaysia', 'singapore').
         ethnicity: Ethnic group (e.g. 'malay', 'chinese', 'indian').
-        age_group: Optional age group key (e.g. 'gen_z', 'millennial').
+        age_group: Optional age group key (e.g. 'gen_z', 'millennial', 'all_ages').
 
     Returns:
         Persona data dict (from persona_data JSONB column), or empty dict.
     """
     try:
-        query = (
+        # Fetch ALL rows for this market+ethnicity in one query — avoids multiple round-trips
+        response = (
             supabase.table("personas")
             .select("persona_data, age_group")
             .eq("market", market.lower())
             .eq("ethnicity", ethnicity.lower())
+            .execute()
         )
-
-        if age_group:
-            query = query.eq("age_group", age_group.lower())
-
-        response = query.execute()
         rows = response.data or []
 
         if not rows:
-            logger.warning(f"[RulesClient] No persona found for market={market}, ethnicity={ethnicity}, age_group={age_group}")
+            logger.warning(
+                "[RulesClient] No persona found for market=%s, ethnicity=%s", market, ethnicity
+            )
             return {}
 
-        # If age_group specified, return that specific persona
-        if age_group and rows:
-            return rows[0].get("persona_data", {})
+        # Build a lookup map: age_group -> persona_data
+        by_age: dict[str, dict] = {
+            row["age_group"]: row.get("persona_data", {})
+            for row in rows
+            if row.get("age_group")
+        }
 
-        # If no age_group, return the base persona (age_group='base')
-        for row in rows:
-            if row.get("age_group") == "base":
-                return row.get("persona_data", {})
+        # 1. Exact match on the requested age_group
+        if age_group and age_group.lower() in by_age:
+            logger.info(
+                "[RulesClient] Persona found: market=%s, ethnicity=%s, age_group=%s (exact)",
+                market, ethnicity, age_group,
+            )
+            return by_age[age_group.lower()]
 
-        # Fallback: return first result
-        return rows[0].get("persona_data", {}) if rows else {}
+        # 2. Fallback to 'base' persona
+        if "base" in by_age:
+            logger.info(
+                "[RulesClient] Persona found: market=%s, ethnicity=%s, age_group=base (fallback from %s)",
+                market, ethnicity, age_group,
+            )
+            return by_age["base"]
+
+        # 3. Any available persona
+        first_persona = rows[0].get("persona_data", {})
+        logger.info(
+            "[RulesClient] Persona found: market=%s, ethnicity=%s, age_group=%s (first available)",
+            market, ethnicity, rows[0].get("age_group"),
+        )
+        return first_persona
 
     except Exception as e:
-        logger.error(f"[RulesClient] Failed to fetch persona: {e}")
+        logger.error("[RulesClient] Failed to fetch persona: %s", e)
         return {}
 
 

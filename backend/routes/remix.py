@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["remix"])
 
-# ── Shared state (injected from app.py) ───────────────────────────────────────
+# -- Shared state (injected from app.py) ---------------------------------------
 _supabase_store: SupabaseComplianceStore | None = None
 
 
@@ -221,7 +221,7 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
         return f"data: {json.dumps(event)}\n\n"
 
     try:
-        # ── Input validation ──────────────────────────────────────────────
+        # -- Input validation ----------------------------------------------
         risk_percentage = result_json.get("risk_percentage", 0)
         if not isinstance(risk_percentage, int):
             try:
@@ -240,7 +240,7 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
             yield emit({"type": "error", "message": f"Invalid market: {market}. Must be one of {sorted(_VALID_MARKETS)}."})
             return
 
-        # ── Step 1: Triage (pure logic, no AI calls) ──────────────────────
+        # -- Step 1: Triage (pure logic, no AI calls) ----------------------
         localization_plan = result_json.get("localization_plan", "")
         segmentation = result_json.get("segmentation")
 
@@ -256,13 +256,13 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
 
         logger.info("[Remix] Triage: %s — %s", triage["outcome"], triage["reasoning"])
 
-        # ── COMPLIANT path ────────────────────────────────────────────────
+        # -- COMPLIANT path ------------------------------------------------
         if triage["outcome"] == TriageOutcome.COMPLIANT:
             yield emit({"type": "compliant", "message": "Image passes compliance — no fix needed"})
             yield {"type": "compliant", "message": "No remix needed"}
             return
 
-        # ── CANNOT_FIX path ───────────────────────────────────────────────
+        # -- CANNOT_FIX path -----------------------------------------------
         if triage["outcome"] == TriageOutcome.CANNOT_FIX:
             yield emit({
                 "type": "cannot_fix",
@@ -280,7 +280,7 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
             }
             return
 
-        # ── EDIT path ─────────────────────────────────────────────────────
+        # -- EDIT path -----------------------------------------------------
 
         # Step 2: AI Designer plans the edit
         yield emit({"type": "node_status", "node": "plan_edit", "status": "running",

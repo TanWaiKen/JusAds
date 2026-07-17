@@ -1,29 +1,30 @@
-﻿"""
+"""
 video_v3_grid.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-Video Agent V3 â€” Character Grid Pipeline with staged human approval.
+────────────────
+Video Agent V3 — Character Grid Pipeline with staged human approval.
 
 Multi-stage pipeline (each stage returns results for user review):
 
   Stage 1: plan_script()
-    â†’ Director plans scenes, character, transitions
-    â†’ Returns: script plan (scenes + character summary)
-    â†’ User reviews the plan, can edit subtitles/scenes
+    → Director plans scenes, character, transitions
+    → Returns: script plan (scenes + character summary)
+    → User reviews the plan, can edit subtitles/scenes
 
   Stage 2: generate_assets()
-    â†’ Character Sheet (Imagen 4) + Scene Grid (Imagen 4) + Grid Slice (PIL)
-    â†’ Returns: character_sheet_url, grid_url, frame_urls[]
-    â†’ User reviews the visuals, confirms character looks right
+    → Character Sheet (Imagen 4) + Scene Grid (Imagen 4) + Grid Slice (PIL)
+    → Returns: character_sheet_url, grid_url, frame_urls[]
+    → User reviews the visuals, confirms character looks right
 
   Stage 3: execute_production()
-    â†’ Veo I2V (first+last frame) + AI Editor + Assembler (FFmpeg + CapCut)
-    â†’ Returns: final_video_url, capcut_draft info
-    â†’ User gets instant .mp4 + editable CapCut project
+    → Gemini Omni full-clip generation + AI Editor + Assembler (FFmpeg + CapCut)
+    → Returns: final_video_url, capcut_draft info
+    → User gets instant .mp4 + editable CapCut project
 
 Each stage is called separately via the orchestrator/route.
 Pipeline state is persisted between stages so user can leave and come back.
 
-Uses Veo first+last frame: frame[0]â†’frame[1], frame[1]â†’frame[2], etc.
+Uses Gemini Omni (MODEL_VIDEO) for full video clip generation from scene
+prompts with reference frames for character consistency.
 for smooth inter-scene character-consistent motion.
 """
 
@@ -32,48 +33,34 @@ import logging
 import math
 import os
 import tempfile
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from shared.clients import gemini, s3, supabase
-from shared.config import MODEL_TEXT
+from shared.config import MODEL_TEXT, MODEL_VIDEO
+from shared.prompts import VIDEO_DIRECTOR_PROMPT
+from shared.prompts import _load_prompt as _load_prompt_file
 from shared.s3_client import upload_file_public
 from config import S3_BUCKET_NAME
 
 logger = logging.getLogger(__name__)
 
 
-# â”€â”€â”€ Prompt Templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Prompt Templates ---------------------------------------------------------
 
-_PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "prompts"
+CHARACTER_SHEET_PROMPT = _load_prompt_file("character_setting.md")
+SCENE_GRID_PROMPT = _load_prompt_file("scene_grid.md")
 
-
-def _load_prompt(filename: str) -> str:
-    """Load a prompt template from docs/prompts/."""
-    path = _PROMPTS_DIR / filename
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-    logger.warning("[V3Grid] Prompt not found: %s", path)
-    return ""
-
-
-CHARACTER_SHEET_PROMPT = _load_prompt("character_setting.md")
-SCENE_GRID_PROMPT = _load_prompt("scene_grid.md")
-
-# â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Constants ----------------------------------------------------------------
 
 _IMAGE_MODEL = "imagen-4.0-generate-001"
-_VEO_MODEL = "veo-3.1-generate-001"
 _SCENE_CLIP_SECONDS = 6
-_VEO_POLL_INTERVAL = 15
-_VEO_MAX_WAIT = 300
 
 
 def _resolve_scene_count(video_duration_sec: float) -> int:
-    """N+1 frames for N clips. 15s at 6s/clip â†’ 2 clips â†’ 3 frames."""
+    """N+1 frames for N clips. 15s at 6s/clip → 2 clips → 3 frames."""
     video_duration_sec = min(video_duration_sec, 15.0)  # Cap at 15s to save costs
     clip_count = max(2, min(3, int(video_duration_sec / _SCENE_CLIP_SECONDS)))
     return clip_count + 1  # N+1 frames needed
@@ -119,35 +106,12 @@ def _persist_ad(
         return None
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ==============================================================================
 # STAGE 1: Script Planning (Director)
 # Returns the plan for user review. User can edit before proceeding.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ==============================================================================
 
-_DIRECTOR_PROMPT = """You are a professional short-form video ad Director.
-Plan a {clip_count}-scene video ad ({duration}s total, {clip_seconds}s per scene).
-
-Brief: "{brief}"
-Target audience: {ethnicity} in Malaysia
-Platform: TikTok/Reels (vertical 9:16)
-
-For EACH scene provide:
-- "scene_index": number (1-based)
-- "visual_description": what happens visually (setting, action, lighting)
-- "camera_angle": shot type + movement (e.g. "CU slow push in", "WS static")
-- "character_action": what the character does (pose, expression, gesture)
-- "character_requirements": clothing/appearance for THIS scene
-- "subtitle": on-screen text (max 8 words, punchy)
-- "voiceover": spoken line (max 15 words)
-- "transition_to_next": how this flows to next ("character turns", "zoom in", "cut")
-
-STRUCTURE: Scene 1-2 = HOOK (attention grabber). Middle = PRODUCT. Final = CTA.
-
-- "character_summary": overall character appearance (for character sheet generation, described as a real human model, photorealistic, with clothing details)
-- "product_integration": how product appears across scenes
-- "visual_style": ONE consistent photography/visual style for ALL scenes. It MUST be a photorealistic real human style. Always DEFAULT to "photorealistic commercial photography, cinematic lighting, real human model, shot on Sony A7IV". Under no circumstances generate character descriptions that imply cartoon, anime, 3D render, illustration, drawings, or sketches. Ads perform best with REAL HUMAN models â€” not illustrations.
-
-Return JSON: {{"character_summary": "...", "product_integration": "...", "visual_style": "...", "scenes": [...]}}"""
+_DIRECTOR_PROMPT = VIDEO_DIRECTOR_PROMPT
 
 
 async def plan_script(
@@ -234,10 +198,10 @@ async def plan_script(
     }
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ==============================================================================
 # STAGE 2: Generate Assets (Character Sheet + Scene Grid + Slice)
-# Returns images for user review before expensive Veo step.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Returns images for user review before expensive video generation step.
+# ==============================================================================
 
 
 async def generate_assets(
@@ -263,14 +227,14 @@ async def generate_assets(
 
     yield _sse({"node": "character_sheet", "status": "in-progress", "data": {"message": "Generating character reference sheet..."}})
 
-    # â”€â”€ Character Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # -- Character Sheet ---------------------------------------------------
     char_sheet_url = None
     try:
         char_prompt = CHARACTER_SHEET_PROMPT.replace(
             "[INSERT CHARACTER APPEARANCE DESCRIPTION HERE]", char_summary,
         )
         char_prompt += f"\n\nVISUAL STYLE (mandatory): {visual_style}. All panels must use this exact style."
-        char_prompt += "\n\nIMPORTANT: Generate PHOTOREALISTIC humans. This is for a REAL advertising campaign â€” NOT anime, NOT illustration, NOT cartoon. Use professional photography style with natural skin, real clothing textures, and cinematic lighting. The character must look like a real person suitable for a commercial advertisement."
+        char_prompt += "\n\nIMPORTANT: Generate PHOTOREALISTIC humans. This is for a REAL advertising campaign — NOT anime, NOT illustration, NOT cartoon. Use professional photography style with natural skin, real clothing textures, and cinematic lighting. The character must look like a real person suitable for a commercial advertisement."
         from google.genai import types as genai_types
         response = gemini.models.generate_images(
             model=_IMAGE_MODEL,
@@ -299,14 +263,14 @@ async def generate_assets(
 
     yield _sse({"node": "character_sheet", "status": "completed" if char_sheet_url else "failed", "data": {"url": char_sheet_url}})
 
-    # â”€â”€ Scene Grid (uses character sheet as reference image) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # -- Scene Grid (uses character sheet as reference image) -------------
     yield _sse({"node": "scene_grid", "status": "in-progress", "data": {"message": f"Generating {cols}x{rows} scene grid using character reference..."}})
 
     grid_url = None
     grid_path = None
     try:
         scene_descriptions = "\n".join(
-            f"Panel {i+1}: {s.get('camera_angle', 'MS')} â€” {s.get('visual_description', '')[:60]}"
+            f"Panel {i+1}: {s.get('camera_angle', 'MS')} — {s.get('visual_description', '')[:60]}"
             for i, s in enumerate(scenes)
         )
         scene_descriptions += f"\nPanel {len(scenes)+1}: Final CTA pose"
@@ -345,10 +309,10 @@ async def generate_assets(
     yield _sse({"node": "scene_grid", "status": "completed" if grid_url else "failed", "data": {"url": grid_url}})
 
     if not grid_path or not grid_url:
-        yield _sse({"error": "Scene grid generation failed â€” cannot proceed"})
+        yield _sse({"error": "Scene grid generation failed — cannot proceed"})
         return
 
-    # â”€â”€ Grid Slice â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # -- Grid Slice --------------------------------------------------------
     yield _sse({"node": "grid_slicer", "status": "in-progress", "data": {"message": f"Slicing into {frame_count} frames..."}})
 
     try:
@@ -377,10 +341,10 @@ async def generate_assets(
     }})
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# STAGE 3: Execute Production (Veo + Edit + Assemble)
+# ==============================================================================
+# STAGE 3: Execute Production (Gemini Omni + Edit + Assemble)
 # Only runs after user approves the assets from Stage 2.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ==============================================================================
 
 
 async def execute_production(
@@ -393,7 +357,8 @@ async def execute_production(
 
     Takes the approved assets from Stage 2 (frame_urls) and:
     1. Downloads frames locally
-    2. Runs Veo I2V with first+last frame pairs
+    2. Generates the full video via Gemini Omni (MODEL_VIDEO) in a single call
+       using scene descriptions and reference frames for character consistency
     3. AI Editor plans edits
     4. Assembler produces FFmpeg .mp4 + CapCut draft
 
@@ -408,7 +373,7 @@ async def execute_production(
         yield _sse({"error": "Need at least 2 frames to produce video clips"})
         return
 
-    # â”€â”€ Download frames locally â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # -- Download frames locally -------------------------------------------
     yield _sse({"node": "download_frames", "status": "in-progress", "data": {"message": "Downloading frames..."}})
 
     import urllib.request
@@ -427,41 +392,51 @@ async def execute_production(
 
     yield _sse({"node": "download_frames", "status": "completed", "data": {"count": len(local_frames)}})
 
-    # â”€â”€ Veo I2V (first + last frame pairs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    scene_clips: list[str] = []
-    actual_clips = len(local_frames) - 1
+    # -- Gemini Omni full video generation ----------------------------------------
+    yield _sse({"node": "omni_video", "status": "in-progress", "data": {
+        "message": f"Generating full video via Gemini Omni ({len(scenes)} scenes)...",
+    }})
 
-    for i in range(actual_clips):
-        yield _sse({"node": f"veo_clip_{i}", "status": "in-progress", "data": {
-            "message": f"Veo: frame[{i}] â†’ frame[{i+1}] (clip {i+1}/{actual_clips})...",
-            "clip_index": i,
-        }})
+    # Build a combined scene prompt from all scenes
+    scene_prompt_parts = []
+    for i, scene in enumerate(scenes):
+        desc = scene.get("visual_description", brief) if isinstance(scene, dict) else brief
+        camera = scene.get("camera_angle", "") if isinstance(scene, dict) else ""
+        action = scene.get("character_action", "") if isinstance(scene, dict) else ""
+        scene_prompt_parts.append(
+            f"Scene {i+1}: {desc}. Camera: {camera}. Action: {action}."
+        )
+    full_scene_prompt = (
+        f"Generate a {_SCENE_CLIP_SECONDS * len(scenes)}s commercial video ad with these scenes:\n"
+        + "\n".join(scene_prompt_parts)
+        + "\nStyle: cinematic, vertical 9:16, high production value, smooth transitions between scenes."
+    )
 
-        try:
-            clip_url = await _generate_veo_clip(
-                first_frame=local_frames[i],
-                last_frame=local_frames[i + 1],
-                prompt=scenes[i].get("visual_description", brief) if i < len(scenes) else brief,
-                scene_index=i,
-                plan_id=plan_id,
-                project_id=project_id,
-                task_id=task_id,
-            )
-            if clip_url:
-                scene_clips.append(clip_url)
-                _persist_ad(project_id, task_id, "video", clip_url, f"Scene {i+1} clip", f"Clip {i+1}")
-                yield _sse({"node": f"veo_clip_{i}", "status": "completed", "data": {"url": clip_url}})
-            else:
-                yield _sse({"node": f"veo_clip_{i}", "status": "failed", "data": {"error": "Veo returned no video"}})
-        except Exception as e:
-            logger.error("[V3Grid] Clip %d failed: %s", i, e)
-            yield _sse({"node": f"veo_clip_{i}", "status": "failed", "data": {"error": str(e)}})
+    try:
+        clip_url = await _generate_omni_video_clip(
+            prompt=full_scene_prompt,
+            reference_frames=local_frames,
+            scene_index=0,
+            plan_id=plan_id,
+            project_id=project_id,
+            task_id=task_id,
+        )
+        if clip_url:
+            scene_clips.append(clip_url)
+            _persist_ad(project_id, task_id, "video", clip_url, "Full video clip (Omni)", "Full Video")
+            yield _sse({"node": "omni_video", "status": "completed", "data": {"url": clip_url}})
+        else:
+            yield _sse({"node": "omni_video", "status": "failed", "data": {"error": "Gemini Omni returned no video"}})
+    except Exception as e:
+        logger.error("[V3Grid] Omni video generation failed: %s", e)
+        yield _sse({"node": "omni_video", "status": "failed", "data": {"error": str(e)}})
 
     if not scene_clips:
-        yield _sse({"error": "No video clips generated â€” Veo failed for all frame pairs"})
+        yield _sse({"error": "Video generation failed - Gemini Omni could not produce video"})
         return
 
-    # â”€â”€ AI Editor + Assembly â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    # -- AI Editor + Assembly ----------------------------------------------
     yield _sse({"node": "assembler", "status": "in-progress", "data": {"message": "AI editing + assembling final video..."}})
 
     try:
@@ -504,11 +479,11 @@ async def execute_production(
         yield _sse({"node": "assembler", "status": "failed", "data": {"error": str(e)}})
 
 
-# â”€â”€â”€ Helper Functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Helper Functions ---------------------------------------------------------
 
 
 def _slice_grid(grid_path: str, cols: int, rows: int, total_frames: int, plan_id: str) -> list[str]:
-    """Slice grid image into individual frames (leftâ†’right, topâ†’bottom)."""
+    """Slice grid image into individual frames (left→right, top→bottom)."""
     from PIL import Image
 
     img = Image.open(grid_path)
@@ -527,86 +502,100 @@ def _slice_grid(grid_path: str, cols: int, rows: int, total_frames: int, plan_id
             frames.append(path)
             count += 1
 
-    logger.info("[V3Grid] Sliced %dx%d grid â†’ %d frames (%dx%d each)", cols, rows, len(frames), cell_w, cell_h)
+    logger.info("[V3Grid] Sliced %dx%d grid → %d frames (%dx%d each)", cols, rows, len(frames), cell_w, cell_h)
     return frames
 
 
-async def _generate_veo_clip(
-    first_frame: str,
-    last_frame: str,
+async def _generate_omni_video_clip(
     prompt: str,
+    reference_frames: list[str],
     scene_index: int,
     plan_id: str,
     project_id: str,
     task_id: str,
 ) -> Optional[str]:
-    """Generate a video clip using Veo first+last frame mode.
+    """Generate a full video clip using Gemini Omni (MODEL_VIDEO).
 
+    Uses the scene prompt and reference frame images for character consistency.
+    Generates the entire clip in a single call - no frame-by-frame interpolation.
     Returns S3 URL of the clip, or None on failure.
     """
+    import asyncio
     from google.genai import types as genai_types
 
     if not gemini:
         return None
 
+    def _blocking_omni_call() -> Optional[bytes]:
+        """Synchronous Gemini Omni call (runs in a thread)."""
+        try:
+            # Build multimodal contents: reference frames + scene prompt
+            contents: list = []
+            if reference_frames:
+                contents.append(
+                    "Use the following reference frame(s) for character and style consistency. "
+                    "Generate a video clip that matches these characters exactly:"
+                )
+                for frame_path in reference_frames:
+                    with open(frame_path, "rb") as f:
+                        frame_bytes = f.read()
+                    contents.append(genai_types.Part.from_bytes(
+                        data=frame_bytes,
+                        mime_type="image/png",
+                    ))
+            contents.append(prompt)
+
+            response = gemini.models.generate_content(
+                model=MODEL_VIDEO,
+                contents=contents,
+                config=genai_types.GenerateContentConfig(
+                    temperature=1,
+                    top_p=0.95,
+                    max_output_tokens=32768,
+                    response_modalities=["VIDEO", "AUDIO"],
+                    safety_settings=[
+                        genai_types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
+                        genai_types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
+                        genai_types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
+                        genai_types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
+                    ],
+                ),
+            )
+
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if (
+                        hasattr(part, "inline_data")
+                        and part.inline_data
+                        and part.inline_data.data
+                        and "video" in (part.inline_data.mime_type or "")
+                    ):
+                        logger.info("[V3Grid] Gemini Omni clip %d generated successfully.", scene_index)
+                        return part.inline_data.data
+
+            logger.error("[V3Grid] Gemini Omni clip %d: no video data returned.", scene_index)
+            return None
+
+        except Exception as e:
+            logger.error("[V3Grid] Gemini Omni clip %d failed: %s", scene_index, e)
+            return None
+
     try:
-        with open(first_frame, "rb") as f:
-            first_bytes = f.read()
-        with open(last_frame, "rb") as f:
-            last_bytes = f.read()
-
-        operation = gemini.models.generate_videos(
-            model=_VEO_MODEL,
-            prompt=prompt[:500],
-            image=genai_types.Image(image_bytes=first_bytes, mime_type="image/png"),
-            config=genai_types.GenerateVideosConfig(
-                aspect_ratio="9:16",
-                number_of_videos=1,
-                duration_seconds=_SCENE_CLIP_SECONDS,
-                person_generation="ALLOW_ALL",
-                last_frame=genai_types.Image(image_bytes=last_bytes, mime_type="image/png"),
-            ),
-        )
-
-        # Poll for completion
-        elapsed = 0
-        while not operation.done and elapsed < _VEO_MAX_WAIT:
-            time.sleep(_VEO_POLL_INTERVAL)
-            elapsed += _VEO_POLL_INTERVAL
-            operation = gemini.operations.get(operation)
-
-        if not operation.done:
-            logger.error("[V3Grid] Clip %d: Veo timed out", scene_index)
-            return None
-
-        result = operation.result
-        if not result or not result.generated_videos:
-            return None
-
-        video = result.generated_videos[0].video
-        if not video:
-            return None
-
-        # Save locally then upload
-        clip_path = os.path.join(tempfile.gettempdir(), f"clip_{plan_id}_{scene_index:02d}.mp4")
-        if video.video_bytes:
-            with open(clip_path, "wb") as f:
-                f.write(video.video_bytes)
-        elif video.uri:
-            import urllib.request
-            urllib.request.urlretrieve(video.uri, clip_path)
-        else:
-            return None
-
-        s3_key = f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/clip_{scene_index:02d}.mp4"
-        return upload_file_public(clip_path, s3_key)
-
+        video_bytes = await asyncio.to_thread(_blocking_omni_call)
     except Exception as e:
-        logger.error("[V3Grid] Veo clip %d failed: %s", scene_index, e)
+        logger.error("[V3Grid] asyncio.to_thread error for clip %d: %s", scene_index, e)
         return None
 
+    if not video_bytes:
+        return None
 
-# â”€â”€â”€ Legacy compatibility: single-call pipeline (used by orchestrator) â”€â”€â”€â”€â”€â”€â”€â”€
+    # Save locally then upload
+    clip_path = os.path.join(tempfile.gettempdir(), f"clip_{plan_id}_{scene_index:02d}.mp4")
+    with open(clip_path, "wb") as f:
+        f.write(video_bytes)
+
+    s3_key = f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/clip_{scene_index:02d}.mp4"
+    return upload_file_public(clip_path, s3_key)
 
 
 async def run_grid_pipeline(
@@ -623,7 +612,7 @@ async def run_grid_pipeline(
 ) -> AsyncGenerator[str, None]:
     """Orchestrator-compatible entry point. Runs Stage 1 + Stage 2 inline.
 
-    Stage 3 (Veo) is triggered separately when user clicks Continue.
+    Stage 3 (Omni video) is triggered separately when user clicks Continue.
     This function plans the script + generates assets, then emits a v3_plan
     event for the frontend to show (like V2's video_plan).
     """
@@ -704,7 +693,7 @@ async def run_grid_pipeline(
     }})
 
     yield _sse({"node": "v3_pipeline", "status": "completed", "data": {
-        "message": "Assets ready â€” review and click Continue to generate video clips.",
+        "message": "Assets ready — review and click Continue to generate video clips.",
         "plan_id": plan["plan_id"],
     }})
 

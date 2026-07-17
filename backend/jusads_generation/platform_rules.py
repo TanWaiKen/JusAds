@@ -28,7 +28,7 @@ from .state import MediaType
 
 logger = logging.getLogger(__name__)
 
-# ─── Supported platforms ────────────────────────────────────────────────────
+# --- Supported platforms ----------------------------------------------------
 
 SUPPORTED_PLATFORMS: set[str] = {"tiktok", "instagram", "shopee"}
 """The launch platform set. Any value outside this set is rejected (Req 7.6)."""
@@ -37,7 +37,7 @@ DEFAULT_PLATFORM: str = "instagram"
 """Platform applied when a request specifies no Target_Platform (Req 7.5)."""
 
 
-# ─── Resolved rule shape ─────────────────────────────────────────────────────
+# --- Resolved rule shape -----------------------------------------------------
 
 
 class PlatformRule(TypedDict):
@@ -60,7 +60,7 @@ class PlatformRule(TypedDict):
     max_duration_seconds: Optional[int]
 
 
-# ─── Errors ──────────────────────────────────────────────────────────────────
+# --- Errors ------------------------------------------------------------------
 
 
 class UnsupportedPlatformError(ValueError):
@@ -71,7 +71,7 @@ class MissingRuleError(LookupError):
     """Raised when no ``platform_rules`` entry exists for a combination (Req 7.7)."""
 
 
-# ─── Public API ──────────────────────────────────────────────────────────────
+# --- Public API --------------------------------------------------------------
 
 
 def normalize_platform(value: Optional[str]) -> str:

@@ -20,7 +20,7 @@ type MediaMode = "text" | "image" | "audio" | "video";
 
 const ACCEPT_MAP: Record<MediaMode, string> = {
   text: "",
-  image: "image/*",
+  image: "image/jpeg, image/png, image/jpg",
   audio: "audio/*",
   video: "video/*",
 };

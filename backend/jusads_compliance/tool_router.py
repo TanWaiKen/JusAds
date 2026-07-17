@@ -24,9 +24,9 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Enumerations & Models
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class Severity(str, Enum):
     """Severity level for a remediation action."""
@@ -88,9 +88,9 @@ class RoutingDecision(BaseModel):
     confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Router confidence 0-1")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Tool cost/speed metadata (used for fallback routing)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 TOOL_METADATA: dict[str, dict] = {
     # Video
@@ -121,7 +121,7 @@ TOOL_METADATA: dict[str, dict] = {
     "gemini_new_copy": {"cost": "low", "time_s": 8, "severity_max": "major"},
 }
 
-# Maps media_type → severity → preferred tools (ordered by preference)
+# Maps media_type -> severity -> preferred tools (ordered by preference)
 TOOL_PRIORITY: dict[str, dict[str, list[str]]] = {
     "video": {
         "minor": ["capcut_text_overlay", "capcut_trim", "capcut_speed_ramp", "capcut_transition"],
@@ -146,9 +146,9 @@ TOOL_PRIORITY: dict[str, dict[str, list[str]]] = {
 }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # AI-powered routing (Gemini)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 _ROUTER_PROMPT = """You are an AI Tool Router for an advertising compliance remediation system.
 
@@ -328,9 +328,9 @@ async def route_remediation(
         return _heuristic_route(media_type, violations, risk_level, risk_percentage)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Heuristic fallback (no AI call)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 def _heuristic_route(
@@ -388,9 +388,9 @@ def _heuristic_route(
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Convenience: synchronous wrapper for non-async contexts
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 def route_remediation_sync(

@@ -11,7 +11,7 @@ Requirements: 1.3, 3.1, 3.2, 3.3, 3.4, 13.1
 
 from . import PromptTemplate
 
-# ─── Video Template: Product Demo Video ───────────────────────────────────────
+# --- Video Template: Product Demo Video ---------------------------------------
 
 PRODUCT_DEMO_VIDEO: PromptTemplate = {
     "template_id": "video_product_demo",
@@ -164,7 +164,7 @@ PRODUCT_DEMO_VIDEO: PromptTemplate = {
     "tags": ["product-demo", "short-form", "commercial", "social-media", "video-ad"],
 }
 
-# ─── Exported Templates List ──────────────────────────────────────────────────
+# --- Exported Templates List --------------------------------------------------
 
 TEMPLATES: list[PromptTemplate] = [
     PRODUCT_DEMO_VIDEO,

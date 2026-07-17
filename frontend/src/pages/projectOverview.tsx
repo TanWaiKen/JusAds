@@ -95,6 +95,7 @@ export default function ProjectOverviewPage() {
   // Inline edit state
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
+  const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
 
   const [filters, setFilters] = useState<TaskFilters>({
     type: "all",
@@ -330,29 +331,38 @@ export default function ProjectOverviewPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <div className="relative group">
+              <div className="relative">
                 <button
+                  onClick={() => setIsNewTaskOpen(!isNewTaskOpen)}
                   className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-label-ui font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
                 >
                   <Plus size={16} />
                   New Task
                 </button>
-                <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border-default bg-surface-card shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-                  <button
-                    onClick={() => navigate(`/dashboard/project/${projectId}/compliance`)}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-text-body hover:bg-surface-inset rounded-t-lg transition-colors"
-                  >
-                    <ShieldCheck size={14} />
-                    Compliance Check
-                  </button>
-                  <button
-                    onClick={() => navigate(`/dashboard/project/${projectId}/guided-generate`)}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-text-body hover:bg-surface-inset rounded-b-lg transition-colors"
-                  >
-                    <Sparkles size={14} />
-                    Generate Ad
-                  </button>
-                </div>
+                {isNewTaskOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border-default bg-surface-card shadow-lg transition-all z-10">
+                    <button
+                      onClick={() => {
+                        setIsNewTaskOpen(false);
+                        navigate(`/dashboard/project/${projectId}/compliance`);
+                      }}
+                      className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-text-body hover:bg-surface-inset rounded-t-lg transition-colors text-left"
+                    >
+                      <ShieldCheck size={14} />
+                      Compliance Check
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsNewTaskOpen(false);
+                        navigate(`/dashboard/project/${projectId}/easy`);
+                      }}
+                      className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-text-body hover:bg-surface-inset rounded-b-lg transition-colors text-left"
+                    >
+                      <Sparkles size={14} />
+                      Generate Ad
+                    </button>
+                  </div>
+                )}
               </div>
               <button className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-card px-4 py-2 text-label-ui font-medium hover:bg-surface-inset transition-colors">
                 <Filter size={16} />

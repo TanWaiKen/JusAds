@@ -205,6 +205,7 @@ async def get_posts_list(platform: Optional[str] = None) -> dict:
                 "is_external": post.get("isExternal") or False,
                 "published_at": post.get("publishedAt"),
                 "post_url": post.get("platformPostUrl"),
+                "thumbnail_url": post.get("thumbnailUrl") or post.get("coverImageUrl") or None,
             })
 
         # Split into JusAds-published vs organic/external

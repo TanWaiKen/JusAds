@@ -18,7 +18,7 @@ from . import poster_templates, carousel_templates, video_templates
 
 logger = logging.getLogger(__name__)
 
-# ─── Module-level Registry State ──────────────────────────────────────────────
+# --- Module-level Registry State ----------------------------------------------
 
 _REGISTRY: dict[str, PromptTemplate] = {}
 _BY_TYPE: dict[AdType, list[str]] = {}
@@ -80,6 +80,6 @@ def get_template_by_id(template_id: str) -> Optional[PromptTemplate]:
     return copy.deepcopy(tpl)
 
 
-# ─── Initialize on import ─────────────────────────────────────────────────────
+# --- Initialize on import -----------------------------------------------------
 
 _init_registry()

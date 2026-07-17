@@ -9,8 +9,8 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldCheck,
-  Sparkles,
   Trash2,
+  Home,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { API_BASE } from "@/services/complianceApi";
@@ -26,6 +26,7 @@ interface NavItem {
   icon: React.ElementType;
   to: string;
   badge?: string;
+  end?: boolean;
 }
 
 /** Shape returned by GET /api/projects */
@@ -51,7 +52,7 @@ interface SidebarProps {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const navItems: NavItem[] = [
-  { label: "Create", icon: Sparkles, to: "/dashboard/project/__PROJECT__/easy" },
+  { label: "Home", icon: Home, to: "/dashboard", end: true },
   { label: "Assets", icon: ImageIcon, to: "/dashboard/assets" },
   { label: "Trends", icon: TrendingUp, to: "/dashboard/trends" },
 ];
@@ -229,12 +230,13 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
                 if (to.includes("__PROJECT__") && !activeProjectId) return false;
                 return true;
               })
-              .map(({ label, icon: Icon, to, badge }) => {
+              .map(({ label, icon: Icon, to, badge, end }) => {
                 const resolvedTo = to.replace("__PROJECT__", activeProjectId ?? "");
                 return (
                   <li key={to}>
                     <NavLink
                       to={resolvedTo}
+                      end={end}
                       onClick={() => { if (!isDesktop) handleClose(); }}
                       className={({ isActive }) =>
                         [

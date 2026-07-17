@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["compliance"])
 
-# ── Shared state (injected from app.py) ───────────────────────────────────────
+# -- Shared state (injected from app.py) ---------------------------------------
 _supabase_store: SupabaseComplianceStore | None = None
 _s3_client: S3MediaClient | None = None
 _pending_decisions: Dict[str, asyncio.Event] = {}
@@ -148,6 +148,11 @@ async def check_compliance(
       - {"type": "result", "data": {...full compliance result...}}
       - {"type": "error", "message": "..."}
     """
+    logger.info(
+        "[ComplianceAPI] ═══ NEW CHECK REQUEST ═══ market=%s, ethnicity=%s, "
+        "has_file=%s, has_text=%s, project_id=%s",
+        market, ethnicity, file is not None, text is not None, project_id
+    )
     task_id: str | None = None
     s3_upload_key: str | None = None
 
@@ -249,7 +254,11 @@ async def check_compliance(
 
             for event in _compliance_runner.pipeline.stream(state, config=config, stream_mode="updates"):
                 for node_name, node_output in event.items():
-                    # Emit node running
+                    # Emit node status events for the frontend SSE stream.
+                    # NOTE: Do NOT call _tracker here — each pipeline node already
+                    # calls _tracker.start_step() and _tracker.complete_step()
+                    # internally. Calling it again here causes every step to be
+                    # recorded twice in pipeline_progress.
                     yield emit({
                         "type": "node_status",
                         "node": node_name,
@@ -257,22 +266,16 @@ async def check_compliance(
                         "description": f"Running {node_name}...",
                     })
 
-                    # Track progress in DB (fire-and-forget)
-                    _tracker.start_step(task_id, node_name)
-
                     # Merge state
                     if isinstance(node_output, dict):
                         final_state.update(node_output)
 
-                    # Emit node completed
                     yield emit({
                         "type": "node_status",
                         "node": node_name,
                         "status": "completed",
                         "description": f"Completed {node_name}",
                     })
-
-                    _tracker.complete_step(task_id, node_name, f"Completed {node_name}")
 
             # Pipeline done — process result
             response = final_state.get("result", {})
@@ -744,6 +747,12 @@ async def get_media_url(task_id: str, asset_type: str):
 
         if not s3_key:
             return JSONResponse(status_code=404, content={"error": f"No {asset_type} media for {task_id}"})
+
+        # The DB might store full public URLs instead of just the object key
+        if "amazonaws.com/" in s3_key:
+            import urllib.parse
+            s3_key = s3_key.split("amazonaws.com/")[1]
+            s3_key = urllib.parse.unquote(s3_key)
 
         client = S3MediaClient()
         url = client.generate_presigned_url(s3_key, expiry_seconds=3600)

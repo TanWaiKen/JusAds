@@ -26,10 +26,14 @@ backend_dir = os.path.dirname(os.path.dirname(script_dir))
 os.chdir(backend_dir)
 sys.path.insert(0, backend_dir)
 
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from dotenv import load_dotenv
 load_dotenv(".env", override=True)
 
 from shared.clients import gemini, supabase
+from shared.config import MODEL_TEXT
 from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
 
 
@@ -55,7 +59,7 @@ Make sure to return exactly 10 items."""
     try:
         # GoogleSearch call (cannot use response_mime_type with search)
         search_response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=search_prompt,
             config=GenerateContentConfig(
                 tools=[Tool(google_search=GoogleSearch())],
@@ -88,7 +92,7 @@ Return a JSON array where each item has:
 Return ONLY the JSON array."""
 
         parse_response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=parse_prompt,
             config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
         )

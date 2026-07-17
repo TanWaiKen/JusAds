@@ -21,9 +21,9 @@ from typing import Optional, TypedDict
 from pydantic import BaseModel, Field, field_validator
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Remix redesign — Enumerations
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 class TriageOutcome(str, Enum):
@@ -39,9 +39,9 @@ class EditMode(str, Enum):
     INPAINT_REMOVE = "INPAINT_REMOVE"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Remix redesign — TypedDicts (LangGraph state convention)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 class TriageResult(TypedDict):
@@ -67,9 +67,9 @@ class BiasCheckResult(TypedDict):
     confidence: float  # 0.0–1.0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Table-mapped dataclasses
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 @dataclass
@@ -186,9 +186,9 @@ class Task:
     updated_at: Optional[datetime] = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Pipeline state TypedDicts (LangGraph graph state)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 class Compliance_State(TypedDict):
@@ -262,9 +262,9 @@ class ComplianceState:
     remix_iteration: int = 0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Pydantic models — API request/response validation
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 class ComplianceOutput(BaseModel):
@@ -281,6 +281,9 @@ class ComplianceOutput(BaseModel):
         "explanation": "...",
         "suggestion": "...",
         "localization_plan": "...",
+        "compliance_verdict": "needs_remediation",
+        "cultural_fit_score": 70,
+        "language_compliance": { "detected_language": "english", ... },
         "violations_timeline": [...] or null,
         "segmentation": { "mask_path": "...", ... } or null,
         "verification": { "verified": [...], ... } or null,
@@ -298,6 +301,10 @@ class ComplianceOutput(BaseModel):
     explanation: str = ""
     suggestion: str = ""
     localization_plan: str = ""
+    compliance_verdict: str = "needs_remediation"
+    cultural_fit_score: int = 0
+    language_compliance: Optional[dict] = None
+    error: Optional[str] = None
 
     # Violations with location/timing (null for text-only)
     violations_timeline: Optional[list[dict]] = None
@@ -331,6 +338,10 @@ class ComplianceOutput(BaseModel):
             explanation=result.get("explanation", ""),
             suggestion=result.get("suggestion", ""),
             localization_plan=result.get("localization_plan", ""),
+            compliance_verdict=result.get("compliance_verdict", "needs_remediation"),
+            cultural_fit_score=result.get("cultural_fit_score", 0),
+            language_compliance=result.get("language_compliance"),
+            error=result.get("error"),
             violations_timeline=result.get("violations_timeline"),
             segmentation=result.get("segmentation"),
             verification=result.get("verification"),

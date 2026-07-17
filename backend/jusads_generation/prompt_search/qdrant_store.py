@@ -18,7 +18,7 @@ from .embeddings import EMBED_DIMENSIONS, embed_batch, embed_text
 
 logger = logging.getLogger(__name__)
 
-# ── Config (from env) ─────────────────────────────────────────────────────────
+# -- Config (from env) ---------------------------------------------------------
 
 import os
 
@@ -28,12 +28,12 @@ QDRANT_PROMPT_COLLECTION = os.environ.get("QDRANT_PROMPT_COLLECTION", "prompt_te
 QDRANT_TOP_K = int(os.environ.get("QDRANT_PROMPT_TOP_K", "8"))
 UPSERT_BATCH_SIZE = 20
 
-# ── Client ────────────────────────────────────────────────────────────────────
+# -- Client --------------------------------------------------------------------
 
 _client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=120) if QDRANT_URL else None
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers -------------------------------------------------------------------
 
 
 def _row_to_text(row: dict) -> str:
@@ -49,7 +49,7 @@ def _row_to_text(row: dict) -> str:
     return " | ".join(parts)
 
 
-# ── Collection management ─────────────────────────────────────────────────────
+# -- Collection management -----------------------------------------------------
 
 
 def ensure_collection(recreate: bool = False) -> None:
@@ -75,7 +75,7 @@ def ensure_collection(recreate: bool = False) -> None:
     logger.info("[PromptSearch] Collection '%s' created (%d-dim, cosine).", name, EMBED_DIMENSIONS)
 
 
-# ── Ingest CSV ────────────────────────────────────────────────────────────────
+# -- Ingest CSV ----------------------------------------------------------------
 
 
 def ingest_prompts_csv(csv_path: str | Path, recreate: bool = False) -> int:
@@ -141,7 +141,7 @@ def ingest_prompts_csv(csv_path: str | Path, recreate: bool = False) -> int:
     return total
 
 
-# ── Search ────────────────────────────────────────────────────────────────────
+# -- Search --------------------------------------------------------------------
 
 
 def search_prompts(query: str, top_k: int = QDRANT_TOP_K) -> list[dict]:

@@ -24,14 +24,15 @@ from typing import Optional
 
 from shared.clients import supabase, gemini
 from shared.s3_client import upload_file_public, build_s3_key
+from shared.config import MODEL_TEXT
 from jusads_compliance.tool_router import RoutingDecision, ToolSelection
 
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Main executor
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 async def execute_remediation(
@@ -193,9 +194,9 @@ async def execute_remediation(
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Tool dispatcher
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 def _execute_tool(
@@ -216,7 +217,7 @@ def _execute_tool(
     """
     target = tool_selection.target_description
 
-    # ── VIDEO TOOLS ───────────────────────────────────────────────────────
+    # -- VIDEO TOOLS -------------------------------------------------------
     if tool_name == "capcut_text_overlay":
         from jusads_compliance.capcut_client import add_text_overlay
         # Use target_description as the overlay text
@@ -271,10 +272,11 @@ def _execute_tool(
         return _execute_omni_video_edit(input_path, instruction)
 
     elif tool_name == "veo_regenerate":
-        # Full video regeneration — expensive, last resort
-        return {"error": "Veo regeneration not yet implemented in executor (use generation pipeline)"}
+        # Full video regeneration using Gemini Omni
+        instruction = target if target else "Regenerate the video to be compliant"
+        return _execute_veo_regenerate(instruction, compliance_result)
 
-    # ── IMAGE TOOLS ───────────────────────────────────────────────────────
+    # -- IMAGE TOOLS -------------------------------------------------------
     elif tool_name == "inpaint_area":
         # Use existing inpainting from remediation_pipeline
         from jusads_compliance.remediation_pipeline import _remediate_image
@@ -298,7 +300,7 @@ def _execute_tool(
     elif tool_name == "imagen_full_regen":
         return {"error": "Full image regeneration — use generation pipeline instead"}
 
-    # ── AUDIO TOOLS ───────────────────────────────────────────────────────
+    # -- AUDIO TOOLS -------------------------------------------------------
     elif tool_name == "elevenlabs_dub_segment":
         from jusads_compliance.voice_clone_manager import dub_segment
         # Get the replacement text from compliance suggestion
@@ -335,7 +337,7 @@ def _execute_tool(
         # SFX replacement via ElevenLabs sound generation
         return _generate_sfx_replacement(target or "ambient background music", check_id)
 
-    # ── TEXT TOOLS ────────────────────────────────────────────────────────
+    # -- TEXT TOOLS --------------------------------------------------------
     elif tool_name == "gemini_rewrite_phrase":
         return _rewrite_text(input_path, compliance_result, mode="phrase")
 
@@ -349,9 +351,9 @@ def _execute_tool(
         return {"error": f"Unknown tool: {tool_name}"}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Tool implementations
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 def _inpaint_local(input_path: str, compliance_result: dict, max_retries: int = 3) -> dict:
@@ -503,7 +505,7 @@ def _rewrite_text(input_path: str, compliance_result: dict, mode: str = "phrase"
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_TEXT,
             contents=prompt,
             config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
         )
@@ -520,9 +522,9 @@ def _rewrite_text(input_path: str, compliance_result: dict, mode: str = "phrase"
         return {"error": f"Text rewrite ({mode}) failed: {e}"}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 def _get_extension(media_type: str, url: str) -> str:
@@ -630,3 +632,61 @@ def _execute_omni_video_edit(input_path: str, instruction: str, additional_refer
     except Exception as e:
         logger.error("[Executor] Omni video edit crashed: %s", e)
         return {"error": f"Omni video edit failed: {e}"}
+
+def _execute_veo_regenerate(instruction: str, compliance_result: dict) -> dict:
+    """Regenerate a full video using Gemini Omni (MODEL_VIDEO) as the engine."""
+    from google.genai import types as genai_types
+    from shared.clients import gemini
+    from shared.config import MODEL_VIDEO
+    import uuid
+    import tempfile
+
+    suggestion = compliance_result.get("suggestion", "")
+    original_text = compliance_result.get("text_input", "") or compliance_result.get("original_text", "")
+
+    prompt = (
+        f"Generate a brand new compliant commercial video ad. "
+        f"Original requirements: {original_text}. "
+        f"Remediation guidelines: {instruction or suggestion}. "
+        f"Output video should be safe, compliant, and fit the target market."
+    )
+
+    try:
+        logger.info("[Executor] Submitting full video regeneration request: model=%s", MODEL_VIDEO)
+        response = gemini.models.generate_content(
+            model=MODEL_VIDEO,
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                temperature=1,
+                top_p=0.95,
+                max_output_tokens=32768,
+                response_modalities=["VIDEO", "AUDIO"],
+                safety_settings=[
+                    genai_types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
+                    genai_types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
+                    genai_types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
+                    genai_types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
+                ],
+            ),
+        )
+
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if (
+                    hasattr(part, "inline_data")
+                    and part.inline_data
+                    and part.inline_data.data
+                    and "video" in (part.inline_data.mime_type or "")
+                ):
+                    out_bytes = part.inline_data.data
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    tmp.write(out_bytes)
+                    tmp.close()
+                    logger.info("[Executor] Veo video regeneration successful. Saved to %s", tmp.name)
+                    return {"output_path": tmp.name, "operation": "veo_regenerate"}
+
+        return {"error": "Gemini Omni returned no video data for regeneration"}
+
+    except Exception as e:
+        logger.error("[Executor] Veo video regeneration failed: %s", e)
+        return {"error": f"Veo video regeneration failed: {e}"}

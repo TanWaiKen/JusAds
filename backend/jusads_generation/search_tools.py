@@ -20,7 +20,7 @@ from shared.config import MODEL_TEXT
 
 logger = logging.getLogger(__name__)
 
-# ─── Constants ────────────────────────────────────────────────────────────────
+# --- Constants ----------------------------------------------------------------
 
 _GEMINI_MODEL = MODEL_TEXT
 
@@ -47,7 +47,7 @@ _LANGUAGE_LABELS: dict[str, str] = {
 }
 
 
-# ─── Public API ───────────────────────────────────────────────────────────────
+# --- Public API ---------------------------------------------------------------
 
 
 def get_google_search_config() -> GenerateContentConfig:

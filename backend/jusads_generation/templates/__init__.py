@@ -12,11 +12,11 @@ Requirements: 3.1, 3.2, 3.3, 3.4
 
 from typing import Literal, Optional, TypedDict
 
-# ─── Ad Types ─────────────────────────────────────────────────────────────────
+# --- Ad Types -----------------------------------------------------------------
 
 AdType = Literal["poster", "carousel", "video", "image", "text", "audio"]
 
-# ─── Template Field Definition ────────────────────────────────────────────────
+# --- Template Field Definition ------------------------------------------------
 
 
 class FieldOption(TypedDict):
@@ -42,7 +42,7 @@ class TemplateField(TypedDict):
     group: Optional[str]        # UI grouping ("composition", "style", "technical")
 
 
-# ─── Prompt Template ──────────────────────────────────────────────────────────
+# --- Prompt Template ----------------------------------------------------------
 
 
 class PromptSource(TypedDict):
@@ -68,7 +68,7 @@ class PromptTemplate(TypedDict):
     tags: list[str]             # searchable tags ("minimalist", "product-hero", etc.)
 
 
-# ─── Session Memory ───────────────────────────────────────────────────────────
+# --- Session Memory -----------------------------------------------------------
 
 
 class GenerationTurn(TypedDict):
@@ -94,7 +94,7 @@ class SessionContext(TypedDict):
     active_template_id: Optional[str]
 
 
-# ─── Composition Result ───────────────────────────────────────────────────────
+# --- Composition Result -------------------------------------------------------
 
 
 class CompositionResult(TypedDict):

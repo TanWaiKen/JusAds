@@ -331,7 +331,7 @@ class PipelineRunner:
 
         return final_state
 
-    # ── Private helpers ───────────────────────────────────────────────────────
+    # -- Private helpers -------------------------------------------------------
 
     def _handle_graph_interrupt_tracking(
         self, check_id: str, interrupt_exc
@@ -355,7 +355,7 @@ class PipelineRunner:
         )
 
 
-# ── Module-level helpers ──────────────────────────────────────────────────────
+# -- Module-level helpers ------------------------------------------------------
 
 
 def _extract_interrupt_value(interrupt_exc) -> dict:

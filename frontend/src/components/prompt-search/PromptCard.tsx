@@ -12,7 +12,7 @@ import { PromptTemplateForm } from "./PromptTemplateForm";
 
 interface PromptCardProps {
   suggestion: PromptSuggestion;
-  onUse: (content: string) => void;
+  onUse: (prompt: string, suggestion: PromptSuggestion) => void;
 }
 
 function parseSourceMedia(raw: string): string | null {
@@ -92,13 +92,13 @@ export function PromptCard({ suggestion, onUse }: PromptCardProps): React.ReactE
               if (hasFields) {
                 setShowForm(true);
               } else {
-                onUse(suggestion.content || suggestion.description);
+                onUse(suggestion.content || suggestion.description, suggestion);
               }
             }}
             className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-[#171717] px-3 py-2 text-[11px] font-semibold text-white hover:bg-[#333] transition-colors cursor-pointer"
           >
             <Zap size={12} />
-            Try it now
+            Try Now
           </button>
           <button
             type="button"
@@ -124,7 +124,7 @@ export function PromptCard({ suggestion, onUse }: PromptCardProps): React.ReactE
               content={suggestion.content}
               title="Customize this prompt"
               onGenerate={(composed) => {
-                onUse(composed);
+                onUse(composed, suggestion);
                 setShowForm(false);
               }}
             />

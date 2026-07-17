@@ -27,7 +27,7 @@ from jusads_generation.search_tools import resolve_target_language
 logger = logging.getLogger(__name__)
 
 
-# ─── TypedDicts ───────────────────────────────────────────────────────────────
+# --- TypedDicts ---------------------------------------------------------------
 
 
 class CreativePlan(TypedDict):
@@ -59,7 +59,7 @@ class DirectorState(TypedDict):
     generated_ads: list[dict]
 
 
-# ─── Public API ───────────────────────────────────────────────────────────────
+# --- Public API ---------------------------------------------------------------
 
 
 async def plan_creative_strategy(
@@ -165,7 +165,7 @@ Revise the plan to address the feedback. Return a JSON object with:
         return original_plan
 
 
-# ─── Private Helpers ──────────────────────────────────────────────────────────
+# --- Private Helpers ----------------------------------------------------------
 
 
 def _fetch_relevant_trends(platform: str, market: str, limit: int = 10) -> list[dict]:

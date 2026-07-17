@@ -19,7 +19,7 @@ from shared.config import MODEL_TEXT
 
 logger = logging.getLogger(__name__)
 
-# ─── Hidden Enhancement Constants ────────────────────────────────────────────
+# --- Hidden Enhancement Constants --------------------------------------------
 
 IMAGE_QUALITY_ENHANCEMENTS: str = (
     "professional commercial photography, 8K, sharp focus, high contrast, "
@@ -36,11 +36,11 @@ TEXT_AIDA_INSTRUCTIONS: str = (
     "Respect platform character limits."
 )
 
-# ─── Image design types that receive quality enhancements ────────────────────
+# --- Image design types that receive quality enhancements --------------------
 
 _IMAGE_DESIGN_TYPES: set[str] = {"image_poster", "carousel"}
 
-# ─── PromptProvenance TypedDict ──────────────────────────────────────────────
+# --- PromptProvenance TypedDict ----------------------------------------------
 
 
 class PromptProvenance(TypedDict):
@@ -54,7 +54,7 @@ class PromptProvenance(TypedDict):
     final_assembled_prompt: str
 
 
-# ─── Main Assembly Function ──────────────────────────────────────────────────
+# --- Main Assembly Function --------------------------------------------------
 
 
 def assemble_easy_mode_prompt(
@@ -140,7 +140,7 @@ def assemble_easy_mode_prompt(
     return final_prompt, provenance
 
 
-# ─── Internal Helpers ────────────────────────────────────────────────────────
+# --- Internal Helpers --------------------------------------------------------
 
 
 def _build_hidden_enhancements(

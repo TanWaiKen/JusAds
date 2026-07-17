@@ -9,7 +9,6 @@ import {
   Sparkles,
   Globe,
   Users,
-  BarChart2,
   PlayCircle,
   Image,
   AlignLeft,
@@ -55,16 +54,13 @@ function detectUserMarket(): string {
   if (tz.includes("jakarta")) return "indonesia";
   if (tz.includes("ho_chi_minh") || tz.includes("hanoi")) return "vietnam";
   if (tz.includes("manila")) return "philippines";
-
-  // Fallback: check navigator language
   const lang = navigator.language.toLowerCase();
   if (lang.startsWith("ms") || lang === "en-my") return "malaysia";
   if (lang.startsWith("th")) return "thailand";
   if (lang.startsWith("id")) return "indonesia";
   if (lang.startsWith("vi")) return "vietnam";
   if (lang.startsWith("fil") || lang === "en-ph") return "philippines";
-
-  return "malaysia"; // Default
+  return "malaysia";
 }
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
@@ -109,7 +105,6 @@ function TrendCard({ item }: TrendCardProps) {
 
   return (
     <div className="trend-card bg-surface-elevated border border-border-default rounded-xl overflow-hidden group hover:border-accent-blue/40 transition-all duration-200 cursor-pointer shadow-xs retina-border">
-      {/* Thumbnail placeholder */}
       <div className="relative h-40 bg-surface-inset overflow-hidden flex items-center justify-center">
         <div className="text-text-caption opacity-30">
           {contentTypeIcon(item.content_type)}
@@ -128,13 +123,11 @@ function TrendCard({ item }: TrendCardProps) {
         <h4 className="font-bold text-[13px] text-text-heading mb-1 line-clamp-2">
           {item.title || "Trending Content"}
         </h4>
-
         {item.hashtags.length > 0 && (
           <p className="text-[11px] text-text-caption mb-3 truncate">
             {item.hashtags.slice(0, 3).map((h) => `#${h}`).join(" ")}
           </p>
         )}
-
         <div className="flex justify-between items-center mb-4">
           <div className="text-center">
             <span className="block text-[9px] uppercase font-bold text-text-caption/60">Views</span>
@@ -145,7 +138,6 @@ function TrendCard({ item }: TrendCardProps) {
             <span className="font-mono text-sm font-bold text-accent-blue">+{velocity}%</span>
           </div>
         </div>
-
         <div className="flex gap-2">
           <a
             href={item.url}
@@ -208,23 +200,17 @@ export default function DashboardTrends() {
 
   const [platform, setPlatform] = useState("");
   const [eventMarket, setEventMarket] = useState(detectUserMarket);
-  const [availableMarkets, setAvailableMarkets] = useState<string[]>([]);
   const [trendsData, setTrendsData] = useState<Record<string, TrendItem[]>>({});
   const [lastRefresh, setLastRefresh] = useState<Record<string, string>>({});
   const [events, setEvents] = useState<CulturalEvent[]>([]);
-  const [statsData, setStatsData] = useState<any>(null);
   const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState<string | null>(null);
 
-  // ── Derived: all trend items flat for display ──────────────────────────────
   const allItems = Object.values(trendsData).flat();
-  const filteredItems = platform
-    ? (trendsData[platform] ?? [])
-    : allItems;
+  const filteredItems = platform ? (trendsData[platform] ?? []) : allItems;
 
-  // ── Detected synergy: event + trending topic overlap ──────────────────────
   const synergyEvent = events.find((ev) =>
     allItems.some((item) => item.cultural_event_tag === ev.name.toLowerCase().replace(/\s+/g, "_"))
   );
@@ -232,82 +218,43 @@ export default function DashboardTrends() {
     ? allItems.filter((i) => i.cultural_event_tag === synergyEvent.name.toLowerCase().replace(/\s+/g, "_"))
     : [];
 
-  // ── Derived: Platform Distribution and Engagement Stats from Zernio
-  const allZernioPosts = statsData?.jusads_posts || statsData?.posts || [];
-  // Only show JusAds-published posts (non-external) in the trends sidebar
-  const zernioPosts = allZernioPosts.filter((p: any) => !p.is_external && !p.isExternal);
-  const zernioTiktokCount = zernioPosts.filter((p: any) => {
-    const plat = p.platform || p.platforms?.[0]?.platform;
-    return plat?.toLowerCase() === "tiktok";
-  }).length;
-  const zernioInstagramCount = zernioPosts.filter((p: any) => {
-    const plat = p.platform || p.platforms?.[0]?.platform;
-    return plat?.toLowerCase() === "instagram";
-  }).length;
-
-  const totalZernioPosts = zernioTiktokCount + zernioInstagramCount || 1;
-  const platformStats = [
-    { label: "TikTok", count: zernioTiktokCount, pct: Math.round((zernioTiktokCount / totalZernioPosts) * 100), color: "bg-[#fe2c55]" },
-    { label: "Instagram", count: zernioInstagramCount, pct: Math.round((zernioInstagramCount / totalZernioPosts) * 100), color: "bg-[#e1306c]" },
-  ];
-
-  const totalViews = zernioPosts.reduce((acc: number, p: any) => acc + (p.impressions || p.analytics?.impressions || p.analytics?.views || 0), 0);
-  const totalLikes = zernioPosts.reduce((acc: number, p: any) => acc + (p.likes || p.analytics?.likes || 0), 0);
-
-  // ── Fetch data ─────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [trendsRes, eventsRes, statsRes] = await Promise.all([
+      const [trendsRes, eventsRes] = await Promise.all([
         fetchTrends(platform || undefined, eventMarket === "all" ? undefined : eventMarket),
         fetchCulturalEvents(eventMarket === "all" ? undefined : eventMarket, 60),
-        fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/statistics/posts`).then(res => res.json()).catch(() => null),
       ]);
-
       setTrendsData(trendsRes.trends || {});
       setLastRefresh(trendsRes.last_refresh || {});
       setTotalItems(trendsRes.total_items || 0);
       setEmptyMessage(trendsRes.message ?? null);
       setEvents(eventsRes.events || []);
-      if (eventsRes.available_markets?.length) {
-        setAvailableMarkets(eventsRes.available_markets);
-      }
-      setStatsData(statsRes);
-      console.log("Statistics Data from Backend:", statsRes);
-    } catch (e) {
+    } catch {
       setError("Failed to load trends. Data may be outdated or unavailable.");
     } finally {
       setIsLoading(false);
     }
   }, [platform, eventMarket]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Animations ─────────────────────────────────────────────────────────────
   useGSAP(() => {
     if (isLoading) return;
-
     const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
-
     tl.fromTo(".hero-section", { y: 20, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.5 });
-
     if (containerRef.current?.querySelectorAll(".event-card").length) {
       tl.fromTo(".event-card", { y: 16, autoAlpha: 0 }, { y: 0, autoAlpha: 1, stagger: 0.07, duration: 0.4 }, "-=0.3");
     }
-
     if (containerRef.current?.querySelectorAll(".synergy-card").length) {
       tl.fromTo(".synergy-card", { y: 12, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.4 }, "-=0.2");
     }
-
     if (containerRef.current?.querySelectorAll(".trend-card").length) {
       tl.fromTo(".trend-card", { y: 20, autoAlpha: 0 }, { y: 0, autoAlpha: 1, stagger: 0.05, duration: 0.4 }, "-=0.3");
     }
   }, { scope: containerRef, dependencies: [isLoading, filteredItems.length, events.length] });
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div ref={containerRef} className="min-h-screen bg-background p-8 font-hanken">
       <div className="max-w-[1200px] mx-auto space-y-8">
@@ -364,202 +311,88 @@ export default function DashboardTrends() {
           </div>
         )}
 
-        {/* ── Main Grid ───────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-          {/* Left 8-col: Event Calendar + Synergy */}
-          <div className="lg:col-span-8 space-y-6">
-
-            {/* Event Calendar */}
-            <div className="bg-surface-elevated border border-border-default rounded-xl p-6 retina-border shadow-xs">
-              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
-                <div>
-                  <h3 className="font-bold text-base text-text-heading flex items-center gap-2">
-                    <Calendar size={18} className="text-accent-blue" />
-                    Contextual Event Calendar
-                  </h3>
-                  <p className="text-[12px] text-text-caption mt-1 flex items-center gap-1">
-                    <MapPin size={11} />
-                    Next 60 days • {MARKET_OPTIONS.find(m => m.value === eventMarket)?.flag}{" "}
-                    {MARKET_OPTIONS.find(m => m.value === eventMarket)?.label ?? eventMarket}
-                    {eventMarket !== "all" && " + Global"}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {/* Country Filter Dropdown */}
-                  <select
-                    value={eventMarket}
-                    onChange={(e) => setEventMarket(e.target.value)}
-                    className="bg-surface-inset border border-border-default rounded-lg text-[13px] py-1.5 px-3 text-text-body cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-blue/20"
-                  >
-                    {MARKET_OPTIONS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.flag} {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {isLoading ? (
-                <div className="grid grid-cols-3 gap-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-36 rounded-lg bg-surface-inset animate-pulse" />
-                  ))}
-                </div>
-              ) : events.length === 0 ? (
-                <p className="text-text-caption text-[13px] py-4">No upcoming events found.</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {events.slice(0, 6).map((ev) => (
-                    <EventCard key={ev.id} event={ev} />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Synergy Insight */}
-            {synergyEvent && synergyItems.length > 0 && (
-              <div className="synergy-card relative bg-surface-elevated border-2 border-accent-blue/20 rounded-xl p-6 overflow-hidden retina-border shadow-xs">
-                <div className="absolute top-0 left-0 w-1 h-full bg-accent-blue" />
-                <div className="flex items-start gap-6 pl-2">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Sparkles size={16} className="text-accent-blue" />
-                      <h4 className="font-bold text-sm text-accent-blue">
-                        Detected Synergy: "{synergyEvent.name} × Content"
-                      </h4>
-                    </div>
-                    <p className="text-label-ui text-text-caption mb-5">
-                      {synergyItems.length} trending piece{synergyItems.length !== 1 ? "s" : ""} overlap
-                      with this cultural event. High probability of engagement for ads blending these themes.
-                    </p>
-                    <div className="flex gap-3">
-                      <a
-                        href="/dashboard/generate"
-                        className="bg-text-primary text-white dark:bg-white dark:text-text-primary px-4 py-2 rounded-lg text-[13px] font-semibold hover:opacity-90 transition-all flex items-center gap-2 active:scale-95"
-                      >
-                        Generate Idea <span aria-hidden>→</span>
-                      </a>
-                      <button className="text-text-caption hover:text-text-heading text-[13px] font-semibold flex items-center gap-1 transition-colors">
-                        Save Insight
-                      </button>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-mono text-[28px] font-extrabold text-accent-blue">
-                      +{synergyItems.length * 8}%
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-text-caption">Velocity</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right 4-col: Research Intel & Stats */}
-          <div className="lg:col-span-4">
-            <div className="bg-surface-elevated border border-border-default rounded-xl p-6 h-full retina-border shadow-xs">
-              <h3 className="font-bold text-base text-text-heading flex items-center gap-2 mb-6">
-                <BarChart2 size={18} className="text-accent-blue" />
-                Trend Distribution
+        {/* ── Event Calendar (full width) ─────────────────────────────────── */}
+        <div className="bg-surface-elevated border border-border-default rounded-xl p-6 retina-border shadow-xs">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+            <div>
+              <h3 className="font-bold text-base text-text-heading flex items-center gap-2">
+                <Calendar size={18} className="text-accent-blue" />
+                Contextual Event Calendar
               </h3>
+              <p className="text-[12px] text-text-caption mt-1 flex items-center gap-1">
+                <MapPin size={11} />
+                Next 60 days • {MARKET_OPTIONS.find(m => m.value === eventMarket)?.flag}{" "}
+                {MARKET_OPTIONS.find(m => m.value === eventMarket)?.label ?? eventMarket}
+                {eventMarket !== "all" && " + Global"}
+              </p>
+            </div>
+            <select
+              value={eventMarket}
+              onChange={(e) => setEventMarket(e.target.value)}
+              className="bg-surface-inset border border-border-default rounded-lg text-[13px] py-1.5 px-3 text-text-body cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-blue/20"
+            >
+              {MARKET_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.flag} {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-              <div className="space-y-5 mb-6">
-                {platformStats.map(({ label, count, pct, color }) => (
-                  <div key={label}>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-[13px] text-text-caption">{label} ({count} posts)</span>
-                      <span className="font-mono text-[14px] font-bold text-text-heading">{pct}%</span>
-                    </div>
-                    <div className="h-2 w-full bg-surface-inset rounded-full overflow-hidden">
-                      <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
+          {isLoading ? (
+            <div className="grid grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-36 rounded-lg bg-surface-inset animate-pulse" />
+              ))}
+            </div>
+          ) : events.length === 0 ? (
+            <p className="text-text-caption text-[13px] py-4">No upcoming events found.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {events.slice(0, 6).map((ev) => (
+                <EventCard key={ev.id} event={ev} />
+              ))}
+            </div>
+          )}
+        </div>
 
-              <div className="p-4 bg-surface-inset rounded-xl border border-border-subtle relative overflow-hidden">
-                <span className="block text-[10px] font-bold uppercase text-text-caption/60 mb-2">Cumulative Engagement</span>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <span className="block text-[11px] text-text-caption">Total Views</span>
-                    <span className="text-[22px] font-extrabold text-text-heading font-mono">{formatCount(totalViews)}</span>
-                  </div>
-                  <div>
-                    <span className="block text-[11px] text-text-caption">Total Likes</span>
-                    <span className="text-[22px] font-extrabold text-text-heading font-mono">{formatCount(totalLikes)}</span>
-                  </div>
+        {/* ── Synergy Insight ─────────────────────────────────────────────── */}
+        {synergyEvent && synergyItems.length > 0 && (
+          <div className="synergy-card relative bg-surface-elevated border-2 border-accent-blue/20 rounded-xl p-6 overflow-hidden retina-border shadow-xs">
+            <div className="absolute top-0 left-0 w-1 h-full bg-accent-blue" />
+            <div className="flex items-start gap-6 pl-2">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles size={16} className="text-accent-blue" />
+                  <h4 className="font-bold text-sm text-accent-blue">
+                    Detected Synergy: "{synergyEvent.name} × Content"
+                  </h4>
                 </div>
-              </div>
-
-              {/* Overall Social Accounts Card (Multiple Platforms) */}
-              <div className="mt-6 pt-6 border-t border-border-default space-y-4">
-                <h4 className="font-bold text-[12px] text-text-heading flex items-center gap-2">
-                  <Globe size={14} className="text-accent-blue" />
-                  Overall Social Accounts Overview
-                </h4>
-                <p className="text-[11px] text-text-caption">
-                  Aggregated analytics across all connected organic & ad profiles.
+                <p className="text-label-ui text-text-caption mb-5">
+                  {synergyItems.length} trending piece{synergyItems.length !== 1 ? "s" : ""} overlap
+                  with this cultural event. High probability of engagement for ads blending these themes.
                 </p>
-                
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2 bg-surface-inset rounded-lg border border-border-subtle">
-                    <span className="block text-[8px] uppercase font-bold text-text-caption/60">Total Posts</span>
-                    <span className="font-mono text-[12px] font-bold text-text-heading">
-                      {statsData?.post_count ?? 0}
-                    </span>
-                  </div>
-                  <div className="p-2 bg-surface-inset rounded-lg border border-border-subtle">
-                    <span className="block text-[8px] uppercase font-bold text-text-caption/60">Total Views</span>
-                    <span className="font-mono text-[12px] font-bold text-text-heading">
-                      {formatCount(statsData?.totals?.impressions ?? 0)}
-                    </span>
-                  </div>
-                  <div className="p-2 bg-surface-inset rounded-lg border border-border-subtle">
-                    <span className="block text-[8px] uppercase font-bold text-text-caption/60">Total Likes</span>
-                    <span className="font-mono text-[12px] font-bold text-text-heading">
-                      {formatCount(statsData?.totals?.likes ?? 0)}
-                    </span>
-                  </div>
+                <div className="flex gap-3">
+                  <a
+                    href="/dashboard/generate"
+                    className="bg-text-primary text-white dark:bg-white dark:text-text-primary px-4 py-2 rounded-lg text-[13px] font-semibold hover:opacity-90 transition-all flex items-center gap-2 active:scale-95"
+                  >
+                    Generate Idea <span aria-hidden>→</span>
+                  </a>
+                  <button className="text-text-caption hover:text-text-heading text-[13px] font-semibold flex items-center gap-1 transition-colors">
+                    Save Insight
+                  </button>
                 </div>
               </div>
-
-              {/* Recent Posts Analytics list */}
-              {zernioPosts.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-border-default space-y-3">
-                  <span className="block text-[10px] font-bold uppercase text-text-caption/60">Recent Posts Performance</span>
-                  <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
-                    {zernioPosts.slice(0, 3).map((p: any) => {
-                      const postTitle = p.post_external_id || p.content || p.title || "Untitled Post";
-                      const platformName = p.platform || p.platforms?.[0]?.platform || "unknown";
-                      const platformColor = platformName.toLowerCase() === "tiktok" ? "text-[#fe2c55]" : "text-[#e1306c]";
-                      const viewsCount = p.impressions || 0;
-                      const likesCount = p.likes || 0;
-                      return (
-                        <div key={p._id || p.post_external_id} className="p-3 bg-surface-inset rounded-lg border border-border-subtle hover:border-border-default transition-all">
-                          <div className="flex justify-between items-start gap-2 mb-1.5">
-                            <span className="text-[11px] font-medium text-text-body line-clamp-2 leading-relaxed flex-1">
-                              {postTitle}
-                            </span>
-                            <span className={`text-[10px] font-bold uppercase ${platformColor} bg-surface-elevated px-1.5 py-0.5 rounded border border-border-default shadow-2xs`}>
-                              {platformName}
-                            </span>
-                          </div>
-                          <div className="flex gap-4 text-[10px] text-text-caption font-mono">
-                            <div>Views: <span className="font-bold text-text-heading">{viewsCount.toLocaleString()}</span></div>
-                            <div>Likes: <span className="font-bold text-text-heading">{likesCount.toLocaleString()}</span></div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+              <div className="text-right shrink-0">
+                <div className="font-mono text-[28px] font-extrabold text-accent-blue">
+                  +{synergyItems.length * 8}%
                 </div>
-              )}
+                <div className="text-[10px] uppercase font-bold text-text-caption">Velocity</div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* ── Industry Intel ───────────────────────────────────────────────── */}
         <section>
@@ -573,7 +406,6 @@ export default function DashboardTrends() {
                 </span>
               )}
             </h3>
-
             <div className="flex gap-2">
               <select
                 value={platform}
@@ -587,7 +419,6 @@ export default function DashboardTrends() {
             </div>
           </div>
 
-          {/* Loading skeleton */}
           {isLoading && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
               {[1, 2, 3, 4].map((i) => (
@@ -602,7 +433,6 @@ export default function DashboardTrends() {
             </div>
           )}
 
-          {/* Empty state */}
           {!isLoading && filteredItems.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Globe size={40} className="text-text-caption/30 mb-3" />
@@ -613,7 +443,6 @@ export default function DashboardTrends() {
             </div>
           )}
 
-          {/* Trend cards grid */}
           {!isLoading && filteredItems.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
               {filteredItems.slice(0, 16).map((item) => (
@@ -622,7 +451,6 @@ export default function DashboardTrends() {
             </div>
           )}
 
-          {/* Last refresh footer */}
           {Object.keys(lastRefresh).length > 0 && (
             <div className="mt-4 flex flex-wrap gap-3">
               {Object.entries(lastRefresh).map(([p, ts]) => (

@@ -1,20 +1,19 @@
-﻿"""
+"""
 video_agent.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-Video_Agent â€” one of the four independent Media Agents (Req 5.1).
+──────────────
+Video_Agent – one of the four independent Media Agents (Req 5.1).
 
-Generates a video ad **fully independently** (Req 5.3) using Google Veo 3.0
-for real dynamic video generation. No fallback â€” if Veo is not configured or
-fails, the agent fails loudly with a clear error so developers can diagnose
-the issue immediately.
+Generates a video ad **fully independently** (Req 5.3) using Google Gemini Omni
+(gemini-omni-flash-preview) for native video generation. The model generates
+the entire video clip in a single call — no clip-by-clip stitching required.
 
-Veo generates its own cinematic background audio (``generate_audio=True``).
+Gemini Omni generates its own cinematic background audio.
 When the ad requires human narration (commercial voiceover), ElevenLabs TTS is
-generated separately and merged on top of the Veo video via ffmpeg.
+generated separately and merged on top of the Omni video via ffmpeg.
 
 This module implements the shared ``generate(...)`` contract from
 ``agents/base.py``. It lives in its own file and does NOT import the other three
-Media Agents (Req 5.2). All external calls (Veo, Gemini, ElevenLabs, ffmpeg,
+Media Agents (Req 5.2). All external calls (Gemini Omni, ElevenLabs, ffmpeg,
 S3, Supabase) are wrapped in try/except with ``[VideoAgent]``-prefixed logging.
 The output duration is bounded by the resolved ``rules.max_duration_seconds``
 (Req 7.1).
@@ -25,27 +24,24 @@ import logging
 import os
 import subprocess
 import tempfile
-import time
 import uuid
 from pathlib import Path
 from typing import Optional
 
 from shared.clients import gemini, supabase
-from shared.config import MODEL_TEXT
+from shared.config import MODEL_TEXT, MODEL_VIDEO
+from shared.prompts import VIDEO_AD_GENERATION_PROMPT
 from shared.s3_client import upload_file_public
-from config import VERTEX_PROJECT_ID
 
 from .base import AgentResult, load_guide
 
 logger = logging.getLogger(__name__)
 
-# â”€â”€ Duration constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Duration constants --------------------------------------------------------
 _DEFAULT_DURATION = 8.0
-# Veo minimum is 5 seconds.
-_VEO_MIN_DURATION = 5
 
 
-# â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Helpers ------------------------------------------------------------------
 
 
 def _resolve_duration(rules: dict) -> float:
@@ -56,37 +52,16 @@ def _resolve_duration(rules: dict) -> float:
     return min(float(_DEFAULT_DURATION), float(max_duration))
 
 
-def _resolve_veo_duration(rules: dict) -> int:
-    """Resolve duration for Veo (integer, minimum 5s, bounded by rules)."""
-    max_duration = rules.get("max_duration_seconds") if rules else None
-    if not max_duration or max_duration <= 0:
-        target = int(_DEFAULT_DURATION)
-    else:
-        target = int(min(_DEFAULT_DURATION, float(max_duration)))
-    return max(_VEO_MIN_DURATION, target)
-
-
 def _build_visual_prompt(brief: str, rules: dict) -> str:
-    """Use Gemini to refine the brief into a cinematic video prompt for Veo."""
+    """Use Gemini to refine the brief into a cinematic video prompt for Omni."""
     guide = load_guide("video")
     aspect_ratio = rules.get("aspect_ratio", "9:16") if rules else "9:16"
 
-    refine_prompt = f"""You are an expert advertising Creative Director specialising in short-form video ads.
-Convert the following ad brief into a detailed cinematic video scene prompt suitable for an AI video generation model (Google Veo):
-
-Brief: "{brief}"
-
-Requirements:
-- Describe a DYNAMIC scene with motion, camera movement, and action (not a static shot)
-- Clean, modern commercial style suitable for short-form video ({aspect_ratio})
-- High contrast, vibrant, product-focused composition
-- Culturally appropriate for Southeast Asian markets (Malaysia/Singapore), modest presentation
-- Include cinematic details: lighting, camera angle, movement direction, pacing
-- Do NOT mention text overlays, logos, or UI elements â€” only the visual scene
-
-Reference guidelines: {guide[:400]}
-
-Output ONLY the video scene prompt (max 100 words)."""
+    refine_prompt = VIDEO_AD_GENERATION_PROMPT.format(
+        brief=brief,
+        aspect_ratio=aspect_ratio,
+        guide=guide[:400],
+    )
 
     try:
         resp = gemini.models.generate_content(
@@ -99,102 +74,91 @@ Output ONLY the video scene prompt (max 100 words)."""
         return brief
 
 
-# â”€â”€â”€ Veo Video Generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Gemini Omni Video Generation --------------------------------------------
 
 
-async def _generate_veo_video(
+async def _generate_omni_video(
     prompt: str,
     aspect_ratio: str,
-    duration: int,
     work_dir: Path,
 ) -> Optional[str]:
-    """Call Google Veo 3.0 to generate a dynamic video. Returns local .mp4 path or None.
+    """Call Gemini Omni (MODEL_VIDEO) to generate a full video in one call.
 
-    Uses asyncio.to_thread for the blocking poll loop so the event loop is not
-    blocked.
+    Gemini Omni generates the entire video clip natively — no clip-by-clip
+    stitching or frame interpolation required. Returns local .mp4 path or None.
     """
-    if not VERTEX_PROJECT_ID:
-        logger.warning("[VideoAgent] VERTEX_PROJECT_ID not set â€” skipping Veo.")
-        return None
 
-    def _blocking_veo_call() -> Optional[bytes]:
-        """Synchronous Veo call + polling (runs in a thread)."""
+    def _blocking_omni_call() -> Optional[bytes]:
+        """Synchronous Gemini Omni call (runs in a thread)."""
         try:
-            from google import genai
             from google.genai import types
 
-            veo_client = genai.Client(
-                vertexai=True,
-                project=VERTEX_PROJECT_ID,
-                location="us-central1",
-            )
-
             logger.info(
-                "[VideoAgent] Submitting Veo 3.0 request: duration=%ds, aspect=%s",
-                duration,
+                "[VideoAgent] Submitting Gemini Omni request: model=%s, aspect=%s",
+                MODEL_VIDEO,
                 aspect_ratio,
             )
 
-            operation = veo_client.models.generate_videos(
-                model="veo-3.0-generate-001",
-                prompt=prompt,
-                config=types.GenerateVideosConfig(
-                    aspect_ratio=aspect_ratio,
-                    number_of_videos=1,
-                    duration_seconds=duration,
-                    person_generation="allow_adult",
-                    generate_audio=True,
+            response = gemini.models.generate_content(
+                model=MODEL_VIDEO,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=1,
+                    top_p=0.95,
+                    max_output_tokens=32768,
+                    response_modalities=["VIDEO", "AUDIO"],
+                    safety_settings=[
+                        types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
+                        types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
+                        types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
+                        types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
+                    ],
                 ),
             )
 
-            # Poll for completion
-            while not operation.done:
-                logger.info("[VideoAgent] Veo generation in progress... polling in 10s.")
-                time.sleep(10)
-                operation = veo_client.operations.get(operation)
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if (
+                        hasattr(part, "inline_data")
+                        and part.inline_data
+                        and part.inline_data.data
+                        and "video" in (part.inline_data.mime_type or "")
+                    ):
+                        logger.info("[VideoAgent] Gemini Omni video generation successful.")
+                        return part.inline_data.data
 
-            response = operation.result
-            if not response or not response.generated_videos:
-                logger.error("[VideoAgent] Veo returned no videos.")
-                return None
-
-            video = response.generated_videos[0]
-            if not video.video or not video.video.video_bytes:
-                logger.error("[VideoAgent] Veo video has no bytes.")
-                return None
-
-            logger.info("[VideoAgent] Veo 3.0 video generated successfully.")
-            return video.video.video_bytes
+            logger.error("[VideoAgent] Gemini Omni returned no video data.")
+            return None
 
         except Exception as e:
-            logger.error("[VideoAgent] Veo API call failed: %s", e)
+            logger.error("[VideoAgent] Gemini Omni API call failed: %s", e)
             return None
 
     try:
-        video_bytes = await asyncio.to_thread(_blocking_veo_call)
+        video_bytes = await asyncio.to_thread(_blocking_omni_call)
     except Exception as e:
-        logger.error("[VideoAgent] asyncio.to_thread error for Veo: %s", e)
+        logger.error("[VideoAgent] asyncio.to_thread error for Omni: %s", e)
         return None
 
     if not video_bytes:
         return None
 
     # Write bytes to disk
-    veo_path = str(work_dir / f"veo_{uuid.uuid4().hex[:6]}.mp4")
-    with open(veo_path, "wb") as f:
+    omni_path = str(work_dir / f"omni_{uuid.uuid4().hex[:6]}.mp4")
+    with open(omni_path, "wb") as f:
         f.write(video_bytes)
-    logger.info("[VideoAgent] Veo video saved to %s", veo_path)
-    return veo_path
+    logger.info("[VideoAgent] Omni video saved to %s", omni_path)
+    return omni_path
 
 
-# â”€â”€â”€ Voiceover Generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Voiceover Generation ----------------------------------------------------
 
 
 def _generate_voiceover(brief: str, duration: float, work_dir: Path) -> Optional[str]:
     """Generate ElevenLabs voiceover narration for the ad. Returns .mp3 path or None.
 
-    Veo handles cinematic background audio, so this only generates the human
-    narration track (voiceover). SFX generation is skipped.
+    Gemini Omni handles cinematic background audio, so this only generates the
+    human narration track (voiceover).
     """
     from shared.elevenlabs_utils import generate_tts
     from config import get_voice
@@ -226,13 +190,13 @@ def _generate_voiceover(brief: str, duration: float, work_dir: Path) -> Optional
     return None
 
 
-# â”€â”€â”€ Voiceover Merge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Voiceover Merge ----------------------------------------------------------
 
 
 def _merge_voiceover(video_path: str, vo_path: str, out_path: str) -> bool:
-    """Merge voiceover audio track onto the Veo video via ffmpeg.
+    """Merge voiceover audio track onto the Omni video via ffmpeg.
 
-    The Veo video already has its own audio (cinematic/background). The VO is
+    The Omni video already has its own audio (cinematic/background). The VO is
     mixed on top as a second audio stream, then down-mixed to stereo.
     """
     cmd = [
@@ -249,16 +213,16 @@ def _merge_voiceover(video_path: str, vo_path: str, out_path: str) -> bool:
         out_path,
     ]
     try:
-        logger.info("[VideoAgent] Merging voiceover onto Veo video...")
+        logger.info("[VideoAgent] Merging voiceover onto Omni video...")
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         logger.info("[VideoAgent] Voiceover merged successfully.")
         return True
     except Exception as e:
-        logger.warning("[VideoAgent] Voiceover merge failed: %s. Using Veo video as-is.", e)
+        logger.warning("[VideoAgent] Voiceover merge failed: %s. Using Omni video as-is.", e)
         return False
 
 
-# â”€â”€â”€ Supabase Recording â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Supabase Recording ------------------------------------------------------
 
 
 def _record_generated_ad(
@@ -298,39 +262,12 @@ def _record_generated_ad(
         return None
 
 
-# â”€â”€â”€ Public contract â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Public contract ----------------------------------------------------------
 
 
-async def generate(
-    *,
-    brief: str,
-    project_id: str,
-    task_id: str,
-    platform: str,
-    rules: dict,
-    reference_parts: Optional[list] = None,
+async def generate(*, brief: str, project_id: str, task_id: str,
+    platform: str, rules: dict, reference_parts: Optional[list] = None,
 ) -> AgentResult:
-    """Generate one video ad and record it in ``generated_ads``.
-
-    Primary path: Google Veo 3.0 dynamic video generation with built-in audio.
-    If Veo is unavailable or fails, falls back to static image + ffmpeg stitch.
-
-    When Veo succeeds, a separate ElevenLabs voiceover is generated and merged
-    on top (commercial ads need human narration). Veo's own audio serves as the
-    cinematic background/sound bed.
-
-    Args:
-        brief: The creative/product prompt for the ad.
-        project_id: Owning project id.
-        task_id: Owning task id.
-        platform: Normalized target platform (e.g. ``"tiktok"``).
-        rules: Resolved ``PlatformRule`` sizing (aspect ratio + duration).
-        reference_parts: Optional multimodal reference parts (unused for video).
-
-    Returns:
-        An :class:`AgentResult` describing the generated (or failed) output.
-    """
-    logger.info("[VideoAgent] Starting video generation for '%s'", platform)
 
     # GoogleSearch for video style trends (graceful degradation on failure)
     from jusads_generation.search_tools import search_creative_context, derive_search_query
@@ -348,51 +285,35 @@ async def generate(
     try:
         work_dir = Path(tempfile.mkdtemp(prefix="video_ad_"))
         aspect_ratio = rules.get("aspect_ratio", "9:16") if rules else "9:16"
+        duration = _resolve_duration(rules)
 
-        # Veo is REQUIRED â€” no fallback. Fail loudly if not configured.
-        if not VERTEX_PROJECT_ID:
-            raise RuntimeError(
-                "VERTEX_PROJECT_ID is not configured. Video generation requires Google Veo. "
-                "Set VERTEX_PROJECT_ID in backend/.env to enable video generation."
-            )
+        # -- Generate video via Gemini Omni ------------------------------------
+        visual_prompt = _build_visual_prompt(enriched_brief, rules)
+        logger.info("[VideoAgent] Visual prompt for Omni: %s", visual_prompt[:120])
 
-        # â”€â”€ Generate video via Veo 3.0 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        veo_duration = _resolve_veo_duration(rules)
-        visual_prompt = _build_visual_prompt(brief, rules)
-        logger.info("[VideoAgent] Visual prompt for Veo: %s", visual_prompt[:120])
-
-        veo_video_path = await _generate_veo_video(
+        omni_video_path = await _generate_omni_video(
             prompt=visual_prompt,
             aspect_ratio=aspect_ratio,
-            duration=veo_duration,
             work_dir=work_dir,
         )
 
-        if not veo_video_path:
-            raise RuntimeError(
-                "Veo 3.0 video generation failed. Check VERTEX_PROJECT_ID, "
-                "GCP credentials, and that the Veo API is enabled in your project."
-            )
-
-        # Veo succeeded â€” now add voiceover narration on top
-        logger.info("[VideoAgent] Veo video ready. Generating voiceover narration...")
-        vo_path = _generate_voiceover(brief, float(veo_duration), work_dir)
+        vo_path = _generate_voiceover(brief, duration, work_dir)
 
         if vo_path:
             merged_path = str(work_dir / "final_with_vo.mp4")
-            if _merge_voiceover(veo_video_path, vo_path, merged_path):
+            if _merge_voiceover(omni_video_path, vo_path, merged_path):
                 final_video_path = merged_path
             else:
-                # Merge failed â€” use Veo video without VO (still has Veo audio)
-                final_video_path = veo_video_path
+                # Merge failed – use Omni video without VO (still has Omni audio)
+                final_video_path = omni_video_path
         else:
-            # No VO generated â€” Veo video with its own audio is still good
-            final_video_path = veo_video_path
+            # No VO generated – Omni video with its own audio is still good
+            final_video_path = omni_video_path
 
         if not final_video_path or not os.path.exists(final_video_path):
             raise RuntimeError("Video generation produced no output file.")
 
-        # â”€â”€ Upload to S3 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # -- Upload to S3 ------------------------------------------------------
         s3_key = f"generated_ads/{project_id}/{task_id}/video_{uuid.uuid4().hex[:6]}.mp4"
         try:
             s3_url = upload_file_public(final_video_path, s3_key)
@@ -400,8 +321,7 @@ async def generate(
             logger.warning("[VideoAgent] S3 upload failed, using fallback URL: %s", e)
             s3_url = f"https://mock-bucket.s3.amazonaws.com/{s3_key}"
 
-        # â”€â”€ Record success (Req 5.4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        duration = _resolve_duration(rules)
+        # -- Record success (Req 5.4) ------------------------------------------
         ad_id = _record_generated_ad(
             project_id=project_id,
             task_id=task_id,
@@ -413,7 +333,7 @@ async def generate(
                 "s3_url": s3_url,
                 "aspect_ratio": aspect_ratio,
                 "duration_seconds": duration,
-                "generation_method": "veo_3.0",
+                "generation_method": "gemini_omni",
                 "independent": True,
             },
         )
@@ -455,4 +375,3 @@ async def generate(
         if work_dir is not None:
             import shutil
             shutil.rmtree(work_dir, ignore_errors=True)
-

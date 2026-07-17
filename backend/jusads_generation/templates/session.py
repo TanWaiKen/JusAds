@@ -22,13 +22,13 @@ from .registry import _REGISTRY
 
 logger = logging.getLogger(__name__)
 
-# ─── Constants ────────────────────────────────────────────────────────────────
+# --- Constants ----------------------------------------------------------------
 
 _MAX_TURNS = 20
 _TABLE_NAME = "generation_sessions"
 
 
-# ─── Public API ───────────────────────────────────────────────────────────────
+# --- Public API ---------------------------------------------------------------
 
 
 def load_session(project_id: str, task_id: str) -> SessionContext:
@@ -166,7 +166,7 @@ def save_generation_turn(
     return session_ctx
 
 
-# ─── Internal Helpers ─────────────────────────────────────────────────────────
+# --- Internal Helpers ---------------------------------------------------------
 
 
 def _get_ad_type_for_template(template_id: str) -> str:

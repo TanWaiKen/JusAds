@@ -1,10 +1,10 @@
-﻿"""
+"""
 text_agent.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-Text_Caption_Agent â€” the independent Media Agent that generates ad copy /
+─────────────
+Text_Caption_Agent — the independent Media Agent that generates ad copy /
 captions (Req 5.1).
 
-Workflow: Gemini copy â†’ ``.txt`` uploaded to S3 â†’ a ``generated_ads`` row.
+Workflow: Gemini copy → ``.txt`` uploaded to S3 → a ``generated_ads`` row.
 
 The agent implements the shared :func:`generate` contract from ``base.py`` and
 lives in its own module. It never imports any other Media Agent, so it can
@@ -24,6 +24,7 @@ from typing import Optional
 
 from shared.clients import gemini, supabase
 from shared.config import MODEL_TEXT
+from shared.prompts import TEXT_AD_GENERATION_PROMPT
 from shared.s3_client import upload_file_public
 
 from ..platform_rules import PlatformRule
@@ -58,24 +59,11 @@ def _build_caption(brief: str, search_context: str = "") -> str:
 {search_context[:1000]}
 ---"""
 
-    ai_prompt = f"""You are a compliance-aware creative Copywriting Agent.
-Reference the following Tool Guide for guidelines:
----
-{guide}
----
-{market_context_section}
-
-Write a short, engaging advertisement caption/copy based on this user prompt:
-"{brief}"
-
-Output MUST be a valid JSON object with the format:
-{{
-  "headline": "...",
-  "body_copy": "...",
-  "hashtags": ["...", "..."],
-  "caption_raw": "Headline - Body copy - Hashtags"
-}}
-Return ONLY the raw JSON block without markdown formatting."""
+    ai_prompt = TEXT_AD_GENERATION_PROMPT.format(
+        guide=guide,
+        market_context_section=market_context_section,
+        brief=brief,
+    )
 
     try:
         response = gemini.models.generate_content(
@@ -137,9 +125,7 @@ def _record_row(
     return None
 
 
-async def generate(
-    *,
-    brief: str,
+async def generate(*, brief: str,
     project_id: str,
     task_id: str,
     platform: str,
@@ -160,7 +146,7 @@ async def generate(
         task_id: Owning task id.
         platform: The resolved, validated target platform.
         rules: Resolved platform sizing rules (unused for text beyond platform
-            attribution; sizing is a caption-length convention â€” Req 7.1).
+            attribution; sizing is a caption-length convention — Req 7.1).
         reference_parts: Optional multimodal reference parts (unused for copy).
 
     Returns:

@@ -21,7 +21,7 @@ from shared.fallback_queue import fallback_queue
 
 logger = logging.getLogger(__name__)
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# -- Constants ------------------------------------------------------------------
 MAX_CONTENT_CHARS = 10000  # DB CHECK: char_length(content) <= 10000 (Req 6.2)
 DEFAULT_RECENT_LIMIT = 20  # last-N conversational-memory read (Req 6.6)
 CHAT_MESSAGES_TABLE = "chat_messages"

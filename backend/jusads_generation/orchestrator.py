@@ -38,6 +38,7 @@ from typing import AsyncGenerator, Awaitable, Callable, Optional
 from langgraph.graph import END, START, StateGraph
 
 from shared.clients import gemini
+from shared.prompts import ASSISTANT_CHAT_PROMPT
 
 from .agents import audio_agent, image_agent, text_agent, video_agent
 from .agents import video_v3_grid as video_v3_agent
@@ -55,7 +56,7 @@ from .state import GeneratedAdRef, GenerationState, MediaType
 
 logger = logging.getLogger(__name__)
 
-# ─── Constants ───────────────────────────────────────────────────────────────
+# --- Constants ---------------------------------------------------------------
 
 # The canonical media-agent dispatch table. Each entry is the independent
 # ``generate(...)`` contract implementation for that media type (Req 5.1). The
@@ -124,12 +125,10 @@ def _enrich_brief(user_message: str, context: dict) -> str:
         parts.append("[SETTINGS: " + " | ".join(meta) + "]")
     return "\n".join(parts)
 
-_ASSISTANT_SYSTEM_INSTRUCTION = """You are an Agentic Ad Designer.
-Write a concise, professional reply telling the user which ad channels you are about
-to generate based on their request and any reference assets. Keep it short."""
+_ASSISTANT_SYSTEM_INSTRUCTION = ASSISTANT_CHAT_PROMPT
 
 
-# ─── SSE helpers ─────────────────────────────────────────────────────────────
+# --- SSE helpers -------------------------------------------------------------
 
 
 def _sse(payload: dict) -> str:
@@ -161,7 +160,7 @@ def _status_event(node: str, status: str, data: Optional[dict] = None) -> str:
     return _sse({"node": node, "status": status, "data": data or {}})
 
 
-# ─── Step implementations (shared by the graph nodes and run_generation) ─────
+# --- Step implementations (shared by the graph nodes and run_generation) -----
 
 
 def _load_history_step(project_id: str, task_id: str) -> list[dict]:
@@ -282,7 +281,7 @@ async def _generate_and_check(
         A :class:`GeneratedAdRef` describing the produced ad and its compliance
         status.
     """
-    # Resolve backend-authoritative sizing (Req 7.1); missing rule → reject this
+    # Resolve backend-authoritative sizing (Req 7.1); missing rule -> reject this
     # media generation only (Req 7.7). Propagated to the caller.
     rules = resolve_rule(platform, media_type)
 
@@ -447,7 +446,7 @@ def _build_pipeline_state(
     }
 
 
-# ─── LangGraph topology (Req 4, 5) ───────────────────────────────────────────
+# --- LangGraph topology (Req 4, 5) -------------------------------------------
 
 
 def _node_load_history(state: GenerationState) -> dict:
@@ -565,7 +564,7 @@ def build_graph():
     graph.add_edge("load_history", "resolve_platform")
     graph.add_edge("resolve_platform", "detect_intent")
 
-    # Fan-out: detect_intent → each detected media node, or → clarify.
+    # Fan-out: detect_intent -> each detected media node, or -> clarify.
     graph.add_conditional_edges(
         "detect_intent",
         _route_after_intent,
@@ -575,7 +574,7 @@ def build_graph():
         },
     )
 
-    # Media nodes join ONLY at the collect node (never agent→agent).
+    # Media nodes join ONLY at the collect node (never agent->agent).
     for media_type in _MEDIA_ORDER:
         graph.add_edge(f"{media_type}_node", "collect")
 
@@ -593,7 +592,7 @@ def build_graph():
 generation_graph = build_graph()
 
 
-# ─── Streaming entrypoint (Req 4.5) ──────────────────────────────────────────
+# --- Streaming entrypoint (Req 4.5) ------------------------------------------
 
 
 async def run_generation(
@@ -647,7 +646,7 @@ async def run_generation(
         current_state: The task's prior canvas ``pipeline_state``.
         skip_compliance: When True, skip the compliance check (faster iteration).
         video_v3: When True, video generation uses the V3 Character Grid Pipeline
-            (Director → Character Sheet → Scene Grid → Veo first+last frame → Assemble)
+            (Director → Character Sheet → Scene Grid → Gemini Omni full-clip → Assemble)
             instead of the single-clip V1 path.
         target_ethnicity: Target audience for conditional localization
             (``malay``/``chinese``/``indian``/``all``). Halal rules apply only
@@ -706,7 +705,7 @@ async def run_generation(
     generated_ads: list[GeneratedAdRef] = []
     v3_ran = False  # Track if V3 pipeline handled video (it emits its own pipeline_state)
 
-    # 5a. No media type detected → request clarification, invoke no agent (Req 4.3).
+    # 5a. No media type detected -> request clarification, invoke no agent (Req 4.3).
     if not detected:
         logger.info("[Orchestrator] No media type detected; requesting clarification")
         yield _sse({"text": _CLARIFICATION_MESSAGE})
@@ -742,7 +741,7 @@ async def run_generation(
 
             # Special path: Video V2 planning mode. Instead of running the whole
             # V3 Grid Pipeline: Full character-consistent multi-scene video.
-            # Director → Character Sheet → Scene Grid → Slice → Veo first+last → Assemble.
+            # Director -> Character Sheet -> Scene Grid -> Slice -> Gemini Omni -> Assemble.
             # Each step emits its own canvas nodes via SSE.
             if media_type == "video" and video_v3:
                 v3_ran = True
@@ -855,7 +854,7 @@ async def run_generation(
     )
 
 
-# ─── Video V2: execute an approved plan (Continue button) ────────────────────
+# --- Video V2: execute an approved plan (Continue button) --------------------
 
 
 async def run_video_plan_execution(
@@ -889,7 +888,7 @@ async def run_video_plan_execution(
 
         yield _status_event(
             "video", "in-progress",
-            {"message": "V3: Generating video clips with Veo (first+last frame)...", "phase": "v3_production"},
+            {"message": "V3: Generating full video with Gemini Omni...", "phase": "v3_production"},
         )
 
         # Build the assets dict from the plan (frame_urls should be persisted on the plan)
@@ -921,7 +920,7 @@ async def run_video_plan_execution(
 
         return
 
-    # ── Legacy V2 path (fallback) ─────────────────────────────────────────
+    # -- Legacy V2 path (fallback) -----------------------------------------
     logger.info(
         "[Orchestrator] Executing Video plan %s (project=%s, task=%s)",
         plan.get("plan_id"), project_id, task_id,
@@ -930,7 +929,7 @@ async def run_video_plan_execution(
 
     yield _status_event(
         "video", "in-progress",
-        {"message": "Rendering approved scenes with Veo...", "phase": "generating"},
+        {"message": "Rendering approved scenes with Gemini Omni...", "phase": "generating"},
     )
 
     # V2 is deprecated — if an old V2 plan somehow arrives, inform the user.

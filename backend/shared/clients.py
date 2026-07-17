@@ -34,7 +34,7 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# ── Gemini (Vertex AI) ────────────────────────────────────────────────────────
+# -- Gemini (Vertex AI) --------------------------------------------------------
 try:
     gemini = genai.Client(vertexai=True, project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
     logger.info("[Clients] Gemini (Vertex AI) client initialized")
@@ -42,7 +42,7 @@ except Exception as e:  # noqa: BLE001 - resilient init, do not propagate (Req 3
     logger.error("[Clients] Gemini client init failed; AI generation will degrade: %s", e)
     gemini = None
 
-# ── ElevenLabs ────────────────────────────────────────────────────────────────
+# -- ElevenLabs ----------------------------------------------------------------
 try:
     elevenlabs = ElevenLabs(api_key=ELEVENLABS_API_KEY)
     logger.info("[Clients] ElevenLabs client initialized")
@@ -50,7 +50,7 @@ except Exception as e:  # noqa: BLE001 - resilient init, do not propagate (Req 3
     logger.error("[Clients] ElevenLabs client init failed; TTS will degrade: %s", e)
     elevenlabs = None
 
-# ── Tavily ────────────────────────────────────────────────────────────────────
+# -- Tavily --------------------------------------------------------------------
 try:
     tavily = TavilyClient(api_key=TAVILY_API_KEY)
     logger.info("[Clients] Tavily client initialized")
@@ -58,7 +58,7 @@ except Exception as e:  # noqa: BLE001 - resilient init, do not propagate (Req 3
     logger.error("[Clients] Tavily client init failed; web search will degrade: %s", e)
     tavily = None
 
-# ── Supabase ───────────────────────────────────────────────────────────────────
+# -- Supabase -------------------------------------------------------------------
 try:
     supabase: Client = create_client(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
     logger.info("[Clients] Supabase client initialized")
@@ -68,7 +68,7 @@ except Exception as e:  # noqa: BLE001 - resilient init; fall back to local stor
     )
     supabase = None
 
-# ── AWS S3 ─────────────────────────────────────────────────────────────────────
+# -- AWS S3 ---------------------------------------------------------------------
 try:
     s3 = boto3.client("s3", region_name=AWS_REGION)
     logger.info("[Clients] S3 client initialized")
@@ -76,7 +76,7 @@ except Exception as e:  # noqa: BLE001 - resilient init; fall back to local stor
     logger.error("[Clients] S3 client init failed; falling back to local storage: %s", e)
     s3 = None
 
-# ── AWS Transcribe ─────────────────────────────────────────────────────────────
+# -- AWS Transcribe -------------------------------------------------------------
 try:
     transcribe = boto3.client("transcribe", region_name=AWS_REGION)
     logger.info("[Clients] Transcribe client initialized")

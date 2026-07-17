@@ -241,6 +241,14 @@ export default function DashboardCompliance() {
   // ─── Submit flow ────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(
     async (params: UploadParams) => {
+      console.log("[Compliance] handleSubmit called — NEW CHECK STARTING", {
+        hasFile: !!params.file,
+        fileName: params.file?.name,
+        hasText: !!params.text,
+        market: params.market,
+        ethnicity: params.ethnicity,
+      });
+
       const id = routeProjectId || generateId();
       const newProject: Project = {
         id,
@@ -258,11 +266,21 @@ export default function DashboardCompliance() {
       dispatch({ type: "CREATE_PROJECT", payload: newProject });
 
       try {
+        console.log("[Compliance] Calling complianceCheck.submit...");
         const result: ComplianceResult = await complianceCheck.submit({
           ...params,
           projectId: id,
           username: user?.profile?.email ?? "anonymous",
         } as UploadParams & { projectId: string });
+
+        console.log("[Compliance] Check complete, result:", result);
+
+        // Enrich result with metadata from upload params in case backend drops them
+        result.ethnicity = result.ethnicity || params.ethnicity;
+        result.age_group = result.age_group || params.ageGroup;
+        result.platform = result.platform || params.platform;
+        result.market = result.market || params.market;
+
         dispatch({ type: "SET_RESULT", projectId: id, result });
 
         // Persist step state — find the task that was just created
