@@ -1,0 +1,12 @@
+.landing-page {
+  min-height: 100dvh;
+}
+
+/* Deliberately scoped to the marketing page; the product workspace is unchanged. */
+@media (min-width: 1024px) {
+  .landing-page {
+    width: 80%;
+    min-height: 80dvh;
+    zoom: 1.25;
+  }
+}

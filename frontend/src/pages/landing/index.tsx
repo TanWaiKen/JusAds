@@ -12,6 +12,7 @@ import Features from "./Features";
 import Pricing from "./Pricing";
 import Faq from "./Faq";
 import Footer from "./Footer";
+import "./landing.css";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -31,7 +32,7 @@ export default function LandingPage() {
   }, { scope: containerRef });
 
   return (
-    <div ref={containerRef} className="relative min-h-dvh bg-background transition-colors duration-500 font-sans flex flex-col">
+    <div ref={containerRef} className="landing-page relative bg-background transition-colors duration-500 font-sans flex flex-col">
       {/* Paper Grain Texture Layer — full landing page background */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none z-30 opacity-[0.06] mix-blend-overlay" xmlns="http://www.w3.org/2000/svg">
         <filter id="paperEmboss">

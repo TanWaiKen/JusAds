@@ -209,7 +209,7 @@ export default function DashboardAssets() {
               <p className="text-xs text-muted-foreground mt-1">
                 {activeTab === "generated"
                   ? "Generate ads in a task and they'll appear here."
-                  : "Upload reference photos in Easy Mode or chat, and they'll appear here."}
+                  : "Upload reference photos in Easy Mode or Advanced Mode, and they'll appear here."}
               </p>
             </div>
           )}
