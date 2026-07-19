@@ -102,6 +102,16 @@ export interface VideoPlan {
   brief: string;
   platform: string;
   aspectRatio: string;
+  voiceoverType?: "elevenlabs" | "omni";
+  pipelineVersion?: string;
+  sceneGridUrl?: string;
+  frameUrls?: string[];
+  referenceImageUrls?: string[];
+  productIntegration?: string;
+  /** Requested duration persisted by the V3 director plan, in seconds. */
+  durationSec?: number;
+  /** Target market persisted by the V3 director plan. */
+  market?: string;
   scenes: VideoPlanScene[];
 }
 
@@ -657,21 +667,41 @@ export function normalizeVideoPlan(raw: unknown): VideoPlan | undefined {
   const rawScenes = record.scenes;
   if (!Array.isArray(rawScenes)) return undefined;
 
+  const asStringArray = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+  const frameUrls = asStringArray(record.frame_urls ?? record._frame_urls);
+  const sceneGridUrl = typeof record._grid_url === "string"
+    ? record._grid_url
+    : typeof record.grid_url === "string" ? record.grid_url : undefined;
+
   const scenes: VideoPlanScene[] = [];
   for (const entry of rawScenes) {
     if (typeof entry !== "object" || entry === null) continue;
     const s = entry as Record<string, unknown>;
     scenes.push({
-      index: typeof s.index === "number" ? s.index : scenes.length,
-      description: typeof s.description === "string" ? s.description : "",
-      shotType: typeof s.shot_type === "string" ? s.shot_type : "",
-      cameraMovement: typeof s.camera_movement === "string" ? s.camera_movement : "",
+      index: typeof s.index === "number"
+        ? s.index
+        : typeof s.scene_index === "number" ? Math.max(0, s.scene_index - 1) : scenes.length,
+      description: typeof s.description === "string"
+        ? s.description
+        : typeof s.visual_description === "string" ? s.visual_description : "",
+      shotType: typeof s.shot_type === "string"
+        ? s.shot_type
+        : typeof s.camera_angle === "string" ? s.camera_angle : "",
+      cameraMovement: typeof s.camera_movement === "string"
+        ? s.camera_movement
+        : typeof s.camera_angle === "string" ? s.camera_angle : "",
       subtitle: typeof s.subtitle === "string" ? s.subtitle : "",
-      script: typeof s.script === "string" ? s.script : "",
-      sfx: typeof s.sfx === "string" ? s.sfx : "",
+      script: typeof s.script === "string"
+        ? s.script
+        : typeof s.voiceover === "string" ? s.voiceover : "",
+      sfx: typeof s.sfx === "string"
+        ? s.sfx
+        : typeof s.transition_to_next === "string" ? s.transition_to_next : "",
       duration: typeof s.duration === "number" ? s.duration : 5,
       keyframeS3Key: typeof s.keyframe_s3_key === "string" ? s.keyframe_s3_key : "",
-      keyframeUrl: typeof s.keyframe_url === "string" ? s.keyframe_url : "",
+      keyframeUrl: typeof s.keyframe_url === "string" ? s.keyframe_url : frameUrls[scenes.length] ?? "",
     });
   }
 
@@ -682,6 +712,14 @@ export function normalizeVideoPlan(raw: unknown): VideoPlan | undefined {
     brief: typeof record.brief === "string" ? record.brief : "",
     platform: typeof record.platform === "string" ? record.platform : "",
     aspectRatio: typeof record.aspect_ratio === "string" ? record.aspect_ratio : "9:16",
+    voiceoverType: record.voiceover_type === "omni" ? "omni" : "elevenlabs",
+    pipelineVersion: typeof record.pipeline_version === "string" ? record.pipeline_version : undefined,
+    sceneGridUrl,
+    frameUrls,
+    referenceImageUrls: asStringArray(record.reference_image_urls),
+    productIntegration: typeof record.product_integration === "string" ? record.product_integration : undefined,
+    durationSec: typeof record.duration_sec === "number" ? record.duration_sec : undefined,
+    market: typeof record.market === "string" ? record.market : undefined,
     scenes,
   };
 }
@@ -696,6 +734,14 @@ function serializeVideoPlan(plan: VideoPlan): Record<string, unknown> {
     brief: plan.brief,
     platform: plan.platform,
     aspect_ratio: plan.aspectRatio,
+    voiceover_type: plan.voiceoverType || "elevenlabs",
+    pipeline_version: plan.pipelineVersion,
+    grid_url: plan.sceneGridUrl,
+    frame_urls: plan.frameUrls,
+    reference_image_urls: plan.referenceImageUrls,
+    product_integration: plan.productIntegration,
+    duration_sec: plan.durationSec,
+    market: plan.market,
     scenes: plan.scenes.map((s) => ({
       index: s.index,
       description: s.description,

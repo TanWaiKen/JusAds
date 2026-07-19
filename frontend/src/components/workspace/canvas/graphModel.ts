@@ -47,6 +47,10 @@ export interface PipelineState {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   viewport: Viewport;
+  /** V3 storyboard data retained alongside the visual graph. */
+  video_plan?: unknown;
+  /** Persisted Advanced Mode settings (kept as JSON-compatible data). */
+  generation_settings?: Record<string, unknown>;
 }
 
 export interface Point {
@@ -106,6 +110,8 @@ export function serializePipeline(state: PipelineState): unknown {
       panY: state.viewport.panY,
       zoom: state.viewport.zoom,
     },
+    ...(state.video_plan !== undefined ? { video_plan: state.video_plan } : {}),
+    ...(state.generation_settings !== undefined ? { generation_settings: state.generation_settings } : {}),
   };
 }
 
@@ -150,7 +156,19 @@ export function deserializePipeline(raw: unknown): PipelineState {
     zoom: Number(rawViewport.zoom ?? 1),
   };
 
-  return { nodes, edges, viewport };
+  const videoPlan = data.video_plan;
+  const rawSettings = data.generation_settings;
+  const generationSettings = typeof rawSettings === "object" && rawSettings !== null && !Array.isArray(rawSettings)
+    ? rawSettings as Record<string, unknown>
+    : undefined;
+
+  return {
+    nodes,
+    edges,
+    viewport,
+    ...(videoPlan !== undefined ? { video_plan: videoPlan } : {}),
+    ...(generationSettings ? { generation_settings: generationSettings } : {}),
+  };
 }
 
 // ─── Node Mutations ──────────────────────────────────────────────────────────

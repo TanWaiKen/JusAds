@@ -46,7 +46,7 @@ interface ChatbotPanelProps {
   generationOptions: GenerationOptions;
   initialPipelineState?: PipelineState;
   onOutputsUpdate?: (ads: GeneratedAdView[]) => void;
-  onVideoPlanUpdate?: (plan: VideoPlan | null) => void;
+  onVideoPlanUpdate?: (plan: VideoPlan | null, revealOutputs?: boolean) => void;
   triggerPrompt?: string | null;
   onTriggerPromptUsed?: () => void;
   revisionContext?: Pick<GenerationOptions, "parentAdId" | "parentAssetUrl"> | null;
@@ -205,8 +205,8 @@ export function ChatbotPanel({
   const setOutputs = (ads: GeneratedAdView[]): void => {
     onOutputsUpdate?.(ads);
   };
-  const setVideoPlan = (plan: VideoPlan | null): void => {
-    onVideoPlanUpdate?.(plan);
+  const setVideoPlan = (plan: VideoPlan | null, revealOutputs = true): void => {
+    onVideoPlanUpdate?.(plan, revealOutputs);
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -326,6 +326,9 @@ export function ChatbotPanel({
 
         // Also load any previously-generated ads so the Output Gallery persists on refresh.
         const persistedAds = await getGeneratedAds(projectId, taskId);
+        const hasFinalV3Video = persistedAds.some(
+          (ad) => ad.mediaType === "video" && /\/final_video\.mp4(?:\?|$)/.test(ad.publicUrl ?? "")
+        );
         if (!cancelled && persistedAds.length > 0) {
           setOutputs(persistedAds);
 
@@ -355,11 +358,13 @@ export function ChatbotPanel({
         }
 
         // Restore a persisted video_plan (storyboard) if one exists in pipeline_state (B3).
-        if (!cancelled && initialPipelineState) {
+        if (!cancelled && initialPipelineState && !hasFinalV3Video) {
           const rawPlan = (initialPipelineState as unknown as Record<string, unknown>).video_plan;
           if (rawPlan) {
             const restored = normalizeVideoPlan(rawPlan);
-            if (restored) setVideoPlan(restored);
+            // A restored plan should be available in Outputs without stealing focus
+            // when the user intentionally switches back to Agent Chatbot.
+            if (restored) setVideoPlan(restored, false);
           }
         }
       } catch (err) {

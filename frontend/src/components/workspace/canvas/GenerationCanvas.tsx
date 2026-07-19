@@ -16,7 +16,7 @@ import { VideoPlanStoryboard } from "@/components/workspace/canvas/VideoPlanStor
 import { SettingsPanel } from "@/components/workspace/canvas/SettingsPanel";
 import type { GenerationSettings } from "@/components/workspace/canvas/SettingsPanel";
 import type { GeneratedAdView, VideoPlan } from "@/services/generationApi";
-import { executeVideoPlan } from "@/services/generationApi";
+import { executeVideoPlan, getGeneratedAds } from "@/services/generationApi";
 
 gsap.registerPlugin(useGSAP);
 
@@ -58,6 +58,24 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   useEffect(() => {
     setOutputs(mapGeneratedAds(state.pipeline));
   }, [state.pipeline]);
+
+  // A render can finish while a previous server version still has a pending
+  // video_plan persisted. Prefer the already-saved final MP4 over that stale
+  // approval gate so reopening Outputs shows the completed video immediately.
+  useEffect(() => {
+    let cancelled = false;
+
+    void getGeneratedAds(projectId, taskId).then((persistedAds) => {
+      if (cancelled || persistedAds.length === 0) return;
+      setOutputs(persistedAds);
+      const hasFinalV3Video = persistedAds.some(
+        (ad) => ad.mediaType === "video" && /\/final_video\.mp4(?:\?|$)/.test(ad.publicUrl ?? "")
+      );
+      if (hasFinalV3Video) setVideoPlan(null);
+    });
+
+    return () => { cancelled = true; };
+  }, [projectId, taskId]);
 
   // Load persisted settings from initialState if available (B4).
   const loadedSettings = (() => {
@@ -101,22 +119,45 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
     });
   };
 
-  // Video V2: handle the Continue button from the Outputs tab storyboard.
+  // Render an approved V3 storyboard and wait for its explicit terminal state.
   const handleContinuePlan = useCallback(async (approvedPlan: VideoPlan) => {
     setPlanRendering(true);
+    let completedPipeline: PipelineState | null = null;
+    let renderError: string | null = null;
+
     try {
       for await (const event of executeVideoPlan(
         projectId, taskId, approvedPlan, !settings.complianceEnabled
       )) {
         if (event.pipeline_state) {
+          completedPipeline = event.pipeline_state;
           dispatch({ type: "SET_PIPELINE", pipeline: event.pipeline_state });
+          setOutputs(mapGeneratedAds(event.pipeline_state));
         }
+
         if (event.error) {
-          toast.error(`Video render error: ${event.error}`);
+          renderError = event.error;
+        } else if (event.status === "failed") {
+          const details = event.data;
+          renderError = typeof details === "object" && details !== null && typeof (details as { error?: unknown }).error === "string"
+            ? (details as { error: string }).error
+            : "Video render failed.";
         }
       }
-      setVideoPlan(null);
-      toast.success("Video rendered successfully!");
+
+      if (renderError) {
+        toast.error(`Video render error: ${renderError}`);
+      } else if (completedPipeline) {
+        // The completed state removes video_plan and adds the final video. Keep
+        // the local view in sync with persistence before releasing the gate.
+        setVideoPlan(null);
+        setActiveTab("outputs");
+        const persistedAds = await getGeneratedAds(projectId, taskId);
+        if (persistedAds.length > 0) setOutputs(persistedAds);
+        toast.success("Video rendered successfully!");
+      } else {
+        toast.error("Video render ended before the final video was confirmed.");
+      }
     } catch (err) {
       console.error(err);
       toast.error("Failed to render the video");
@@ -158,6 +199,15 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   const [panelWidth, setPanelWidth] = useState(380);
   const [isResizing, setIsResizing] = useState(false);
   const [isPanelMaximized, setIsPanelMaximized] = useState(false);
+
+  const handleVideoPlanUpdate = useCallback((plan: VideoPlan | null, revealOutputs = true): void => {
+    setVideoPlan(plan);
+    if (plan && revealOutputs) {
+      // A new storyboard needs enough horizontal room to review its keyframes and scene details.
+      setActiveTab("outputs");
+      setIsPanelMaximized(true);
+    }
+  }, []);
 
   const startResizing = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -287,7 +337,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
               {isPanelMaximized ? "⇥" : "⇤"}
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-hidden">
             {activeTab === "chatbot" ? (
               <ChatbotPanel
                 projectId={projectId}
@@ -309,15 +359,16 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                   productCategory: settings.productCategory,
                   gender: settings.gender,
                 }}
-                initialPipelineState={initialState}
+                initialPipelineState={state.pipeline}
                 onOutputsUpdate={setOutputs}
-                onVideoPlanUpdate={setVideoPlan}
+                onVideoPlanUpdate={handleVideoPlanUpdate}
               />
             ) : activeTab === "outputs" ? (
-              <div className="flex flex-col h-full overflow-y-auto">
+              <div className="h-full overflow-y-auto">
                 {videoPlan && (
                   <div className="border-b p-3">
                     <VideoPlanStoryboard
+                      key={videoPlan.planId}
                       plan={videoPlan}
                       onContinue={handleContinuePlan}
                       isRendering={planRendering}
@@ -362,9 +413,10 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                 onUpdateProps={(nodeId, updates) => dispatch({ type: "UPDATE_NODE_PROPS", nodeId, ...updates })}
                 onDelete={handleDelete}
                 onSendRevision={(node, comment) => {
+                  const isAssetNode = node.type === "image" || node.type === "video" || node.type === "audio";
                   setRevisionContext({
-                    parentAdId: node.props.ad_id || undefined,
-                    parentAssetUrl: node.props.asset_url || node.output || undefined,
+                    parentAdId: isAssetNode ? (node.props.ad_id || undefined) : undefined,
+                    parentAssetUrl: isAssetNode ? (node.props.asset_url || node.output || undefined) : undefined,
                   });
                   setChatbotPrompt(`Revise the selected ${node.type} version with this feedback: ${comment}`);
                   setActiveTab("chatbot");

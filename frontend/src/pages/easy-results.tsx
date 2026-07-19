@@ -273,6 +273,14 @@ export default function EasyResultsPage() {
                         alt={`Generated version ${index + 1}`}
                         className="aspect-square w-full bg-surface-muted object-contain"
                       />
+                    ) : ad.mediaType === "video" && ad.publicUrl ? (
+                      <video
+                        src={ad.publicUrl}
+                        className="aspect-square w-full bg-black object-cover"
+                        muted
+                        playsInline
+                        preload="metadata"
+                      />
                     ) : (
                       <div className="flex aspect-square items-center justify-center bg-surface-inset text-xs text-text-muted">{ad.mediaType}</div>
                     )}
@@ -291,6 +299,20 @@ export default function EasyResultsPage() {
             {selected?.mediaType === "image" && selected.publicUrl && (
               <div className="overflow-hidden rounded-2xl border border-border-default bg-surface-card">
                 <img src={selected.publicUrl} alt="Selected generated ad" className="max-h-[560px] w-full object-contain bg-surface-inset" />
+              </div>
+            )}
+
+            {selected?.mediaType === "video" && selected.publicUrl && (
+              <div className="overflow-hidden rounded-2xl border border-border-default bg-black">
+                <video
+                  src={selected.publicUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="max-h-[560px] w-full object-contain"
+                >
+                  Your browser does not support video playback.
+                </video>
               </div>
             )}
           </section>

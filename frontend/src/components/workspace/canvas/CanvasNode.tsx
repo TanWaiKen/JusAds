@@ -97,6 +97,13 @@ export function CanvasNode({
   onContextMenu,
 }: CanvasNodeProps) {
   const [showPreview, setShowPreview] = useState(false);
+  const referenceUrls: string[] = node.type === "input" && node.props?.reference_urls
+    ? (Array.isArray(node.props.reference_urls)
+        ? node.props.reference_urls.filter((url): url is string => typeof url === "string").slice(0, 4)
+        : typeof node.props.reference_urls === "string"
+          ? node.props.reference_urls.split(",").map((url: string) => url.trim()).filter(Boolean).slice(0, 4)
+          : [])
+    : [];
   const colorClass = NODE_COLORS[node.type] ?? "bg-gray-500";
   const statusClass = STATUS_INDICATORS[node.status];
   const isDownloadable = node.status === "done" && DOWNLOADABLE_TYPES.has(node.type as NodeType) && !!node.output;
@@ -231,9 +238,25 @@ export function CanvasNode({
             </div>
           )}
           {node.type === "input" && (
-            <div className="italic text-muted-foreground text-[10px] line-clamp-3">
-              "{node.output}"
-            </div>
+            <>
+              {referenceUrls.length > 0 ? (
+                <div className="grid grid-cols-3 gap-1">
+                  {referenceUrls.map((url, index) => (
+                    <img
+                      key={url}
+                      src={url}
+                      alt={`Reference ${index + 1}`}
+                      className="h-12 w-full rounded border bg-background object-cover"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="italic text-muted-foreground text-[10px] line-clamp-3">
+                  "{node.output}"
+                </div>
+              )}
+              <p className="mt-1 text-[9px] text-muted-foreground">{node.output}</p>
+            </>
           )}
           {node.type === "output" && parsedCampaignOutput && (
             <div className="space-y-1.5">
@@ -274,10 +297,31 @@ export function CanvasNode({
       {/* Prompt used for generation */}
       {node.props?.prompt_used && (
         <div className="border-t border-border bg-muted/10 px-3 py-1.5">
-          <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Prompt</span>
-          <p className="mt-0.5 text-[10px] text-muted-foreground line-clamp-3 italic leading-tight">
-            "{node.props.prompt_used}"
-          </p>
+          <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+            {node.type === "orchestrator" ? "Director Plan" : "Prompt"}
+          </span>
+          {node.type === "orchestrator" ? (
+            <div className="mt-1 space-y-1">
+              {node.props.prompt_used.split("\n\n").slice(0, 2).map((sceneBlock: string, i: number) => {
+                const lines = sceneBlock.split("\n");
+                const header = lines[0] || "";
+                const visual = lines.find(l => l.startsWith("Visual:"))?.replace("Visual:", "").trim() || "";
+                return (
+                  <div key={i} className="text-[9px] text-muted-foreground border-b border-border/40 pb-1 last:border-0 last:pb-0">
+                    <span className="font-semibold text-primary">{header}</span>
+                    <p className="line-clamp-1 italic">{visual}</p>
+                  </div>
+                );
+              })}
+              {node.props.prompt_used.split("\n\n").length > 2 && (
+                <span className="text-[8px] text-muted-foreground block text-right font-medium">Click node to inspect all...</span>
+              )}
+            </div>
+          ) : (
+            <p className="mt-0.5 text-[10px] text-muted-foreground line-clamp-3 italic leading-tight">
+              "{node.props.prompt_used}"
+            </p>
+          )}
         </div>
       )}
 

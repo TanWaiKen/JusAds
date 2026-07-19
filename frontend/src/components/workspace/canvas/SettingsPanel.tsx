@@ -296,8 +296,8 @@ function GenerationTab({
         label="Video V3 — Character Grid Pipeline"
         description={
           settings.videoV2Enabled
-            ? "Director → Character Sheet → Scene Grid → Veo first+last frame → Dual Output"
-            : "Single Veo clip (V1). Enable for rich multi-scene character-consistent video"
+            ? "Director → Character Sheet → Scene Grid → Gemini Omni → Dual Output"
+            : "Single video clip (V1). Enable for rich multi-scene character-consistent video"
         }
         enabled={settings.videoV2Enabled}
         onToggle={() => onUpdate({ videoV2Enabled: !settings.videoV2Enabled })}

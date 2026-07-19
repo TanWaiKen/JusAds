@@ -388,7 +388,7 @@ function MediaPreview({ ad }: MediaPreviewProps): React.ReactElement {
       <img
         src={publicUrl}
         alt={caption ?? "Generated image ad"}
-        className="h-40 w-full rounded-md object-cover shadow-[0_0_0_1px_#ebebeb] dark:shadow-[0_0_0_1px_#2e2e2e]"
+        className="max-h-80 w-full rounded-md bg-muted object-contain shadow-[0_0_0_1px_#ebebeb] dark:shadow-[0_0_0_1px_#2e2e2e]"
         loading="lazy"
       />
     );
@@ -666,7 +666,7 @@ export function OutputGallery({ ads, isSidebar, projectId, taskId }: OutputGalle
     : "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3";
 
   return (
-    <div ref={containerRef} className="flex h-full flex-col gap-6 overflow-y-auto p-4">
+    <div ref={containerRef} className="flex flex-col gap-6 p-4">
       {!hasOutputs && (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
           No generated outputs yet.

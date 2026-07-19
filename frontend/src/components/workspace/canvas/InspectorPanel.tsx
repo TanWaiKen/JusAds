@@ -13,10 +13,36 @@ interface InspectorPanelProps {
   onSendRevision?: (node: CanvasNode, comment: string) => void;
 }
 
+interface ParsedScene {
+  index: string;
+  duration: string;
+  visual: string;
+  voiceover: string;
+  subtitle: string;
+}
+
+function parseDirectorPrompt(prompt: string): ParsedScene[] {
+  const blocks = prompt.split("\n\n").filter(Boolean);
+  return blocks.map((block) => {
+    const lines = block.split("\n").map((l) => l.trim());
+    const header = lines[0] || ""; // e.g. "Scene 1 — 5s"
+    const matchHeader = header.match(/Scene\s+(\d+)\s*(?:—\s*(.*))?/i);
+    const index = matchHeader ? matchHeader[1] : "?";
+    const duration = matchHeader && matchHeader[2] ? matchHeader[2] : "";
+
+    const visual = lines.find((l) => l.startsWith("Visual:"))?.replace("Visual:", "").trim() || "";
+    const voiceover = lines.find((l) => l.startsWith("Voice-over:"))?.replace("Voice-over:", "").trim() || "";
+    const subtitle = lines.find((l) => l.startsWith("On-screen text:"))?.replace("On-screen text:", "").trim() || "";
+
+    return { index, duration, visual, voiceover, subtitle };
+  });
+}
+
 export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }: InspectorPanelProps) {
   const [editLabel, setEditLabel] = useState("");
   const [editProps, setEditProps] = useState<Record<string, string>>({});
   const [revisionComment, setRevisionComment] = useState("");
+  const [showRawPrompt, setShowRawPrompt] = useState(false);
 
   const handleSendRevision = () => {
     if (onSendRevision && node && revisionComment.trim()) {
@@ -30,6 +56,7 @@ export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }
     if (node) {
       setEditLabel(node.label);
       setEditProps({ ...node.props });
+      setShowRawPrompt(false);
     }
   }, [node]);
 
@@ -104,20 +131,75 @@ export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }
       {Object.keys(editProps).length > 0 && (
         <div className="mb-4">
           <h4 className="mb-2 text-xs font-medium text-muted-foreground">Properties</h4>
-          <div className="space-y-2">
-            {Object.entries(editProps).map(([key, value]) => (
-              <div key={key}>
-                <label className="text-xs text-muted-foreground block mb-0.5">{key}</label>
-                <input
-                  type="text"
-                  value={value}
-                  onChange={(e) => handlePropChange(key, e.target.value)}
-                  onBlur={() => handlePropBlur(key)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handlePropBlur(key); }}
-                  className="w-full rounded-md border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-            ))}
+          <div className="space-y-3">
+            {Object.entries(editProps).map(([key, value]) => {
+              if (key === "prompt_used" && node.type === "orchestrator") {
+                const parsedScenes = parseDirectorPrompt(value || "");
+                return (
+                  <div key={key} className="flex flex-col gap-2 border-t pt-3 mt-3 border-border">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Script Details</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowRawPrompt(!showRawPrompt)}
+                        className="text-[10px] font-semibold text-primary hover:underline cursor-pointer"
+                      >
+                        {showRawPrompt ? "View Beautiful Table" : "Edit Raw Script Text"}
+                      </button>
+                    </div>
+                    {showRawPrompt ? (
+                      <textarea
+                        value={value}
+                        onChange={(e) => handlePropChange(key, e.target.value)}
+                        onBlur={() => handlePropBlur(key)}
+                        className="w-full text-xs font-mono p-2.5 rounded-md border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[260px] leading-normal"
+                        placeholder="Scene 1 — 5s&#10;Visual: ...&#10;Voice-over: ...&#10;On-screen text: ..."
+                      />
+                    ) : (
+                      <div className="overflow-x-auto border border-border rounded-lg bg-card shadow-sm max-w-full">
+                        <table className="min-w-full divide-y divide-border text-[11px]">
+                          <thead className="bg-muted/65">
+                            <tr>
+                              <th className="px-2.5 py-2 text-left font-bold text-muted-foreground w-12">Scene</th>
+                              <th className="px-2.5 py-2 text-left font-bold text-muted-foreground min-w-[130px]">Visual Description</th>
+                              <th className="px-2.5 py-2 text-left font-bold text-muted-foreground min-w-[110px]">Voiceover (TTS)</th>
+                              <th className="px-2.5 py-2 text-left font-bold text-muted-foreground min-w-[100px]">On-Screen Text</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border bg-background">
+                            {parsedScenes.map((s, idx) => (
+                              <tr key={idx} className="hover:bg-muted/10 transition-colors">
+                                <td className="px-2.5 py-2 font-bold text-primary align-top">
+                                  {s.index}
+                                  {s.duration && <span className="block text-[9px] font-normal text-muted-foreground mt-0.5">{s.duration}</span>}
+                                </td>
+                                <td className="px-2.5 py-2 text-foreground leading-relaxed align-top whitespace-pre-wrap">{s.visual}</td>
+                                <td className="px-2.5 py-2 text-foreground leading-relaxed align-top whitespace-pre-wrap">{s.voiceover}</td>
+                                <td className="px-2.5 py-2 text-foreground leading-relaxed align-top whitespace-pre-wrap">{s.subtitle}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div key={key}>
+                  <label className="text-xs text-muted-foreground block mb-0.5">{key}</label>
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => handlePropChange(key, e.target.value)}
+                    onBlur={() => handlePropBlur(key)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handlePropBlur(key); }}
+                    className="w-full rounded-md border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
