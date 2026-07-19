@@ -14,10 +14,13 @@ TARGET CONTEXT:
 - Ethnicity: {ethnicity}
 - Age Group: {age_group}
 
+LOCALIZATION PLAN:
+{localization_plan}
+
 {feedback_section}
 
 LANGUAGE REQUIREMENT:
-The original text is written in {detected_language}. You MUST produce the rewritten text in the SAME language ({detected_language}). Do NOT translate to English or any other language.
+{language_instruction}
 
 PLATFORM TONE GUIDE:
 - TikTok: casual, short, punchy, emoji OK, Gen Z slang acceptable, vibrant
@@ -31,8 +34,8 @@ RULES:
 1. Fix ONLY the flagged compliance violations
 2. Preserve the original product, brand name, and call-to-action
 3. Match the platform tone and target audience age group
-4. Localize appropriately for the {ethnicity} audience in {market}
-5. Maintain the same language as the original
+4. Localize appropriately for the {ethnicity} audience in {market}, following the localization plan
+5. Follow the language requirement above; it takes precedence over the source language
 6. Stay within the length constraint
 
 Return ONLY a JSON object:

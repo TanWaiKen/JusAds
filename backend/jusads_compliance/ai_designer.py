@@ -68,7 +68,7 @@ async def plan_edit(
         On Gemini failure, falls back to SCULPT template.
     """
     from shared.clients import gemini
-from shared.config import MODEL_TEXT
+    from shared.config import MODEL_TEXT
     from google.genai import types as genai_types
 
     prompt = f"""You are an AI art director for advertising compliance.
@@ -86,6 +86,15 @@ Decide the BEST edit approach:
 
 Then write an inpainting prompt (max 60 words) describing what
 should appear in the masked region.
+
+For copy, certifications and sensitive symbols:
+- Preserve the promotional purpose, but never invent or redraw readable claims,
+  prices, halal marks, official seals, awards, medical approvals or endorsements.
+- If a text claim must change, remove it from the generated pixels and leave a
+  clean, brand-consistent text-safe area. Exact approved localised copy is a
+  separate overlay/review step, not something to hallucinate into an image.
+- Remove or replace only the problematic symbol or conflict/violent context;
+  never target a person because of perceived nationality, ethnicity or religion.
 
 Return JSON: {{"mode": "INPAINT_INSERT"|"INPAINT_REMOVE",
 "inpaint_prompt": "...", "reasoning": "..."}}"""

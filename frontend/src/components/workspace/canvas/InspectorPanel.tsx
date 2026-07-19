@@ -10,7 +10,7 @@ interface InspectorPanelProps {
   node: CanvasNode | null;
   onUpdateProps?: (nodeId: string, updates: { label?: string; props?: Record<string, string> }) => void;
   onDelete?: (nodeId: string) => void;
-  onSendRevision?: (nodeLabel: string, comment: string) => void;
+  onSendRevision?: (node: CanvasNode, comment: string) => void;
 }
 
 export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }: InspectorPanelProps) {
@@ -20,7 +20,7 @@ export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }
 
   const handleSendRevision = () => {
     if (onSendRevision && node && revisionComment.trim()) {
-      onSendRevision(node.label, revisionComment.trim());
+      onSendRevision(node, revisionComment.trim());
       setRevisionComment("");
     }
   };

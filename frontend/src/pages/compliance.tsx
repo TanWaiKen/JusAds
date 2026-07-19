@@ -71,6 +71,9 @@ export default function DashboardCompliance() {
 
   // Restore task state when navigated from task-detail.tsx
   useEffect(() => {
+    // A task URL is reloadable/shareable. Let the direct API restore below be
+    // authoritative rather than relying on transient React navigation state.
+    if (routeTaskId) return;
     if (!restoredState?.restoredResult || !restoredState.restoredTaskId) return;
 
     const { restoredTaskId, restoredStep, restoredResult, restoredMediaType } = restoredState;
@@ -100,8 +103,6 @@ export default function DashboardCompliance() {
   useEffect(() => {
     if (directLoadAttempted.current) return;
     if (!routeProjectId || !routeTaskId) return;
-    if (restoredState?.restoredResult) return; // already handled above
-
     directLoadAttempted.current = true;
 
     (async () => {
@@ -147,13 +148,27 @@ export default function DashboardCompliance() {
         if (!savedResult) return;
 
         const mediaType = (compliance?.media_type as string) ?? "image";
+        const persistedRemix = resultJson?.remix as Record<string, unknown> | undefined;
+        // A video is eligible for Compare only after an actual Omni edit. This
+        // prevents historical redact/mute fallback assets from being presented
+        // as a completed AI remediation.
+        const hasConfirmedRemix = compliance?.status === "remediated"
+          && !!compliance?.s3_remix_key
+          && (mediaType !== "video" || persistedRemix?.omni_edit_status === "completed");
+        const restoredStep = hasConfirmedRemix ? "compare" : savedStep;
+        const restoredRemix = pipelineState?.compliance_remix
+          ?? persistedRemix
+          ?? (hasConfirmedRemix ? {
+            type: "remix",
+            s3_remix_url: compliance?.s3_remix_key,
+          } : null);
 
         // Determine which steps have been completed based on saved state
         const completedSteps: Project["completedSteps"] = ["upload", "check", "review"];
-        if (savedStep === "remix" || savedStep === "compare") {
+        if (restoredStep === "remix" || restoredStep === "compare") {
           completedSteps.push("remix");
         }
-        if (savedStep === "compare") {
+        if (restoredStep === "compare") {
           completedSteps.push("compare");
         }
 
@@ -161,11 +176,11 @@ export default function DashboardCompliance() {
           id: routeProjectId,
           campaignName: (savedResult.check_id as string) ?? routeTaskId,
           mediaType: mediaType as Project["mediaType"],
-          currentStep: (savedStep as Project["currentStep"]) ?? "review",
+          currentStep: (restoredStep as Project["currentStep"]) ?? "review",
           completedSteps,
           uploadParams: { market: (savedResult.market as string) ?? "malaysia", ethnicity: "malay", ageGroup: "all_ages", platform: "general" },
           result: savedResult as unknown as ComplianceResult,
-          remixResult: pipelineState?.compliance_remix ?? null,
+          remixResult: restoredRemix,
           error: null,
           createdAt: Date.now(),
         };
@@ -327,11 +342,14 @@ export default function DashboardCompliance() {
     });
 
     try {
-      await remix.startRemix(activeProject.result.check_id);
+      const remixResult = await remix.startRemix(activeProject.result.check_id);
+      if (!remixResult) {
+        throw new Error("Remix completed without a generated remediation asset.");
+      }
       dispatch({
         type: "SET_REMIX_RESULT",
         projectId: activeProject.id,
-        remixResult: remix,
+        remixResult,
       });
     } catch (err) {
       dispatch({
@@ -423,9 +441,10 @@ export default function DashboardCompliance() {
         return (
           <RemixStep
             remixNodes={remix.remixNodes}
+            currentNode={remix.currentNode}
             isRemixing={remix.isRemixing}
             remixComplete={remix.remixComplete}
-            remixError={activeProject.error?.message ?? null}
+            remixError={remix.remixError ?? activeProject.error?.message ?? null}
             remixOutcome={remix.remixOutcome}
             cannotFixData={remix.cannotFixData}
             imageEditResult={remix.imageEditResult}
@@ -441,6 +460,7 @@ export default function DashboardCompliance() {
             originalResult={activeProject.result}
             remixResult={activeProject.remixResult}
             mediaType={activeProject.mediaType}
+            onRegenerate={handleStartRemix}
           />
         ) : null;
     }

@@ -27,7 +27,7 @@ Generate a structured image editing prompt using the SCULPT framework. Each comp
 
 MANDATORY REQUIREMENTS — you MUST include these exact phrases in the Technical section:
 - "preserve sharp edges"
-- "no text"
+- "no unapproved text"
 - "maintain lighting direction"
 
 MANDATORY REQUIREMENTS — include platform keywords:

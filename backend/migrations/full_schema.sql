@@ -333,7 +333,25 @@ CREATE TABLE IF NOT EXISTS public.generated_ads (
     s3_media_key text,
     parent_ad_id uuid,
     status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'generating', 'completed', 'failed', 'published')),
-    metadata jsonb,
+    -- Output classification and version lineage. References must not be mixed
+    -- into the generated-output gallery.
+    asset_role text NOT NULL DEFAULT 'output'
+        CHECK (asset_role IN ('output', 'reference', 'intermediate')),
+    generation_mode text NOT NULL DEFAULT 'advanced',
+    version_number integer NOT NULL DEFAULT 1 CHECK (version_number > 0),
+    -- Explicit, queryable audience context. `market` is the target country /
+    -- market (for example `malaysia`); do not add a duplicate nationality field.
+    market text,
+    ethnicity text,
+    age_group text,
+    target_language text,
+    -- Immutable snapshots let a regenerated/versioned asset be reproduced with
+    -- the exact persona, localisation rules and company brand theme used then.
+    generation_context jsonb NOT NULL DEFAULT '{}',
+    brand_snapshot jsonb NOT NULL DEFAULT '{}',
+    localization_snapshot jsonb NOT NULL DEFAULT '{}',
+    -- Free-form operational details only (provider response, dimensions, etc.).
+    metadata jsonb NOT NULL DEFAULT '{}',
     -- Compliance (written by compliance_bridge after generation)
     compliance_status text,
     compliance_result jsonb,
@@ -342,6 +360,9 @@ CREATE TABLE IF NOT EXISTS public.generated_ads (
     distributed_at timestamptz,
     distribution_platform text,
     distribution_post_id text,
+    -- CapCut and rendered deliverables for video workflows.
+    s3_draft_key text,
+    s3_rendered_key text,
     --
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
@@ -528,6 +549,3 @@ CREATE INDEX IF NOT EXISTS idx_tavily_usage_time
 
 -- ─── ALTER generated_ads — CapCut dual output columns ────────────────────────
 
-ALTER TABLE public.generated_ads
-    ADD COLUMN IF NOT EXISTS s3_draft_key text,
-    ADD COLUMN IF NOT EXISTS s3_rendered_key text;

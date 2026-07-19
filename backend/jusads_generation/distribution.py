@@ -17,7 +17,7 @@ logging prefix and graceful degradation per steering.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from zernio import Zernio
 
@@ -48,6 +48,39 @@ def _resolve_account_id(platform: str) -> Optional[str]:
     return mapping.get(platform.lower().strip()) or None
 
 
+def configured_distribution_accounts() -> list[dict]:
+    """Expose configured defaults when live Zernio account discovery is unavailable."""
+    accounts = []
+    for platform, account_id in {
+        "tiktok": ZERNIO_ACCOUNT_TIKTOK,
+        "instagram": ZERNIO_ACCOUNT_INSTAGRAM,
+    }.items():
+        if account_id:
+            accounts.append({
+                "id": account_id,
+                "platform": platform,
+                "label": f"Configured {platform.title()} account",
+            })
+    return accounts
+
+
+def _is_instagram_story_asset(metadata: dict[str, Any] | None) -> bool:
+    """Return whether an image is too tall for an Instagram feed post.
+
+    Instagram feed images must be at least 0.75:1. Generated 9:16 creative is
+    therefore sent as a Story, preserving the ad instead of attempting an
+    invisible crop or returning a platform 400.
+    """
+    aspect_ratio = (metadata or {}).get("aspect_ratio")
+    if not isinstance(aspect_ratio, str) or ":" not in aspect_ratio:
+        return False
+    try:
+        width, height = (float(value.strip()) for value in aspect_ratio.split(":", 1))
+        return width > 0 and height > 0 and width / height < 0.75
+    except ValueError:
+        return False
+
+
 # --- Public API ---------------------------------------------------------------
 
 
@@ -68,6 +101,8 @@ def distribute_ad(
     media_url: str,
     media_type: str,
     caption: Optional[str] = None,
+    account_id: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
 ) -> dict:
     """Push a published ad to a social platform via Zernio using the official SDK.
 
@@ -93,8 +128,8 @@ def distribute_ad(
             "ZERNIO_API_KEY is not configured. Set it in backend/.env to enable distribution."
         )
 
-    account_id = _resolve_account_id(platform)
-    if not account_id:
+    resolved_account_id = account_id or _resolve_account_id(platform)
+    if not resolved_account_id:
         raise AccountNotConfiguredError(
             f"No Zernio account configured for platform '{platform}'. "
             f"Set ZERNIO_ACCOUNT_{platform.upper()} in backend/.env."
@@ -104,12 +139,20 @@ def distribute_ad(
     zernio_media_type = "video" if media_type in ("video", "audio") else "image"
     media_items = [{"type": zernio_media_type, "url": media_url}]
 
-    platforms_payload = [
-        {
-            "platform": platform.lower(),
-            "accountId": account_id,
-        }
-    ]
+    normalized_platform = platform.lower().strip()
+    platform_target: dict[str, Any] = {
+        "platform": normalized_platform,
+        "accountId": resolved_account_id,
+    }
+    content_type = "feed"
+    if (
+        normalized_platform == "instagram"
+        and zernio_media_type == "image"
+        and _is_instagram_story_asset(metadata)
+    ):
+        platform_target["platformSpecificData"] = {"contentType": "story"}
+        content_type = "story"
+    platforms_payload = [platform_target]
 
     tiktok_settings = None
     if platform.lower() == "tiktok":
@@ -121,8 +164,8 @@ def distribute_ad(
         }
 
     logger.info(
-        "[Distribution] Posting ad %s to %s via Zernio SDK (media=%s)",
-        ad_id, platform, media_url[:80],
+        "[Distribution] Posting ad %s to %s (%s) via Zernio SDK (media=%s)",
+        ad_id, platform, content_type, media_url[:80],
     )
 
     try:
@@ -146,7 +189,13 @@ def distribute_ad(
         if isinstance(post_obj, dict):
             post_id = post_obj.get("_id") or post_obj.get("id") or ""
         else:
-            post_id = getattr(post_obj, "id", "") or getattr(post_obj, "_id", "")
+            # The generated Zernio SDK maps JSON ``_id`` to ``field_id``
+            # because leading-underscore names are reserved by Pydantic.
+            post_id = (
+                getattr(post_obj, "id", "")
+                or getattr(post_obj, "field_id", "")
+                or getattr(post_obj, "_id", "")
+            )
     elif hasattr(result, "id"):
         post_id = getattr(result, "id", "")
 
@@ -163,7 +212,14 @@ def distribute_ad(
     except Exception as e:
         logger.warning("[Distribution] Failed to record distribution on ad %s: %s", ad_id, e)
 
-    return {"post_id": str(post_id), "status": "distributed", "platform": platform}
+    return {
+        "post_id": str(post_id),
+        "status": "distributed",
+        "platform": platform,
+        "account_id": resolved_account_id,
+        "caption": caption or "",
+        "content_type": content_type,
+    }
 
 
 def get_ad_analytics(ad_id: str, project_id: str) -> dict:

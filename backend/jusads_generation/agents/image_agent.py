@@ -19,6 +19,7 @@ row without touching any other agent's recorded output (Req 5.4, 5.5).
 import logging
 import os
 import tempfile
+import urllib.request
 import uuid
 from typing import Optional
 
@@ -30,11 +31,71 @@ from shared.prompts import IMAGE_AD_GENERATION_PROMPT
 from shared.s3_client import upload_file_public
 
 from ..platform_rules import PlatformRule
+from ..provenance import generated_ad_context_fields
 from .base import AgentResult, load_guide
 
 logger = logging.getLogger(__name__)
 
 MEDIA_TYPE = "image"
+
+
+def _edit_source_with_native_model(
+    source_url: str, feedback: str, rules: PlatformRule
+) -> tuple[Optional[str], dict]:
+    """Ask Gemini Flash Image to edit one supplied creative in-place.
+
+    This is deliberately an image-model edit, not a programmatic composition.
+    The result is returned for human review because exact typography remains a
+    generative capability rather than a guarantee.
+    """
+    if not source_url or not feedback.strip():
+        return None, {"mode": "native_edit", "applied": False}
+    try:
+        from google.genai import types
+
+        suffix = os.path.splitext(source_url.split("?", 1)[0])[1] or ".png"
+        downloaded = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        downloaded.close()
+        urllib.request.urlretrieve(source_url, downloaded.name)
+        with open(downloaded.name, "rb") as source_file:
+            source_bytes = source_file.read()
+
+        mime_type = "image/png" if suffix.lower() == ".png" else "image/jpeg"
+        prompt = (
+            "Edit this supplied advertising creative directly. Preserve its product, "
+            "brand mark, framing, colours, lighting and overall composition unless the "
+            "following request explicitly changes them. Apply all requested promotional "
+            "copy and visual elements in the finished image; do not merely describe them. "
+            "Keep text legible and do not invent claims, certifications or terms. "
+            f"USER REQUEST: {feedback.strip()} Return only the edited image."
+        )
+        response = gemini.models.generate_content(
+            model=MODEL_IMAGE_CREATIVE,
+            contents=[
+                types.Part.from_bytes(data=source_bytes, mime_type=mime_type),
+                types.Part.from_text(text=prompt),
+            ],
+            config=types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+                image_config=types.ImageConfig(
+                    aspect_ratio=rules["aspect_ratio"],
+                    image_size=_image_size_for_dimension(rules.get("max_dimension", 0) or 0),
+                    output_mime_type="image/jpeg",
+                ),
+            ),
+        )
+        for candidate in response.candidates or []:
+            for part in candidate.content.parts or []:
+                if part.inline_data and part.inline_data.data:
+                    output = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+                    output.write(part.inline_data.data)
+                    output.close()
+                    logger.info("[ImageAgent] Gemini Flash Image source edit successful.")
+                    return output.name, {"mode": "native_edit", "applied": True, "review_required": True}
+        raise ValueError("Gemini Flash Image returned no edited image")
+    except Exception as exc:
+        logger.warning("[ImageAgent] Gemini Flash Image source edit failed: %s", exc)
+        return None, {"mode": "native_edit", "applied": False, "error": str(exc), "review_required": True}
 
 
 def _image_size_for_dimension(max_dimension: int) -> str:
@@ -214,6 +275,7 @@ def _record_row(
     prompt_used: str,
     s3_media_key: Optional[str],
     metadata: dict,
+    generation_context: Optional[dict] = None,
 ) -> Optional[str]:
     """Insert one ``generated_ads`` row and return its id (or ``None``).
 
@@ -234,6 +296,7 @@ def _record_row(
                     "s3_media_key": s3_media_key,
                     "status": status,
                     "metadata": metadata,
+                    **generated_ad_context_fields(generation_context),
                 }
             )
             .execute()
@@ -254,6 +317,7 @@ async def generate(
     platform: str,
     rules: PlatformRule,
     reference_parts: list,
+    generation_context: Optional[dict] = None,
 ) -> AgentResult:
 
     # GoogleSearch for visual trend context (graceful degradation on failure)
@@ -270,9 +334,19 @@ async def generate(
     visual_prompt = _refine_prompt(enriched_brief, guide, has_reference=bool(reference_parts))
 
     generated_path: Optional[str] = None
+    revision_edit: dict = {"mode": "native_edit", "applied": False}
     s3_key = f"generated_ads/{project_id}/{task_id}/image_{uuid.uuid4().hex[:6]}.jpg"
     try:
-        generated_path = _generate_native_image(visual_prompt, rules, reference_parts)
+        # A revision is a true Flash Image edit of the selected source asset.
+        # It is intentionally not replaced by a manual text compositor.
+        if generation_context:
+            generated_path, revision_edit = _edit_source_with_native_model(
+                generation_context.get("parent_asset_url", ""),
+                generation_context.get("revision_feedback", ""),
+                rules,
+            )
+        if not generated_path:
+            generated_path = _generate_native_image(visual_prompt, rules, reference_parts)
         if not generated_path:
             generated_path = _create_fallback_image(visual_prompt)
 
@@ -293,7 +367,10 @@ async def generate(
                 "s3_url": s3_url,
                 "aspect_ratio": rules.get("aspect_ratio"),
                 "max_dimension": rules.get("max_dimension"),
+                "localization_plan": _localization_plan_from_brief(brief),
+                "revision_edit": revision_edit,
             },
+            generation_context=generation_context,
         )
 
         logger.info("[ImageAgent] Completed image ad (ad_id=%s)", ad_id)
@@ -318,6 +395,7 @@ async def generate(
             prompt_used=visual_prompt[:500],
             s3_media_key=None,
             metadata={"error": str(e)},
+            generation_context=generation_context,
         )
         return AgentResult(
             ad_id=fail_id,
@@ -335,4 +413,14 @@ async def generate(
                 os.unlink(generated_path)
             except Exception:
                 pass
+
+
+def _localization_plan_from_brief(brief: str) -> str:
+    """Persist the explicit localisation plan that the orchestrator gave this agent."""
+    marker = "[LOCALIZATION PLAN:"
+    start = brief.find(marker)
+    if start < 0:
+        return ""
+    end = brief.find("]", start)
+    return brief[start + len(marker): end if end >= 0 else None].strip()
 

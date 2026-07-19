@@ -3,6 +3,7 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import type { ComplianceResult, Violation } from "@/services/complianceApi";
 import { ViolationClipPlayer } from "@/components/compliance/ViolationClipPlayer";
+import { Button } from "@/components/ui/button";
 
 gsap.registerPlugin(useGSAP);
 
@@ -10,6 +11,7 @@ interface ComparisonViewProps {
   originalResult: ComplianceResult;
   remixResult: unknown | null;
   mediaType: "text" | "image" | "audio" | "video";
+  onRegenerate: () => void;
 }
 
 /**
@@ -80,7 +82,7 @@ function getRemixScore(remixResult: unknown): number | null {
  * Left panel: original violations, score, clip players
  * Right panel: remixed result details or "Compliant" badge
  */
-export function ComparisonView({ originalResult, remixResult, mediaType }: ComparisonViewProps) {
+export function ComparisonView({ originalResult, remixResult, mediaType, onRegenerate }: ComparisonViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useGSAP(() => {
@@ -89,6 +91,12 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
   }, { scope: containerRef });
 
   const remixScore = getRemixScore(remixResult);
+  const remixedAssetUrl = (() => {
+    const result = remixResult as Record<string, unknown> | null;
+    if (typeof result?.s3_remix_url === "string") return result.s3_remix_url;
+    const version = result?.version as Record<string, unknown> | undefined;
+    return typeof version?.asset_url === "string" ? version.asset_url : originalResult.s3_remix_key;
+  })();
 
   return (
     <div ref={containerRef} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -260,7 +268,7 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
               {/* Remixed Score or Compliant Badge */}
               <div className="mb-4 p-3 bg-surface-panel rounded-lg">
                 <p className="text-code-xs font-code-xs text-text-muted uppercase mb-1">
-                  Compliance Score
+                  {mediaType === "image" ? "Visual Edit Quality" : "Compliance Score"}
                 </p>
                 {remixScore !== null ? (
                   <div className="flex items-baseline gap-2">
@@ -281,7 +289,7 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
               {/* Media-type-specific remixed content preview */}
               {mediaType === "image" && (
                 (() => {
-                  let remixUrl = originalResult.s3_remix_key;
+                  let remixUrl = remixedAssetUrl;
                   if (res?.imageEditResult && typeof res.imageEditResult === "object") {
                     const editResult = res.imageEditResult as Record<string, unknown>;
                     if (typeof editResult.s3_remix_url === "string") {
@@ -295,20 +303,42 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
                   ) : null;
                 })()
               )}
-              {mediaType === "audio" && originalResult.s3_remix_key && (
+              {mediaType === "audio" && remixedAssetUrl && (
                 <div className="mb-4">
-                  <audio controls className="w-full" src={originalResult.s3_remix_key}>
+                  <audio controls className="w-full" src={remixedAssetUrl}>
                     Your browser does not support the audio element.
                   </audio>
                 </div>
               )}
-              {mediaType === "video" && originalResult.s3_remix_key && (
+              {mediaType === "video" && remixedAssetUrl && (
                 <div className="mb-4 rounded-lg overflow-hidden bg-black/5 dark:bg-white/5">
-                  <video controls className="max-h-[250px] w-full" src={originalResult.s3_remix_key}>
+                  <video controls className="max-h-[250px] w-full" src={remixedAssetUrl}>
                     Your browser does not support the video element.
                   </video>
                 </div>
               )}
+
+              {mediaType === "video" && (() => {
+                const draft = res?.capcut_draft as Record<string, unknown> | undefined;
+                const draftFolder = typeof draft?.draft_folder === "string" ? draft.draft_folder : null;
+                const draftName = typeof draft?.draft_name === "string" ? draft.draft_name : null;
+                if (!draftFolder || !draftName) return null;
+                return (
+                  <div className="mb-4 rounded-lg border border-indigo-500/25 bg-indigo-500/5 p-3">
+                    <div className="mb-1 flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
+                      <span className="material-symbols-outlined text-[18px]">movie_edit</span>
+                      <p className="text-[12px] font-semibold">Editable CapCut draft ready</p>
+                    </div>
+                    <p className="text-[12px] leading-relaxed text-text-body">
+                      In CapCut Desktop, set the Draft Location to the folder below, then open <strong>{draftName}</strong>.
+                      The timeline keeps the safe source clips and Omni-edited clips separate for manual adjustment.
+                    </p>
+                    <code className="mt-2 block break-all rounded bg-surface-inset px-2 py-1 text-[10px] text-text-muted">
+                      {draftFolder}
+                    </code>
+                  </div>
+                );
+              })()}
 
               {/* Remixed Result Details */}
               <div className="space-y-3">
@@ -320,6 +350,14 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
                     {outcome === "compliant" ? (
                       <p className="text-text-primary text-[12px] leading-relaxed">
                         The original image is fully compliant and does not require any edits.
+                      </p>
+                    ) : (res as Record<string, unknown>).verification_status === "pending_compliance_recheck" ? (
+                      <p className="text-amber-600 text-[12px] leading-relaxed">
+                        Gemini Omni edited the affected video scenes. Review this version and run a fresh compliance check before publishing.
+                      </p>
+                    ) : (res as Record<string, unknown>).localization_verified === false ? (
+                      <p className="text-amber-600 text-[12px] leading-relaxed">
+                        The visual edit is ready, but the required localised promotional copy was not verified. Review or apply the approved copy overlay before publishing.
                       </p>
                     ) : (
                       <p className="text-text-primary text-[12px] leading-relaxed">
@@ -344,6 +382,7 @@ export function ComparisonView({ originalResult, remixResult, mediaType }: Compa
                   </div>
                 )}
               </div>
+              <Button variant="outline" size="sm" onClick={onRegenerate} className="mt-4">Generate another version</Button>
             </>
           );
         })()}

@@ -17,6 +17,7 @@ import TaskDetailPage from "./pages/taskDetail";
 import NotFoundPage from "./pages/notFound";
 import CapcutDraftPage from "./pages/capcut-draft";
 import EasyGenerationPage from "./pages/easy-generation";
+import EasyResultsPage from "./pages/easy-results";
 
 function App() {
   return (
@@ -55,6 +56,11 @@ function App() {
               <Route path="project/:projectId/compliance" element={<DashboardCompliance />} />
               <Route path="project/:projectId/compliance/:taskId" element={<DashboardCompliance />} />
               <Route path="project/:projectId/easy" element={<EasyGenerationPage />} />
+              <Route path="project/:projectId/easy/:taskId" element={<EasyGenerationPage />} />
+              <Route path="project/:projectId/easy/:taskId/results" element={<EasyResultsPage />} />
+              <Route path="project/:projectId/easy/results/:taskId" element={<EasyResultsPage />} />
+              <Route path="project/:projectId/advance/:taskId" element={<TaskDetailPage />} />
+              <Route path="project/:projectId/advanced/:taskId" element={<TaskDetailPage />} />
               <Route path="project/:projectId/:taskId" element={<TaskDetailPage />} />
 
               {/* Redirect any other dashboard path to home */}

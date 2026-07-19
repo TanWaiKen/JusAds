@@ -14,6 +14,12 @@ from shared.clients import supabase
 
 logger = logging.getLogger(__name__)
 
+# UI-friendly labels used by task creation mapped to the stable persona keys
+# stored in the personas table and migration JSON.
+_AGE_GROUP_ALIASES = {
+    "teens": "gen_z",
+}
+
 
 def get_rules(
     market: str,
@@ -101,13 +107,17 @@ def get_persona(
             if row.get("age_group")
         }
 
-        # 1. Exact match on the requested age_group
-        if age_group and age_group.lower() in by_age:
+        # 1. Exact match on the requested age_group.  The task UI currently
+        # stores "teens", while persona records use the more precise "gen_z".
+        requested_age_group = _AGE_GROUP_ALIASES.get(
+            (age_group or "").lower(), (age_group or "").lower()
+        )
+        if requested_age_group and requested_age_group in by_age:
             logger.info(
                 "[RulesClient] Persona found: market=%s, ethnicity=%s, age_group=%s (exact)",
-                market, ethnicity, age_group,
+                market, ethnicity, requested_age_group,
             )
-            return by_age[age_group.lower()]
+            return by_age[requested_age_group]
 
         # 2. Fallback to 'base' persona
         if "base" in by_age:

@@ -109,6 +109,7 @@ def check_image_compliance(image_path: str, market: str, platform: str, ethnicit
         rules_text=rules_text,
         persona_text=persona_text,
         output_template=UNIFIED_OUTPUT_TEMPLATE,
+        image_description=description,
         context_framework=CONTEXT_FRAMEWORK,
         research_context="No live regulatory research available for the initial pass.",
     )
@@ -516,14 +517,16 @@ Return ONLY a JSON array: ["prompt 1", "prompt 2", ...]"""
     output_path = f"assets/results/segmented_{base_name}.png"
     overlay.save(output_path, format="PNG")
 
-    coverage = (union_mask > 0).sum() / union_mask.size * 100
-    logger.info(f"CLIPSeg segmentation: {coverage:.1f}% coverage, saved to {output_path}")
+    # NumPy scalar values cannot be checkpointed by LangGraph's msgpack
+    # serializer. Convert at the tool boundary before this result enters state.
+    coverage_percent = float(round(float((union_mask > 0).sum() / union_mask.size * 100), 1))
+    logger.info(f"CLIPSeg segmentation: {coverage_percent:.1f}% coverage, saved to {output_path}")
 
     return {
         "segmented_image_path": output_path,
         "mask_path": mask_path,
         "visual_prompts": visual_prompts,
-        "coverage_percent": round(coverage, 1),
+        "coverage_percent": coverage_percent,
     }
 
 

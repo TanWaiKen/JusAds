@@ -58,7 +58,9 @@ export interface GeneratedAdView {
   mediaType: MediaType;
   platform: string;
   publicUrl: string | null;
+  aspectRatio?: string;
   caption: string | null;
+  generationStatus?: string;
   complianceStatus: ComplianceStatus; // maps from backend final/non-final (Req 11.2)
   complianceReasons?: ComplianceReasons; // the "why" behind the verdict
 }
@@ -138,6 +140,8 @@ export interface GenerationOptions {
   productName?: string;
   productCategory?: string;
   gender?: string;
+  parentAdId?: string;
+  parentAssetUrl?: string;
 }
 
 export async function sendChat(
@@ -161,7 +165,7 @@ export async function sendChat(
         reference_urls: referenceUrls,
         target_platform: targetPlatform ?? DEFAULT_PLATFORM,
         skip_compliance: skipCompliance ?? false,
-        video_v3: videoV3 ?? false,
+        video_v3: videoV3 ?? true,
         target_ethnicity: targetEthnicity ?? "all",
         age_group: options?.ageGroup ?? "all_ages",
         market: options?.market ?? "malaysia",
@@ -169,6 +173,8 @@ export async function sendChat(
         product_name: options?.productName ?? "",
         product_category: options?.productCategory ?? "",
         gender: options?.gender ?? "female",
+        parent_ad_id: options?.parentAdId,
+        parent_asset_url: options?.parentAssetUrl,
       }),
     }
   );
@@ -354,7 +360,9 @@ export async function getGeneratedAds(
       mediaType: mediaType as MediaType,
       platform: typeof record.platform === "string" ? record.platform : "",
       publicUrl: typeof record.public_url === "string" ? record.public_url : null,
+      aspectRatio: typeof record.aspect_ratio === "string" ? record.aspect_ratio : undefined,
       caption: typeof record.caption === "string" ? record.caption : null,
+      generationStatus: typeof record.gen_status === "string" ? record.gen_status : undefined,
       complianceStatus: mapComplianceBadge(
         typeof record.compliance_status === "string" ? record.compliance_status : ""
       ),
@@ -370,6 +378,7 @@ export interface PublishResult {
   status: string;
   complianceStatus: string;
   alreadyPublished: boolean;
+  caption: string;
 }
 
 /**
@@ -416,7 +425,31 @@ export async function publishAd(
         ? payload.compliance_status
         : "non-final",
     alreadyPublished: payload.already_published === true,
+    caption: typeof payload.caption === "string" ? payload.caption : "",
   };
+}
+
+export interface DistributionAccount {
+  id: string;
+  platform: string;
+  label: string;
+}
+
+export async function getDistributionAccounts(): Promise<DistributionAccount[]> {
+  const res = await fetch(`${API_BASE}/api/distribution/accounts`);
+  if (!res.ok) return [];
+  const payload = await res.json() as { accounts?: unknown };
+  if (!Array.isArray(payload.accounts)) return [];
+  return payload.accounts.flatMap((item): DistributionAccount[] => {
+    if (typeof item !== "object" || item === null) return [];
+    const account = item as Record<string, unknown>;
+    if (typeof account.id !== "string" || typeof account.platform !== "string") return [];
+    return [{
+      id: account.id,
+      platform: account.platform,
+      label: typeof account.label === "string" ? account.label : `${account.platform} account`,
+    }];
+  });
 }
 
 /** Result of a distribution request. */
@@ -424,6 +457,8 @@ export interface DistributeResult {
   postId: string;
   status: string;
   platform: string;
+  accountId?: string;
+  caption?: string;
 }
 
 /**
@@ -438,14 +473,15 @@ export async function distributeAd(
   taskId: string,
   adId: string,
   platform: string,
-  caption?: string
+  caption?: string,
+  accountId?: string,
 ): Promise<DistributeResult> {
   const res = await fetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/ads/${adId}/distribute`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platform, caption: caption ?? "" }),
+      body: JSON.stringify({ platform, account_id: accountId, caption: caption ?? "" }),
     }
   );
 
@@ -465,6 +501,32 @@ export async function distributeAd(
     postId: typeof payload.post_id === "string" ? payload.post_id : "",
     status: typeof payload.status === "string" ? payload.status : "distributed",
     platform: typeof payload.platform === "string" ? payload.platform : platform,
+    accountId: typeof payload.account_id === "string" ? payload.account_id : undefined,
+    caption: typeof payload.caption === "string" ? payload.caption : undefined,
+  };
+}
+
+export async function distributeToAccounts(
+  projectId: string,
+  taskId: string,
+  adId: string,
+  destinations: DistributionAccount[],
+): Promise<{ caption: string; results: Array<Record<string, unknown>> }> {
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/ads/${adId}/distribute`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        destinations: destinations.map((account) => ({ platform: account.platform, account_id: account.id })),
+      }),
+    },
+  );
+  const payload = await res.json() as Record<string, unknown>;
+  if (!res.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Distribution failed");
+  return {
+    caption: typeof payload.caption === "string" ? payload.caption : "",
+    results: Array.isArray(payload.results) ? payload.results.filter((result): result is Record<string, unknown> => typeof result === "object" && result !== null) : [],
   };
 }
 

@@ -23,7 +23,7 @@ Return ONLY a JSON object with this EXACT structure:
 - risk_percentage: integer 0-100
 - risk_level: "Low" / "Moderate" / "High" / "Critical"
 - high_risk_indicator: array with timestamps like "[00:03-00:08] exposed shoulders" (max 10)
-- violations_timeline: array of objects with start_seconds, end_seconds, type ("visual"/"audio"/"text"), description
+- violations_timeline: array of objects with start_seconds, end_seconds, type ("visual"/"audio"/"text"), description. Each item MUST use the exact same scene/time range as its matching high_risk_indicator. Never return 0–0; if the timing cannot be identified, omit that timeline item.
 - localization_plan: string with language, model talent, platform recommendations
 - explanation: concise reasoning (max 300 words)
 - suggestion: actionable fix advice (max 200 words)

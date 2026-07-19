@@ -34,6 +34,7 @@ from shared.prompts import VIDEO_AD_GENERATION_PROMPT
 from shared.s3_client import upload_file_public
 
 from .base import AgentResult, load_guide
+from ..provenance import generated_ad_context_fields
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +235,7 @@ def _record_generated_ad(
     s3_key: Optional[str],
     status: str,
     metadata: dict,
+    generation_context: Optional[dict] = None,
 ) -> Optional[str]:
     """Insert a ``generated_ads`` row and return its id (best-effort)."""
     try:
@@ -249,6 +251,7 @@ def _record_generated_ad(
                     "s3_media_key": s3_key,
                     "status": status,
                     "metadata": metadata,
+                    **generated_ad_context_fields(generation_context),
                 }
             )
             .execute()
@@ -267,6 +270,7 @@ def _record_generated_ad(
 
 async def generate(*, brief: str, project_id: str, task_id: str,
     platform: str, rules: dict, reference_parts: Optional[list] = None,
+    generation_context: Optional[dict] = None,
 ) -> AgentResult:
 
     # GoogleSearch for video style trends (graceful degradation on failure)
@@ -336,6 +340,7 @@ async def generate(*, brief: str, project_id: str, task_id: str,
                 "generation_method": "gemini_omni",
                 "independent": True,
             },
+            generation_context=generation_context,
         )
 
         return AgentResult(
@@ -360,6 +365,7 @@ async def generate(*, brief: str, project_id: str, task_id: str,
             s3_key=None,
             status="failed",
             metadata={"error": str(e)},
+            generation_context=generation_context,
         )
         return AgentResult(
             ad_id=ad_id,

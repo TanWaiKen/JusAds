@@ -12,7 +12,6 @@ import Features from "./Features";
 import Pricing from "./Pricing";
 import Faq from "./Faq";
 import Footer from "./Footer";
-import "./landing.css";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 

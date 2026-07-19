@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from shared.clients import gemini, s3, supabase
-from shared.config import MODEL_TEXT, MODEL_VIDEO
+from shared.config import MODEL_IMAGE_CREATIVE, MODEL_TEXT, MODEL_VIDEO
 from shared.prompts import VIDEO_DIRECTOR_PROMPT
 from shared.prompts import _load_prompt as _load_prompt_file
 from shared.s3_client import upload_file_public
@@ -55,7 +55,6 @@ SCENE_GRID_PROMPT = _load_prompt_file("scene_grid.md")
 
 # --- Constants ----------------------------------------------------------------
 
-_IMAGE_MODEL = "imagen-4.0-generate-001"
 _SCENE_CLIP_SECONDS = 6
 
 
@@ -76,6 +75,68 @@ def _grid_dimensions(frame_count: int) -> tuple[int, int]:
 def _sse(data: dict) -> str:
     """Format SSE data line."""
     return f"data: {json.dumps(data)}\n\n"
+
+
+def _load_reference_image_parts(reference_urls: list[str]) -> list:
+    """Download user references as Gemini image parts for V3 visual stages."""
+    if not reference_urls:
+        return []
+    import urllib.request
+    from google.genai import types as genai_types
+
+    parts: list = []
+    for reference_url in reference_urls[:4]:
+        try:
+            with urllib.request.urlopen(reference_url, timeout=20) as response:
+                image_bytes = response.read()
+                mime_type = response.headers.get_content_type() or "image/jpeg"
+            if image_bytes and mime_type.startswith("image/"):
+                parts.append(genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+        except Exception as exc:
+            logger.warning("[V3Grid] Could not load reference %s: %s", reference_url[:80], exc)
+    return parts
+
+
+def _generate_reference_anchored_image(
+    prompt: str,
+    *,
+    aspect_ratio: str,
+    reference_parts: list,
+    filename: str,
+) -> Optional[str]:
+    """Generate a V3 visual with user references as multimodal input."""
+    try:
+        from google.genai import types as genai_types
+
+        contents: list = []
+        if reference_parts:
+            contents.append(
+                "The following uploaded images are mandatory visual references. "
+                "Preserve the depicted character identity, product appearance, wardrobe, "
+                "and brand details whenever relevant. Do not substitute a different person or product."
+            )
+            contents.extend(reference_parts)
+        contents.append(prompt)
+        response = gemini.models.generate_content(
+            model=MODEL_IMAGE_CREATIVE,
+            contents=contents,
+            config=genai_types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+                image_config=genai_types.ImageConfig(
+                    aspect_ratio=aspect_ratio,
+                    output_mime_type="image/png",
+                ),
+            ),
+        )
+        for part in response.candidates[0].content.parts if response.candidates else []:
+            if getattr(part, "inline_data", None) and part.inline_data.data:
+                output_path = os.path.join(tempfile.gettempdir(), filename)
+                with open(output_path, "wb") as output:
+                    output.write(part.inline_data.data)
+                return output_path
+    except Exception as exc:
+        logger.error("[V3Grid] Native image generation failed: %s", exc)
+    return None
 
 
 def _persist_ad(
@@ -208,6 +269,7 @@ async def generate_assets(
     plan: dict,
     project_id: str,
     task_id: str,
+    reference_image_urls: Optional[list[str]] = None,
 ) -> AsyncGenerator[str, None]:
     """Stage 2: Generate character sheet + scene grid + slice into frames.
 
@@ -224,29 +286,32 @@ async def generate_assets(
     scenes = plan.get("scenes", [])
     frame_count = plan.get("frame_count", len(scenes) + 1)
     cols, rows = _grid_dimensions(frame_count)
+    reference_image_urls = reference_image_urls or []
+    reference_parts = _load_reference_image_parts(reference_image_urls)
+    if reference_image_urls:
+        yield _sse({"node": "references", "status": "completed", "data": {
+            "urls": reference_image_urls,
+            "loaded_count": len(reference_parts),
+        }})
 
     yield _sse({"node": "character_sheet", "status": "in-progress", "data": {"message": "Generating character reference sheet..."}})
 
     # -- Character Sheet ---------------------------------------------------
     char_sheet_url = None
+    path = None
     try:
         char_prompt = CHARACTER_SHEET_PROMPT.replace(
             "[INSERT CHARACTER APPEARANCE DESCRIPTION HERE]", char_summary,
         )
         char_prompt += f"\n\nVISUAL STYLE (mandatory): {visual_style}. All panels must use this exact style."
         char_prompt += "\n\nIMPORTANT: Generate PHOTOREALISTIC humans. This is for a REAL advertising campaign — NOT anime, NOT illustration, NOT cartoon. Use professional photography style with natural skin, real clothing textures, and cinematic lighting. The character must look like a real person suitable for a commercial advertisement."
-        from google.genai import types as genai_types
-        response = gemini.models.generate_images(
-            model=_IMAGE_MODEL,
-            prompt=char_prompt,
-            config=genai_types.GenerateImagesConfig(
-                number_of_images=1, aspect_ratio="16:9", person_generation="ALLOW_ALL",
-            ),
+        path = _generate_reference_anchored_image(
+            char_prompt,
+            aspect_ratio="16:9",
+            reference_parts=reference_parts,
+            filename=f"char_{plan_id}.png",
         )
-        if response.generated_images:
-            path = os.path.join(tempfile.gettempdir(), f"char_{plan_id}.png")
-            with open(path, "wb") as f:
-                f.write(response.generated_images[0].image.image_bytes)
+        if path:
             s3_key = f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/character_sheet.png"
             char_sheet_url = upload_file_public(path, s3_key)
             _persist_ad(project_id, task_id, "image", char_sheet_url, f"Character Sheet: {char_summary[:80]}", "Character Sheet")
@@ -284,22 +349,20 @@ async def generate_assets(
         grid_prompt += f"\n\nVISUAL STYLE (mandatory): {visual_style}. Every panel must match this exact style."
         grid_prompt += f"\n\nREFERENCE IMAGE: The uploaded image is the character sheet. Each panel must show the EXACT same character with the SAME face, body, clothing, and style. Do NOT create different characters."
 
-        from google.genai import types as genai_types
-
-        # Generate scene grid with Imagen 4 (character consistency via strong prompt)
-        response = gemini.models.generate_images(
-            model=_IMAGE_MODEL,
-            prompt=grid_prompt,
-            config=genai_types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="1:1",  # Square grid for consistent cell sizing
-                person_generation="ALLOW_ALL",
-            ),
+        grid_reference_parts = list(reference_parts)
+        if path and os.path.exists(path):
+            from google.genai import types as genai_types
+            with open(path, "rb") as character_file:
+                grid_reference_parts.append(
+                    genai_types.Part.from_bytes(data=character_file.read(), mime_type="image/png")
+                )
+        grid_path = _generate_reference_anchored_image(
+            grid_prompt,
+            aspect_ratio="1:1",
+            reference_parts=grid_reference_parts,
+            filename=f"grid_{plan_id}.png",
         )
-        if response.generated_images:
-            grid_path = os.path.join(tempfile.gettempdir(), f"grid_{plan_id}.png")
-            with open(grid_path, "wb") as f:
-                f.write(response.generated_images[0].image.image_bytes)
+        if grid_path:
             s3_key = f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/scene_grid.png"
             grid_url = upload_file_public(grid_path, s3_key)
             _persist_ad(project_id, task_id, "image", grid_url, f"Scene Grid ({cols}x{rows})", "Scene Grid")
@@ -605,6 +668,7 @@ async def run_grid_pipeline(
     character_description: str = "",
     product_description: str = "",
     reference_image_url: Optional[str] = None,
+    reference_image_urls: Optional[list[str]] = None,
     video_duration_sec: float = 15.0,
     width: int = 1080,
     height: int = 1920,
@@ -619,12 +683,17 @@ async def run_grid_pipeline(
     # Stage 1: Plan
     yield _sse({"node": "director", "status": "in-progress", "data": {"message": "Director planning script..."}})
 
+    reference_image_urls = list(reference_image_urls or [])
+    if reference_image_url and reference_image_url not in reference_image_urls:
+        reference_image_urls.insert(0, reference_image_url)
+
     plan = await plan_script(
         brief=brief,
         video_duration_sec=video_duration_sec,
         target_ethnicity=target_ethnicity,
         product_description=product_description or character_description,
     )
+    plan["reference_image_urls"] = reference_image_urls
 
     yield _sse({"node": "director", "status": "completed", "data": {
         "scene_count": len(plan["scenes"]),
@@ -632,7 +701,12 @@ async def run_grid_pipeline(
     }})
 
     # Stage 2: Generate assets (capture URLs for pipeline_state)
-    async for event in generate_assets(plan, project_id, task_id):
+    async for event in generate_assets(
+        plan,
+        project_id,
+        task_id,
+        reference_image_urls=reference_image_urls,
+    ):
         yield event
         # Capture asset URLs from the v3_assets event
         try:
@@ -665,23 +739,38 @@ async def run_grid_pipeline(
 
     # Emit a proper pipeline_state so the canvas shows V3 nodes (not generic V1 nodes)
     # Also include video_plan inside pipeline_state so it persists across refresh (B3).
-    v3_nodes = [
-        {"id": f"node-director-{plan['plan_id']}", "type": "orchestrator", "x": 100, "y": 200,
+    v3_nodes = []
+    if reference_image_urls:
+        v3_nodes.append(
+            {"id": f"node-references-{plan['plan_id']}", "type": "input", "x": 40, "y": 70,
+             "label": f"References ({len(reference_image_urls)})", "status": "done",
+             "output": f"{len(reference_image_urls)} visual reference(s)", "error": None,
+             "props": {"reference_urls": reference_image_urls}}
+        )
+    v3_nodes.extend([
+        {"id": f"node-director-{plan['plan_id']}", "type": "orchestrator", "x": 180, "y": 200,
          "label": "Director", "status": "done", "output": f"{len(plan['scenes'])} scenes planned", "error": None, "props": {}},
         {"id": f"node-char-{plan['plan_id']}", "type": "image", "x": 350, "y": 100,
          "label": "Character Sheet", "status": "done", "output": plan.get("_char_url", ""), "error": None, "props": {}},
         {"id": f"node-grid-{plan['plan_id']}", "type": "image", "x": 600, "y": 200,
          "label": f"Scene Grid ({plan.get('grid_layout', '2x2')})", "status": "done", "output": plan.get("_grid_url", ""), "error": None, "props": {}},
-        {"id": f"node-slicer-{plan['plan_id']}", "type": "input", "x": 850, "y": 200,
+        {"id": f"node-slicer-{plan['plan_id']}", "type": "input", "x": 930, "y": 200,
          "label": "Grid Slicer", "status": "done", "output": f"{plan.get('frame_count', 3)} frames", "error": None,
          "props": {"frame_urls": plan.get("_frame_urls", [])}},
-    ]
+    ])
     v3_edges = [
         {"id": "e-dir-char", "from": f"node-director-{plan['plan_id']}", "to": f"node-char-{plan['plan_id']}"},
         {"id": "e-dir-grid", "from": f"node-director-{plan['plan_id']}", "to": f"node-grid-{plan['plan_id']}"},
         {"id": "e-char-grid", "from": f"node-char-{plan['plan_id']}", "to": f"node-grid-{plan['plan_id']}"},
         {"id": "e-grid-slicer", "from": f"node-grid-{plan['plan_id']}", "to": f"node-slicer-{plan['plan_id']}"},
     ]
+    if reference_image_urls:
+        reference_node = f"node-references-{plan['plan_id']}"
+        v3_edges.extend([
+            {"id": "e-ref-director", "from": reference_node, "to": f"node-director-{plan['plan_id']}"},
+            {"id": "e-ref-char", "from": reference_node, "to": f"node-char-{plan['plan_id']}"},
+            {"id": "e-ref-grid", "from": reference_node, "to": f"node-grid-{plan['plan_id']}"},
+        ])
 
     # Include video_plan in pipeline_state so it survives page refresh (B3 fix)
     v3_video_plan = {**plan, "pipeline_version": "v3_grid"}

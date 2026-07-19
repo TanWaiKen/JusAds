@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,8 +62,6 @@ def init_compliance(supabase_store, s3_client):
 
     _supabase_store = supabase_store
     _s3_client = s3_client
-    _tracker = ProgressTracker()
-
     _compliance_runner = PipelineRunner(
         tracker=_tracker,
         pipeline=compliance_pipeline,
@@ -75,7 +74,63 @@ def init_compliance(supabase_store, s3_client):
         pending_decisions=_pending_decisions,
         decision_store=_decision_store,
     )
+_tracker = ProgressTracker()
 
+
+async def _stream_pipeline_events(pipeline, state: Compliance_State, task_id: str):
+    """Bridge synchronous LangGraph events into an async SSE generator.
+
+    Gemini and tool calls block the graph's synchronous ``stream`` iterator.
+    Running it in a worker thread lets the event loop flush each node status as
+    soon as it is produced rather than buffering all events until completion.
+    """
+    event_loop = asyncio.get_running_loop()
+    events: asyncio.Queue[dict] = asyncio.Queue()
+
+    def publish(event: dict) -> None:
+        event_loop.call_soon_threadsafe(events.put_nowait, event)
+
+    def run_graph() -> None:
+        final_state: dict = {}
+        try:
+            config = {"configurable": {"thread_id": task_id}}
+            for chunk in pipeline.stream(
+                state,
+                config=config,
+                stream_mode=["tasks", "updates"],
+                version="v2",
+            ):
+                chunk_type = chunk.get("type")
+                payload = chunk.get("data", {})
+                if chunk_type == "tasks":
+                    node_name = payload.get("name", "compliance_check")
+                    if "input" in payload:
+                        publish({
+                            "type": "node_status", "node": node_name,
+                            "status": "running",
+                            "description": f"Checking: {node_name.replace('_', ' ')}",
+                        })
+                    elif "error" in payload or "result" in payload:
+                        publish({
+                            "type": "node_status", "node": node_name,
+                            "status": "error" if payload.get("error") else "completed",
+                            "description": payload.get("error") or f"Completed {node_name.replace('_', ' ')}",
+                        })
+                elif chunk_type == "updates" and isinstance(payload, dict):
+                    for node_output in payload.values():
+                        if isinstance(node_output, dict):
+                            final_state.update(node_output)
+            publish({"type": "pipeline_complete", "final_state": final_state})
+        except Exception as exc:
+            logger.exception("[Pipeline] Graph failed for %s", task_id)
+            publish({"type": "pipeline_error", "message": str(exc)})
+
+    threading.Thread(target=run_graph, name=f"compliance-{task_id[:8]}", daemon=True).start()
+    while True:
+        event = await events.get()
+        yield event
+        if event["type"] in {"pipeline_complete", "pipeline_error"}:
+            return
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # WEBSOCKET (sends result once pipeline completes)
@@ -232,7 +287,7 @@ async def check_compliance(
         "remix_iteration": 0,
     }
 
-    async def generate_sse_events():
+    def generate_sse_events():
         """SSE event generator — runs pipeline and emits progress events."""
         def emit(event: dict) -> str:
             return f"data: {json.dumps(event)}\n\n"
@@ -252,7 +307,38 @@ async def check_compliance(
             config = {"configurable": {"thread_id": task_id}}
             final_state: dict = {}
 
-            for event in _compliance_runner.pipeline.stream(state, config=config, stream_mode="updates"):
+            for chunk in _compliance_runner.pipeline.stream(
+                state,
+                config=config,
+                stream_mode=["tasks", "updates"],
+                version="v2",
+            ):
+                chunk_type = chunk.get("type")
+                payload = chunk.get("data", {})
+                if chunk_type == "tasks":
+                    node_name = payload.get("name", "compliance_check")
+                    if "input" in payload:
+                        yield emit({
+                            "type": "node_status",
+                            "node": node_name,
+                            "status": "running",
+                            "description": f"Checking: {node_name.replace('_', ' ')}",
+                        })
+                    elif "error" in payload or "result" in payload:
+                        status = "error" if payload.get("error") else "completed"
+                        yield emit({
+                            "type": "node_status",
+                            "node": node_name,
+                            "status": status,
+                            "description": payload.get("error") or f"Completed {node_name.replace('_', ' ')}",
+                        })
+                elif chunk_type == "updates" and isinstance(payload, dict):
+                    for node_output in payload.values():
+                        if isinstance(node_output, dict):
+                            final_state.update(node_output)
+
+            if False:  # Legacy update-only stream retained temporarily for reference.
+              for event in _compliance_runner.pipeline.stream(state, config=config, stream_mode="updates"):
                 for node_name, node_output in event.items():
                     # Emit node status events for the frontend SSE stream.
                     # NOTE: Do NOT call _tracker here — each pipeline node already
@@ -279,6 +365,16 @@ async def check_compliance(
 
             # Pipeline done — process result
             response = final_state.get("result", {})
+
+            # A graph node has already recorded the internal failure. Do not
+            # manufacture or persist a partial compliance result: surface a
+            # terminal SSE error so the frontend can show a failed state.
+            if response.get("error"):
+                yield emit({
+                    "type": "error",
+                    "message": f"Compliance analysis failed: {response['error']}",
+                })
+                return
 
             # Upload segmented mask to S3
             s3_segmented_url = None
@@ -381,6 +477,7 @@ async def remediate_compliance(task_id: str):
     # Build Remediation_State TypedDict
     state: Remediation_State = {
         "task_id": task_id,
+        "project_id": "",
         "media_type": "",
         "source_media_url": "",
         "compliance_result": {},
@@ -389,6 +486,7 @@ async def remediate_compliance(task_id: str):
         "aspect_ratio": "",
         "strategy": "",
         "remediated_paths": [],
+        "remix_url": "",
         "status": "pending",
     }
 

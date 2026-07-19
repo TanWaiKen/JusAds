@@ -33,7 +33,9 @@ NODE_DESCRIPTIONS = {
     "fetch_rules_and_personas": "Fetching regulatory rules and cultural personas",
     "transcribe_media": "Transcribing audio/video media content",
     "main_brain_analysis": "Running AI compliance analysis on media content",
-    "judges_agent": "Evaluating for bias and hallucination",
+    "legal_research_agent": "Researching current regulatory evidence",
+    "grounded_compliance_agent": "Grounding findings in cited regulations",
+    "media_evidence_agent": "Preparing media-specific compliance evidence",
     "decision_router": "Routing compliance decision",
     # Remediation Pipeline nodes
     "fetch_compliance_result": "Retrieving compliance check result",
@@ -45,7 +47,6 @@ NODE_DESCRIPTIONS = {
     "segment_image": "Segmenting non-compliant regions in image",
     "extract_clips": "Extracting violation clips from video",
     "verify_violations": "Verifying violations against regulatory sources",
-    "judge_hallucination": "Evaluating for bias and hallucination",
     "human_review": "Awaiting human review and approval",
     "finalize": "Finalizing compliance check result",
     "remix_router": "Routing to media-specific remediation tool",

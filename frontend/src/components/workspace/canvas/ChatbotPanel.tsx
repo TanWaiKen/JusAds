@@ -49,6 +49,8 @@ interface ChatbotPanelProps {
   onVideoPlanUpdate?: (plan: VideoPlan | null) => void;
   triggerPrompt?: string | null;
   onTriggerPromptUsed?: () => void;
+  revisionContext?: Pick<GenerationOptions, "parentAdId" | "parentAssetUrl"> | null;
+  onRevisionContextUsed?: () => void;
 }
 
 const WELCOME_MESSAGE: Message = {
@@ -69,7 +71,7 @@ const VALID_MEDIA_TYPES: ReadonlySet<string> = new Set<MediaType>([
  * Map the backend orchestrator's `generated_ads` array (attached to the final
  * `pipeline_state`) into `GeneratedAdView[]` for the output gallery (Req 11.1).
  */
-function mapGeneratedAds(pipeline: PipelineState): GeneratedAdView[] {
+export function mapGeneratedAds(pipeline: PipelineState): GeneratedAdView[] {
   const raw = (pipeline as unknown as { generated_ads?: unknown }).generated_ads;
   if (!Array.isArray(raw)) return [];
 
@@ -138,6 +140,8 @@ export function ChatbotPanel({
   onVideoPlanUpdate,
   triggerPrompt,
   onTriggerPromptUsed,
+  revisionContext,
+  onRevisionContextUsed,
 }: ChatbotPanelProps) {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   
@@ -383,7 +387,10 @@ export function ChatbotPanel({
     if (!input.trim() || loading) return;
 
     const userText = input;
-    const refUrls = references.map((r) => r.url);
+    const refUrls = Array.from(new Set([
+      ...references.map((r) => r.url),
+      ...(revisionContext?.parentAssetUrl ? [revisionContext.parentAssetUrl] : []),
+    ]));
     const resolvedPlatform: TargetPlatform = targetPlatform ?? DEFAULT_PLATFORM;
 
     setInput("");
@@ -416,7 +423,7 @@ export function ChatbotPanel({
         !complianceEnabled,
         videoV3Enabled,
         targetEthnicity,
-        generationOptions
+        { ...generationOptions, ...revisionContext }
       )) {
         if (typeof event.text === "string" && event.text.length > 0) {
           setMessages((prev) => {
@@ -465,6 +472,7 @@ export function ChatbotPanel({
       setStreamError(true);
       toast.error("Failed to generate ad assets");
     } finally {
+      if (revisionContext) onRevisionContextUsed?.();
       setLoading(false);
     }
   };

@@ -17,9 +17,13 @@ Flow:
 
 import json
 import logging
+import base64
+import mimetypes
 import os
+import subprocess
 import tempfile
 import urllib.request
+import uuid
 from typing import Optional
 
 from shared.clients import supabase, gemini
@@ -28,6 +32,18 @@ from shared.config import MODEL_TEXT
 from jusads_compliance.tool_router import RoutingDecision, ToolSelection
 
 logger = logging.getLogger(__name__)
+
+
+def _get_media_duration(path: str) -> float:
+    """Read video duration for Omni's 10-second edit limit."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=10,
+        )
+        return float(result.stdout.strip()) if result.returncode == 0 else 0.0
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return 0.0
 
 
 # -----------------------------------------------------------------------------
@@ -278,19 +294,7 @@ def _execute_tool(
 
     # -- IMAGE TOOLS -------------------------------------------------------
     elif tool_name == "inpaint_area":
-        # Use existing inpainting from remediation_pipeline
-        from jusads_compliance.remediation_pipeline import _remediate_image
-        state = {
-            "check_id": check_id,
-            "source_media_url": input_path if input_path.startswith("http") else f"file://{input_path}",
-            "compliance_result": compliance_result,
-            "remediation_plan": {
-                "high_risk_indicators": compliance_result.get("high_risk_indicator", []),
-                "suggestion": compliance_result.get("suggestion", ""),
-                "segmentation": compliance_result.get("segmentation"),
-            },
-        }
-        # For local files, we need to adjust
+        # Local execution uses the same concrete inpainting implementation.
         result = _inpaint_local(input_path, compliance_result)
         return result
 
@@ -357,8 +361,7 @@ def _execute_tool(
 
 
 def _inpaint_local(input_path: str, compliance_result: dict, max_retries: int = 3) -> dict:
-    """Inpaint an image using Imagen, working with local file path."""
-    from google.genai import types
+    """Inpaint an image with the configured Gemini image model."""
     from PIL import Image
     import numpy as np
 
@@ -402,32 +405,15 @@ def _inpaint_local(input_path: str, compliance_result: dict, max_retries: int = 
 
         for attempt in range(1, max_retries + 1):
             try:
-                response = gemini.models.edit_image(
-                    model="imagen-3.0-capability-002",
-                    prompt=prompt,
-                    reference_images=[
-                        types.RawReferenceImage(
-                            reference_image=types.Image(image_bytes=image_bytes),
-                            reference_id=1,
-                        ),
-                        types.MaskReferenceImage(
-                            reference_image=types.Image(image_bytes=mask_bytes),
-                            reference_id=2,
-                            config=types.MaskReferenceConfig(mask_mode="MASK_MODE_USER_PROVIDED"),
-                        ),
-                    ],
-                    config=types.EditImageConfig(
-                        edit_mode="EDIT_MODE_INPAINT_INSERTION",
-                        number_of_images=1,
-                        safety_filter_level="BLOCK_SOME",
-                        person_generation="ALLOW_ALL",
-                    ),
+                from jusads_compliance.remix_tools import _native_image_bytes
+                native_prompt = (
+                    f"Edit the first reference image. {prompt} "
+                    "The second reference image is a binary mask: modify only white areas and preserve black areas. "
+                    "Return one compliant advertising image with no explanatory text."
                 )
-
-                if response.generated_images:
-                    with open(output_path, "wb") as f:
-                        f.write(response.generated_images[0].image.image_bytes)
-                    return {"output_path": output_path, "operation": "inpaint", "attempts": attempt}
+                with open(output_path, "wb") as output_file:
+                    output_file.write(_native_image_bytes(native_prompt, [(image_bytes, "image/png"), (mask_bytes, "image/png")]))
+                return {"output_path": output_path, "operation": "inpaint", "attempts": attempt}
 
             except Exception as e:
                 logger.warning("[Executor] Inpaint attempt %d failed: %s", attempt, e)
@@ -551,87 +537,156 @@ def _cleanup_temp(*paths: str) -> None:
 
 
 def _execute_omni_video_edit(input_path: str, instruction: str, additional_references: Optional[list[str]] = None) -> dict:
-    """Execute video-to-video editing via Gemini Omni Flash Preview REST API, supporting both video and image references."""
-    import base64
-    import tempfile
+    """Edit a <=10s source clip through Vertex Agent Platform Interactions.
+
+    Omni is accessed through the Vertex OAuth endpoint, not the Gemini Developer
+    API.  The source and URI-delivered result are temporary GCS objects; only
+    the caller's final asset is persisted to S3.
+    """
+    from google.auth import default
+    from google.auth.transport.requests import Request
     import requests
-    import google.auth
-    import google.auth.transport.requests
-    from shared.config import VERTEX_PROJECT_ID, MODEL_VIDEO
+    from shared.config import MODEL_VIDEO, VERTEX_GCS_BUCKET, VERTEX_PROJECT_ID
+
+    duration = _get_media_duration(input_path)
+    if not duration:
+        return {"error": "Could not determine source video duration for Omni edit."}
+    if duration > 10.05:
+        return {"error": "Gemini Omni accepts clips up to 10 seconds; extract an affected timeline window first."}
+    if not VERTEX_PROJECT_ID or not VERTEX_GCS_BUCKET:
+        return {"error": "VERTEX_PROJECT_ID and VERTEX_GCS_BUCKET must be configured for Omni editing."}
+
+    request_id = uuid.uuid4().hex
+    input_object = f"jusads-compliance/omni-temp/{request_id}/source.mp4"
+    output_prefix = f"jusads-compliance/omni-temp/{request_id}/output/"
+    input_uri = f"gs://{VERTEX_GCS_BUCKET}/{input_object}"
+    output_uri = f"gs://{VERTEX_GCS_BUCKET}/{output_prefix}"
+    mime_type = mimetypes.guess_type(input_path)[0] or "video/mp4"
+    headers: Optional[dict[str, str]] = None
 
     try:
-        credentials, project_id = google.auth.default()
-        auth_req = google.auth.transport.requests.Request()
-        credentials.refresh(auth_req)
-        token = credentials.token
-        proj_id = VERTEX_PROJECT_ID or project_id
-        if not token or not proj_id:
-            return {"error": "Failed to authenticate with Vertex AI"}
+        credentials, _ = default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        credentials.refresh(Request())
+        headers = {"Authorization": f"Bearer {credentials.token}"}
 
-        # Build multi-modal inputs
-        inputs = []
+        upload_url = (
+            f"https://storage.googleapis.com/upload/storage/v1/b/{VERTEX_GCS_BUCKET}/o"
+            f"?uploadType=media&name={input_object}"
+        )
+        with open(input_path, "rb") as source:
+            upload_response = requests.post(
+                upload_url,
+                headers={**headers, "Content-Type": mime_type},
+                data=source,
+                timeout=120,
+            )
+        upload_response.raise_for_status()
 
-        # 1. Primary Video
-        with open(input_path, "rb") as f:
-            video_bytes = f.read()
-        video_b64 = base64.b64encode(video_bytes).decode("utf-8")
-        inputs.append({"type": "video", "data": video_b64, "mime_type": "video/mp4"})
-
-        # 2. Optional additional image/video references
-        if additional_references:
-            for ref_path in additional_references:
-                if ref_path and os.path.exists(ref_path):
-                    with open(ref_path, "rb") as f:
-                        ref_bytes = f.read()
-                    ref_b64 = base64.b64encode(ref_bytes).decode("utf-8")
-                    ext = os.path.splitext(ref_path)[1].lower()
-                    if ext in (".png", ".jpg", ".jpeg"):
-                        mime = f"image/{ext[1:] if ext != '.jpg' else 'jpeg'}"
-                        inputs.append({"type": "image", "data": ref_b64, "mime_type": mime})
-                        logger.info("[Executor] Appended image reference: %s", ref_path)
-                    elif ext in (".mp4", ".mov", ".avi"):
-                        inputs.append({"type": "video", "data": ref_b64, "mime_type": "video/mp4"})
-                        logger.info("[Executor] Appended video reference: %s", ref_path)
-
-        # 3. Instruction
-        inputs.append({"type": "text", "text": instruction})
-
-        request_body = {
-            "model": MODEL_VIDEO or "gemini-omni-flash-preview",
-            "input": inputs
+        # The video itself is the reference.  The prompt explicitly constrains
+        # Omni to edit it rather than create a different advertisement.
+        payload = {
+            "model": MODEL_VIDEO,
+            "input": [
+                {"type": "text", "text": (
+                    "Edit the supplied reference video; do not create a new or unrelated video. "
+                    "Preserve product, framing, camera movement, timing, and audio unless the "
+                    f"instruction requires a change. {instruction}"
+                )},
+                {"type": "video", "uri": input_uri, "mime_type": mime_type},
+            ],
+            "response_format": [{
+                "type": "video",
+                "delivery": "uri",
+                "gcs_uri": output_uri,
+                "duration": f"{max(3, min(10, round(duration)))}s",
+            }],
         }
+        interaction_url = (
+            "https://aiplatform.googleapis.com/v1beta1/"
+            f"projects/{VERTEX_PROJECT_ID}/locations/global/interactions"
+        )
+        logger.info("[Executor] Submitting %ss reference edit to Gemini Omni.", round(duration, 2))
+        interaction_response = requests.post(
+            interaction_url,
+            headers={**headers, "Content-Type": "application/json; charset=utf-8"},
+            json=payload,
+            timeout=300,
+        )
+        if not interaction_response.ok:
+            # Keep the provider's schema/validation detail visible to the SSE
+            # caller; a bare HTTP 400 is not actionable for a user or developer.
+            return {
+                "error": (
+                    f"Vertex Omni request failed ({interaction_response.status_code}): "
+                    f"{interaction_response.text[:2000]}"
+                )
+            }
+        interaction = interaction_response.json()
 
-        url = f"https://aiplatform.googleapis.com/v1beta1/projects/{proj_id}/locations/global/interactions"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8"
+        output_video = next(
+            (
+                content for step in interaction.get("steps", [])
+                for content in step.get("content", [])
+                if content.get("type") == "video"
+            ),
+            None,
+        )
+        if not output_video:
+            return {"error": "Gemini Omni completed without a video output.", "interaction_id": interaction.get("id")}
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        try:
+            if output_video.get("data"):
+                tmp.write(base64.b64decode(output_video["data"]))
+            elif output_video.get("uri", "").startswith("gs://"):
+                _, _, path = output_video["uri"].partition("gs://")
+                bucket, _, object_name = path.partition("/")
+                download = requests.get(
+                    f"https://storage.googleapis.com/storage/v1/b/{bucket}/o/{requests.utils.quote(object_name, safe='')}?alt=media",
+                    headers=headers,
+                    timeout=180,
+                )
+                download.raise_for_status()
+                tmp.write(download.content)
+            else:
+                return {"error": "Gemini Omni returned an unsupported output location.", "interaction_id": interaction.get("id")}
+        finally:
+            tmp.close()
+        return {
+            "output_path": tmp.name,
+            "operation": "omni_video_edit",
+            "interaction_id": interaction.get("id"),
+            "source_uri": input_uri,
         }
-
-        logger.info("[Executor] Sending video edit request to Omni interactions endpoint...")
-        response = requests.post(url, json=request_body, headers=headers)
-        if response.status_code != 200:
-            return {"error": f"Interactions API returned status {response.status_code}: {response.text}"}
-
-        res_json = response.json()
-
-        # Parse the video from steps
-        steps = res_json.get("steps", [])
-        for step in steps:
-            content_list = step.get("content", [])
-            for content in content_list:
-                if content.get("type") == "video" and "data" in content:
-                    out_bytes = base64.b64decode(content["data"])
-                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                    tmp.write(out_bytes)
-                    tmp.close()
-                    logger.info("[Executor] Omni video edit successful. Saved to %s", tmp.name)
-                    return {"output_path": tmp.name, "operation": "omni_video_edit"}
-
-        return {"error": "No video was returned by the Omni model"}
-
     except Exception as e:
-        logger.error("[Executor] Omni video edit crashed: %s", e)
+        logger.error("[Executor] Omni video edit failed: %s", e)
         return {"error": f"Omni video edit failed: {e}"}
+    finally:
+        # The caller persists only the final S3 asset.  The Vertex input and
+        # response objects are short-lived transport files and must not become
+        # an unbounded second media store.
+        if headers:
+            try:
+                import requests
+                from urllib.parse import quote
+
+                objects = [input_object]
+                listed = requests.get(
+                    f"https://storage.googleapis.com/storage/v1/b/{VERTEX_GCS_BUCKET}/o",
+                    headers=headers,
+                    params={"prefix": output_prefix},
+                    timeout=30,
+                )
+                if listed.ok:
+                    objects.extend(item["name"] for item in listed.json().get("items", []))
+                for object_name in objects:
+                    requests.delete(
+                        f"https://storage.googleapis.com/storage/v1/b/{VERTEX_GCS_BUCKET}/o/{quote(object_name, safe='')}",
+                        headers=headers,
+                        timeout=30,
+                    )
+            except Exception as cleanup_error:
+                logger.warning("[Executor] Could not clean temporary Omni GCS objects: %s", cleanup_error)
 
 def _execute_veo_regenerate(instruction: str, compliance_result: dict) -> dict:
     """Regenerate a full video using Gemini Omni (MODEL_VIDEO) as the engine."""

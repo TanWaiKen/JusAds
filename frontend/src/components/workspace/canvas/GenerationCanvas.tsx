@@ -10,7 +10,7 @@ import { CanvasViewport } from "@/components/workspace/canvas/CanvasViewport";
 import { InspectorPanel } from "@/components/workspace/canvas/InspectorPanel";
 import { CanvasToolbar } from "@/components/workspace/canvas/CanvasToolbar";
 import { CanvasContextMenu } from "@/components/workspace/canvas/CanvasContextMenu";
-import { ChatbotPanel } from "@/components/workspace/canvas/ChatbotPanel";
+import { ChatbotPanel, mapGeneratedAds } from "@/components/workspace/canvas/ChatbotPanel";
 import { OutputGallery } from "@/components/workspace/canvas/OutputGallery";
 import { VideoPlanStoryboard } from "@/components/workspace/canvas/VideoPlanStoryboard";
 import { SettingsPanel } from "@/components/workspace/canvas/SettingsPanel";
@@ -30,6 +30,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   const { state, dispatch } = useCanvasGraph(initialState);
   const [activeTab, setActiveTab] = useState<"chatbot" | "outputs" | "inspector">("chatbot");
   const [chatbotPrompt, setChatbotPrompt] = useState<string | null>(null);
+  const [revisionContext, setRevisionContext] = useState<{ parentAdId?: string; parentAssetUrl?: string } | null>(null);
 
   // Auto-switch to Inspector tab when a node is selected
   useEffect(() => {
@@ -51,6 +52,13 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   // Settings state (unified, drives the SettingsPanel)
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // The canvas and the Outputs tab must read the same persisted pipeline.
+  // Guided generation can update a node before the chat panel emits its local
+  // output callback; deriving the gallery here prevents stale counts/previews.
+  useEffect(() => {
+    setOutputs(mapGeneratedAds(state.pipeline));
+  }, [state.pipeline]);
+
   // Load persisted settings from initialState if available (B4).
   const loadedSettings = (() => {
     if (!initialState) return {};
@@ -69,7 +77,9 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
     productName: (typeof loadedSettings.productName === "string" ? loadedSettings.productName : "") as string,
     productCategory: (typeof loadedSettings.productCategory === "string" ? loadedSettings.productCategory : "") as string,
     complianceEnabled: loadedSettings.complianceEnabled !== false,
-    videoV2Enabled: loadedSettings.videoV2Enabled === true,
+    // New Advanced tasks use the staged V3 pipeline by default. A persisted
+    // false remains an intentional opt-out for a user who turned it off.
+    videoV2Enabled: loadedSettings.videoV2Enabled !== false,
   });
 
   // Debounced auto-save of settings to pipeline_state.generation_settings (B4).
@@ -205,6 +215,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
     <div className="flex h-full flex-col">
       <CanvasToolbar
         projectId={projectId}
+        taskId={taskId}
         isSaving={isSaving}
         onOpenSettings={() => setSettingsOpen(true)}
       />
@@ -288,6 +299,8 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                 targetEthnicity={settings.targetEthnicity}
                 triggerPrompt={chatbotPrompt}
                 onTriggerPromptUsed={() => setChatbotPrompt(null)}
+                revisionContext={revisionContext}
+                onRevisionContextUsed={() => setRevisionContext(null)}
                 generationOptions={{
                   ageGroup: settings.ageGroup,
                   market: settings.market,
@@ -348,8 +361,12 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                 node={selectedNode}
                 onUpdateProps={(nodeId, updates) => dispatch({ type: "UPDATE_NODE_PROPS", nodeId, ...updates })}
                 onDelete={handleDelete}
-                onSendRevision={(nodeLabel, comment) => {
-                  setChatbotPrompt(`Please revise node "${nodeLabel}" with feedback: ${comment}`);
+                onSendRevision={(node, comment) => {
+                  setRevisionContext({
+                    parentAdId: node.props.ad_id || undefined,
+                    parentAssetUrl: node.props.asset_url || node.output || undefined,
+                  });
+                  setChatbotPrompt(`Revise the selected ${node.type} version with this feedback: ${comment}`);
                   setActiveTab("chatbot");
                 }}
               />

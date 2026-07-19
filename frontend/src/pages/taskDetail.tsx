@@ -109,6 +109,14 @@ export default function TaskDetailPage() {
         return;
       }
 
+      // Generic task links always open the task's Easy results surface. The
+      // Advanced canvas remains an explicit opt-in from that results page.
+      const isCanonicalModeRoute = location.pathname.includes("/easy/") || location.pathname.includes("/advance/") || location.pathname.includes("/advanced/");
+      if (!isCanonicalModeRoute) {
+        navigate(`/dashboard/project/${projectId}/easy/${taskId}/results`, { replace: true });
+        return;
+      }
+
       setTask(data);
     } catch (err) {
       if (err instanceof Error && err.message.includes("404")) {
@@ -129,7 +137,7 @@ export default function TaskDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, taskId, navigate]);
+  }, [projectId, taskId, navigate, location.pathname]);
 
   useEffect(() => {
     fetchTask();

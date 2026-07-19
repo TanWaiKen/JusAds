@@ -107,6 +107,52 @@ export interface Persona {
   };
 }
 
+export interface ResearchSource {
+  url: string;
+  title?: string;
+  snippet?: string;
+  provider?: "google_grounding" | "tavily";
+}
+
+export interface VerificationResult {
+  research_report: string;
+  sources: ResearchSource[];
+  citation_urls?: string[];
+  sources_count: number;
+  overall_confidence: "high" | "medium" | "low";
+  violations_checked?: number;
+  provider?: string;
+  skipped?: boolean;
+}
+
+export interface TextAnnotation {
+  start: number;
+  end: number;
+  text: string;
+  reason: string;
+  render: "underline" | "bold";
+}
+
+export interface TranscriptSegment {
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
+}
+
+export interface ImageCopyAction {
+  original: string;
+  replacement: string;
+  language: string;
+  reason: string;
+}
+
+export interface ImageReview {
+  copy_actions: ImageCopyAction[];
+  character_assessment: string;
+  claims_requiring_evidence: string[];
+  sensitive_content: string[];
+}
+
 export interface ComplianceResult {
   check_id: string;
   video_filename: string;
@@ -121,6 +167,7 @@ export interface ComplianceResult {
   // Backward compat fields
   score: number;              // 100 - risk_percentage
   risk_level: "High" | "Medium" | "Low" | "Moderate" | "Critical";
+  compliance_verdict?: "accepted" | "needs_remediation" | "rejected";
   explanation: string;
   suggestion: string;
   localization: Localization;
@@ -129,14 +176,14 @@ export interface ComplianceResult {
   violations: Violation[];
   high_risk_indicators?: string[];
   high_risk_indicator?: string[];
-  verification?: {
-    verified: { violation: string; confirmed: boolean; sources: string[] }[];
-    confidence: string;
-    confirmed_ratio: string;
-  };
-  violations_timeline?: { start?: number; end?: number; description?: string; severity?: string }[];
+  verification?: VerificationResult;
+  violations_timeline?: { start?: number; end?: number; start_seconds?: number; end_seconds?: number; type?: string; description?: string; severity?: string; clip_url?: string }[];
   segmentation?: { segmented_image_path?: string; detections?: unknown[]; num_masks?: number };
-  _transcript?: { language: string; transcript: string };
+  image_review?: ImageReview;
+  text_annotations?: TextAnnotation[];
+  audio_annotations?: { segments: TranscriptSegment[]; violations: ComplianceResult["violations_timeline"] };
+  violation_clips?: { index: number; start: number; end: number; type: string; description: string; clip_path?: string; clip_url?: string }[];
+  _transcript?: { language: string; transcript: string; segments?: TranscriptSegment[] };
   s3_upload_key?: string;
   s3_remix_key?: string;
   s3_segmented_key?: string;
@@ -275,7 +322,23 @@ export function getClipUrl(clipUrl: string): string {
  */
 export interface RemixResult {
   type: "remix_result";
-  data?: unknown;
+  data?: RemediationResult;
+}
+
+export interface RemediationVersion {
+  id: string;
+  number: number;
+  media_type: string;
+  asset_url?: string;
+  created_at: string;
+}
+
+export interface RemediationResult {
+  type: string;
+  rewritten_text?: string;
+  voice_id?: string;
+  s3_remix_url?: string;
+  version?: RemediationVersion;
 }
 
 /** Image passes compliance — no fix needed */

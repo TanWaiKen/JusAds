@@ -63,8 +63,13 @@ COMPLIANCE_SCULPT_TEMPLATE = _load_prompt("compliance_sculpt_template.md")
 # -- Pre-scan prompts (short, kept inline) -------------------------------------
 
 IMAGE_PRESCAN_PROMPT = (
-    "What is in this image? Directly state: what product, what people are doing, "
-    "what they are wearing, any text or numbers shown, and the setting. Be factual."
+    "Inspect this advertisement factually. Transcribe every visible word, number, "
+    "badge, logo, certification mark and disclaimer exactly where legible; identify "
+    "the product, people, their apparent role/age presentation and attire, setting, "
+    "and any flags, conflict imagery, weapons, extremist symbols, political symbols, "
+    "or religious symbols. State 'unreadable' or 'cannot verify from image' rather "
+    "than guessing. Do not infer a person's religion, ethnicity, nationality, or "
+    "certification status from appearance alone."
 )
 VIDEO_PRESCAN_PROMPT = (
     "What is happening in this video? Describe: people, clothing, actions, "

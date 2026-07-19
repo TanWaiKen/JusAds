@@ -6,9 +6,11 @@ Compliance-only LangGraph StateGraph pipeline (Pipeline 1).
 Flow:
   1. fetch_rules_and_personas â†’ Queries ad_policy_rules and personas tables
   2. transcribe_media         â†’ (audio/video only) Transcribes via Gemini
-  3. main_brain_analysis      â†’ Cross-references media against rules using search tools
-  4. judges_agent             â†’ Bias/hallucination check (no search tools)
-  5. decision_router          â†’ Three-outcome routing: pass / critical_regen / remediate
+  3. main_brain_analysis      â†’ Gemini performs an initial multimodal assessment
+  4. legal_research_agent     â†’ Google grounding, with Tavily as the audited fallback
+  5. grounded_compliance_agentâ†’ Reconciles findings with live regulatory evidence
+  6. media_evidence_agent     â†’ Produces text, image, video, or audio evidence for the UI
+  7. decision_router          â†’ Three-outcome routing: pass / critical_regen / remediate
 
 Conditional edges:
   - After fetch: audio/video â†’ transcribe_media, text/image â†’ main_brain_analysis
@@ -23,6 +25,7 @@ from typing import Literal, List, Optional
 from pydantic import BaseModel, Field
 
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from google.genai import types as genai_types
 
 from shared.models import Compliance_State
@@ -33,8 +36,9 @@ from jusads_compliance.utils import parse_json_res
 from jusads_compliance.progress_tracker import ProgressTracker
 from shared.fallback_queue import fallback_queue
 from jusads_compliance.rules_client import get_rules, get_persona
+from jusads_compliance.agents.evidence import media_evidence_agent
+from jusads_compliance.agents.research import grounded_compliance_agent, legal_research_agent
 from jusads_compliance.prompts import (
-    BIAS_HALLUCINATION_PROMPT,
     TEXT_COMPLIANCE_PROMPT,
     IMAGE_COMPLIANCE_PROMPT,
     AUDIO_COMPLIANCE_PROMPT,
@@ -56,9 +60,16 @@ _MODEL = MODEL_TEXT
 
 # --- Pydantic Schemas for Structured Outputs ---
 
+class TranscriptSegment(BaseModel):
+    start_seconds: float = Field(description="Start timestamp of this spoken segment.")
+    end_seconds: float = Field(description="End timestamp of this spoken segment.")
+    text: str = Field(description="Verbatim transcript for this time range.")
+
+
 class TranscribeSchema(BaseModel):
     transcript: str = Field(description="The complete spoken transcript of the media.")
     language: str = Field(description="The language code or name detected in the speech.")
+    segments: List[TranscriptSegment] = Field(default_factory=list, description="Timestamped spoken segments.")
 
 class LanguageComplianceSchema(BaseModel):
     detected_language: str = Field(description="The language detected in the ad copy or speech.")
@@ -72,6 +83,18 @@ class ViolationTimelineItem(BaseModel):
     type: str = Field(description="Type of violation, e.g., 'visual', 'audio', 'text'.")
     description: str = Field(description="Description of the violation.")
 
+class ImageCopyAction(BaseModel):
+    original: str = Field(default="", description="Legible source copy, if any.")
+    replacement: str = Field(default="", description="Compliance-safe promotional rewrite, if needed.")
+    language: str = Field(default="needs confirmation", description="Language selected for the replacement copy.")
+    reason: str = Field(default="", description="Why the copy needs review or replacement.")
+
+class ImageReviewSchema(BaseModel):
+    copy_actions: List[ImageCopyAction] = Field(default_factory=list)
+    character_assessment: str = Field(default="")
+    claims_requiring_evidence: List[str] = Field(default_factory=list)
+    sensitive_content: List[str] = Field(default_factory=list)
+
 class ComplianceAnalysisSchema(BaseModel):
     risk_percentage: int = Field(description="Compliance risk percentage (0 to 100).")
     risk_level: str = Field(description="Risk level classification: Low, Moderate, High, or Critical.")
@@ -83,15 +106,7 @@ class ComplianceAnalysisSchema(BaseModel):
     suggestion: str = Field(description="Actionable suggestion for fixes/remediation (max 200 words).")
     cultural_fit_score: int = Field(description="Cultural fit score (0 to 100) based on target persona.")
     language_compliance: LanguageComplianceSchema = Field(description="Language compliance details.")
-
-class JudgesEvaluationSchema(BaseModel):
-    bias_detected: bool = Field(description="Whether any bias was detected in the compliance analysis.")
-    bias_issues: List[str] = Field(default_factory=list, description="List of bias issues identified, if any.")
-    hallucination_score: int = Field(description="Hallucination score from 1 to 5 (1=severe hallucination, 5=fully grounded).")
-    hallucinated_claims: List[str] = Field(default_factory=list, description="List of hallucinated claims, if any.")
-    overall_pass: bool = Field(description="True only if bias_detected is false and hallucination_score >= 4.")
-    explanation: str = Field(description="Brief explanation of the evaluation reasoning.")
-
+    image_review: Optional[ImageReviewSchema] = Field(default=None, description="Image-specific copy, representation, claim and sensitive-content review.")
 
 # ——— Node 1: Fetch Rules and Personas —————————————————————————————————————————
 
@@ -177,8 +192,8 @@ def transcribe_media(state: Compliance_State) -> dict:
 
         # Use Gemini for transcription
         transcribe_prompt = (
-            "Transcribe this media content. Return JSON: "
-            '{"language": "detected language", "transcript": "exact transcription"}'
+            "Transcribe this media exactly. Return the detected language, full transcript, "
+            "and ordered timestamped segments covering each spoken phrase."
         )
 
         response = gemini.models.generate_content(
@@ -198,7 +213,11 @@ def transcribe_media(state: Compliance_State) -> dict:
         language = transcript_data.get("language", "unknown")
 
         result = state.get("result", {}) or {}
-        result["_transcript"] = {"language": language, "transcript": transcript}
+        result["_transcript"] = {
+            "language": language,
+            "transcript": transcript,
+            "segments": transcript_data.get("segments", []),
+        }
 
         _tracker.complete_step(
             task_id, step_name,
@@ -314,6 +333,7 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 rules_text=rules_text,
                 persona_text=persona_text,
                 output_template=UNIFIED_OUTPUT_TEMPLATE,
+                image_description=prescan.text.strip(),
                 business_context=business_context,
                 context_framework=CONTEXT_FRAMEWORK,
                 research_context="No live regulatory research available for the initial pass.",
@@ -537,30 +557,41 @@ def judges_agent(state: Compliance_State) -> dict:
         from shared.config import TAVILY_ENABLED
 
         high_risk_indicators = result.get("high_risk_indicator", [])
-        market = state["market"]
-        platform = state["platform"]
-
-        if TAVILY_ENABLED and high_risk_indicators:
-            verification = _validate_violations_with_tavily(
-                violations=high_risk_indicators,
-                market=market,
-                platform=platform,
-                rules=rules,
-                task_id=task_id,
-            )
-            result["verification"] = verification
-        else:
+        
+        # Use research data gathered by legal_research_agent
+        research_context = result.get("_research_context", "")
+        research_sources = result.get("_research_sources", [])
+        
+        if TAVILY_ENABLED and research_sources:
+            # We have research data - use it for verification
             result["verification"] = {
-                "violations": [],
-                "stale_rules_detected": 0,
-                "overall_confidence": "medium" if high_risk_indicators else "high",
+                "research_report": research_context,  # Full research explanation
+                "sources": research_sources,  # List of source objects with url/title/snippet
+                "citation_urls": [s.get("url") for s in research_sources if s.get("url")],
+                "overall_confidence": "high" if len(research_sources) >= 3 else "medium",
+                "violations_checked": len(high_risk_indicators),
+                "sources_count": len(research_sources),
+            }
+            logger.info(
+                "[CompliancePipeline] Verification built from research: %d sources, %d violations checked",
+                len(research_sources), len(high_risk_indicators)
+            )
+        else:
+            # No research data available
+            result["verification"] = {
+                "research_report": "No regulatory research available for this content.",
+                "sources": [],
+                "citation_urls": [],
+                "overall_confidence": "low",
+                "violations_checked": len(high_risk_indicators),
+                "sources_count": 0,
                 "skipped": not TAVILY_ENABLED,
             }
 
         _tracker.complete_step(
             task_id, step_name,
             f"Evaluation complete: pass={overall_pass}, hallucination_score={hallucination_score}, "
-            f"violations_verified={len(result.get('verification', {}).get('violations', []))}",
+            f"verification_sources={len(result.get('verification', {}).get('sources', []))}",
         )
 
         return {"result": result}
@@ -573,193 +604,7 @@ def judges_agent(state: Compliance_State) -> dict:
         return {"result": result}
 
 
-# â”€â”€â”€ Tavily Validation Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-
-def _validate_violations_with_tavily(
-    violations: list[str],
-    market: str,
-    platform: str,
-    rules: list[dict],
-    task_id: str,
-) -> dict:
-    """Validate each violation against online regulatory sources via Tavily.
-
-    For each violation:
-      1. Search for the regulation online
-      2. Assign confidence_score: high (found), low (not found), medium (error)
-      3. Attach citation sources (URLs)
-      4. Check if local rule is stale
-      5. If high confidence, search for enforcement cases
-
-    Args:
-        violations: List of high_risk_indicator strings.
-        market: Target market (e.g. 'malaysia').
-        platform: Target platform (e.g. 'tiktok').
-        rules: Local rules used in the current evaluation.
-        task_id: The compliance task_id for audit logging.
-
-    Returns:
-        Verification dict with validated violations and metadata.
-    """
-    from shared.tavily_guard import tavily_compliance_search
-
-    validated_violations = []
-    stale_rules_count = 0
-
-    # Validate max 5 violations to control cost
-    for violation_text in violations[:5]:
-        # Search for the regulation
-        query = f"{market} {platform} advertising regulation: {violation_text}"
-        tavily_result = tavily_compliance_search(query=query, task_id=task_id)
-
-        results = tavily_result.get("results", [])
-
-        if results:
-            # Sources found â€” high confidence
-            citation_sources = [r.get("url", "") for r in results if r.get("url")][:5]
-            confidence_score = "high"
-
-            # Check rule freshness
-            rule_freshness = _check_rule_freshness(
-                violation_text=violation_text,
-                rules=rules,
-                tavily_results=results,
-            )
-            if rule_freshness.get("is_stale"):
-                stale_rules_count += 1
-
-            # Search enforcement cases for high-confidence violations
-            enforcement_cases = _search_enforcement_cases(
-                violation_type=violation_text,
-                market=market,
-                task_id=task_id,
-            )
-        else:
-            # No sources found â€” low confidence
-            citation_sources = []
-            confidence_score = "low"
-            rule_freshness = {"is_stale": False, "updated_url": None, "change_summary": None}
-            enforcement_cases = []
-
-        validated_violations.append({
-            "violation_text": violation_text,
-            "confidence_score": confidence_score,
-            "citation_sources": citation_sources,
-            "enforcement_cases": enforcement_cases,
-            "rule_freshness": rule_freshness,
-        })
-
-    # Compute overall confidence
-    if not validated_violations:
-        overall_confidence = "high"
-    else:
-        confidence_counts = {"high": 0, "medium": 0, "low": 0}
-        for v in validated_violations:
-            confidence_counts[v["confidence_score"]] = confidence_counts.get(v["confidence_score"], 0) + 1
-
-        if confidence_counts["high"] >= len(validated_violations) * 0.6:
-            overall_confidence = "high"
-        elif confidence_counts["low"] >= len(validated_violations) * 0.5:
-            overall_confidence = "low"
-        else:
-            overall_confidence = "medium"
-
-    return {
-        "violations": validated_violations,
-        "stale_rules_detected": stale_rules_count,
-        "overall_confidence": overall_confidence,
-    }
-
-
-def _check_rule_freshness(
-    violation_text: str,
-    rules: list[dict],
-    tavily_results: list[dict],
-) -> dict:
-    """Compare local rule version against online source found by Tavily.
-
-    Checks if any online source mentions a more recent regulation date
-    or explicitly states the old regulation is superseded.
-
-    Args:
-        violation_text: The violation being validated.
-        rules: Local rules from Supabase.
-        tavily_results: Tavily search results for this violation.
-
-    Returns:
-        Dict with is_stale, updated_url, change_summary.
-    """
-    # Find the matching local rule (by keyword overlap)
-    matching_rule = None
-    violation_lower = violation_text.lower()
-    for rule in rules:
-        rule_text = (rule.get("rule_text", "") + " " + rule.get("rule_title", "")).lower()
-        # Simple keyword overlap check
-        overlap = sum(1 for word in violation_lower.split() if word in rule_text and len(word) > 3)
-        if overlap >= 2:
-            matching_rule = rule
-            break
-
-    if not matching_rule:
-        return {"is_stale": False, "updated_url": None, "change_summary": None}
-
-    local_last_updated = matching_rule.get("last_updated", "")
-
-    # Check if any Tavily result mentions a newer date or amendment
-    for tr in tavily_results[:3]:
-        content = (tr.get("content", "") + " " + tr.get("title", "")).lower()
-        # Look for amendment/update signals
-        stale_signals = ["amended", "superseded", "replaced by", "new regulation", "updated", "revision"]
-        if any(signal in content for signal in stale_signals):
-            return {
-                "is_stale": True,
-                "updated_url": tr.get("url", ""),
-                "change_summary": f"Online source indicates regulation may have been updated. Local rule last_updated: {local_last_updated}",
-            }
-
-    return {"is_stale": False, "updated_url": None, "change_summary": None}
-
-
-def _search_enforcement_cases(
-    violation_type: str,
-    market: str,
-    task_id: str,
-) -> list[dict]:
-    """Search for enforcement cases related to a violation type.
-
-    Only called for violations with confidence_score "high".
-    Returns up to 3 case references with title and URL.
-
-    Args:
-        violation_type: The violation description.
-        market: Target market.
-        task_id: Task ID for Tavily logging.
-
-    Returns:
-        List of up to 3 dicts with 'title' and 'url' keys.
-    """
-    from shared.tavily_guard import tavily_compliance_search
-
-    query = f"{market} advertising enforcement action penalty case: {violation_type}"
-    result = tavily_compliance_search(
-        query=query,
-        task_id=task_id,
-        max_results=3,
-        search_depth="basic",
-    )
-
-    cases = []
-    for r in result.get("results", [])[:3]:
-        title = r.get("title", "")
-        url = r.get("url", "")
-        if title and url:
-            cases.append({"title": title, "url": url})
-
-    return cases
-
-
-# â”€â”€â”€ Node 5: Decision Router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Node 5: Decision Router ---
 
 
 def decision_router_node(state: Compliance_State) -> dict:
@@ -774,6 +619,12 @@ def decision_router_node(state: Compliance_State) -> dict:
 
     try:
         result = state.get("result", {}) or {}
+
+        # A failed analysis has no valid risk assessment. Do not route or
+        # persist it as a compliance verdict; the SSE route returns its error.
+        if result.get("error"):
+            _tracker.fail_step(task_id, step_name, str(result["error"]))
+            return {"status": "failed", "result": result}
 
         risk_level = result.get("risk_level", "Low")
         risk_percentage = result.get("risk_percentage", 0)
@@ -876,7 +727,9 @@ _graph = StateGraph(Compliance_State)
 _graph.add_node("fetch_rules_and_personas", fetch_rules_and_personas)
 _graph.add_node("transcribe_media", transcribe_media)
 _graph.add_node("main_brain_analysis", main_brain_analysis)
-_graph.add_node("judges_agent", judges_agent)
+_graph.add_node("legal_research_agent", legal_research_agent)
+_graph.add_node("grounded_compliance_agent", grounded_compliance_agent)
+_graph.add_node("media_evidence_agent", media_evidence_agent)
 _graph.add_node("decision_router", decision_router_node)
 
 # Set entry point
@@ -891,14 +744,15 @@ _graph.add_conditional_edges("fetch_rules_and_personas", _route_after_fetch, {
 # transcribe_media â†’ main_brain_analysis
 _graph.add_edge("transcribe_media", "main_brain_analysis")
 
-# main_brain_analysis â†’ judges_agent
-_graph.add_edge("main_brain_analysis", "judges_agent")
-
-# judges_agent â†’ decision_router
-_graph.add_edge("judges_agent", "decision_router")
+# Initial findings â†’ live regulatory research â†’ grounded adjudication â†’ UI evidence
+_graph.add_edge("main_brain_analysis", "legal_research_agent")
+_graph.add_edge("legal_research_agent", "grounded_compliance_agent")
+_graph.add_edge("grounded_compliance_agent", "media_evidence_agent")
+_graph.add_edge("media_evidence_agent", "decision_router")
 
 # decision_router â†’ END (pipeline NEVER invokes Remediation)
 _graph.add_edge("decision_router", END)
 
-# Compile and export
-compliance_pipeline = _graph.compile()
+# A checkpointer enables LangGraph task-start/task-finish stream events, which
+# the compliance SSE endpoint uses for real-time progress notifications.
+compliance_pipeline = _graph.compile(checkpointer=MemorySaver())

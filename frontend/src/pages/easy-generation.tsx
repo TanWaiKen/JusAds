@@ -6,10 +6,10 @@
  * Step 3: Dynamic Form (fields based on selected design type schema, with prefilled defaults)
  *   - Reference image slot guides (Product, Logo, Vibe) with guide preview buttons & modals.
  *
- * Route: /dashboard/project/:projectId/easy
+ * Route: /dashboard/project/:projectId/easy/:taskId
  */
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, type ReactNode } from "react";
 import { useParams, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { useGSAP } from "@gsap/react";
@@ -27,7 +27,6 @@ import {
   Eye,
   Info,
   CheckCircle2,
-  Sparkles,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +50,51 @@ gsap.registerPlugin(useGSAP);
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 const PLATFORMS = ["Instagram", "TikTok", "Facebook", "YouTube", "LinkedIn"] as const;
+
+/** Render the small, curated template guides without promoting body copy to headings. */
+function renderTemplateGuide(guide: string): ReactNode[] {
+  const blocks: ReactNode[] = [];
+  let listItems: string[] = [];
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    const key = `guide-list-${blocks.length}`;
+    blocks.push(
+      <ul key={key} className="list-disc space-y-1.5 pl-4 text-text-muted marker:text-primary/70">
+        {listItems.map((item, index) => (
+          <li key={`${key}-${index}`}>{item.replace(/\*\*(.*?)\*\*/g, "$1")}</li>
+        ))}
+      </ul>,
+    );
+    listItems = [];
+  };
+
+  guide.trim().split("\n").forEach((rawLine, index) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushList();
+      return;
+    }
+    if (line.startsWith("#### ")) {
+      flushList();
+      blocks.push(<h3 key={`guide-subheading-${index}`} className="pt-3 text-sm font-semibold text-text-heading">{line.slice(5)}</h3>);
+      return;
+    }
+    if (line.startsWith("### ")) {
+      flushList();
+      blocks.push(<h3 key={`guide-heading-${index}`} className="text-base font-semibold text-text-heading">{line.slice(4)}</h3>);
+      return;
+    }
+    if (line.startsWith("* ")) {
+      listItems.push(line.slice(2));
+      return;
+    }
+    flushList();
+    blocks.push(<p key={`guide-paragraph-${index}`}>{line.replace(/\*\*(.*?)\*\*/g, "$1")}</p>);
+  });
+  flushList();
+  return blocks;
+}
 
 /** Lucide icon map keyed by the backend icon identifier */
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -119,7 +163,9 @@ The Poster Ad tool is designed for static posters, banners, and single-frame vis
 * Display the product prominently in the center or lower third.`,
   },
   carousel: {
-    previewImage: "https://images.unsplash.com/photo-1563986768609-322da13575f2?w=400&h=260&fit=crop&q=80",
+    // A row of social-post panels communicates the multi-slide format more
+    // clearly than a generic business photo.
+    previewImage: "https://images.unsplash.com/photo-1611162616475-46b635cb6868?w=800&h=520&fit=crop&q=85",
     defaults: {
       platform: "instagram",
       brand_tone: "Informative, educational and engaging",
@@ -232,6 +278,23 @@ const FIELD_META: Record<string, { label: string; type: "text" | "textarea" | "s
   background_music_style: { label: "Background Music Style", type: "text", placeholder: "e.g. Lo-fi chill, Upbeat pop" },
 };
 
+// Easy Mode should favour a confident choice over a blank input. Advanced Mode
+// remains available when a user needs a custom value outside these options.
+const EASY_FIELD_CHOICES: Record<string, string[]> = {
+  target_audience: ["Gen Z", "Young professionals", "Families", "General audience"],
+  brand_tone: ["Bold and eye-catching", "Friendly and conversational", "Premium and polished", "Warm and trustworthy"],
+  visual_style: ["Modern minimalist flat design", "Product-first photography", "Clean editorial layout", "Playful illustration"],
+  color_palette: ["Vibrant gradient tones", "Warm neutral tones", "Bold high contrast", "Soft pastel tones"],
+  slide_count: ["3", "4", "5"],
+  video_duration: ["15s", "30s", "60s"],
+  copy_length: ["Short (1-2 sentences)", "Medium (3-5 sentences)", "Long (6-8 sentences)"],
+  call_to_action: ["Shop Now", "Learn More", "Get Started", "Send Message"],
+  language: ["English", "Bahasa Melayu", "Chinese", "Tamil"],
+  audio_duration: ["15s", "30s", "60s"],
+  voice_tone: ["Conversational and friendly", "Warm and professional", "Energetic and playful", "Calm and reassuring"],
+  background_music_style: ["Lo-fi chill beats", "Upbeat pop", "Soft acoustic", "No background music"],
+};
+
 // ─── Reference Image slot definitions ────────────────────────────────────────
 
 interface RefImageSlot {
@@ -324,7 +387,7 @@ const FALLBACK_SCHEMA: DesignTypeSchema[] = [
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function EasyGenerationPage() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId, taskId } = useParams<{ projectId: string; taskId?: string }>();
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
@@ -338,7 +401,6 @@ export default function EasyGenerationPage() {
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
-
   // Preview & Guide Modal state for selected Design Type
   const [guideModalOpen, setGuideModalOpen] = useState(false);
   const [previewingType, setPreviewingType] = useState<DesignTypeSchema | null>(null);
@@ -397,25 +459,20 @@ export default function EasyGenerationPage() {
 
   async function handleToggleToAdvanced() {
     if (!projectId) return;
-    const loadingToast = toast.loading("Loading Advanced Mode...");
+    if (taskId) {
+      navigate(`/dashboard/project/${projectId}/advance/${taskId}`);
+      return;
+    }
+    const loadingToast = toast.loading("Creating an Advanced Mode task...");
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${projectId}/tasks`);
-      if (res.ok) {
-        const tasks = await res.json();
-        const genTask = tasks.find((t: any) => t.type === "generation");
-        if (genTask) {
-          toast.dismiss(loadingToast);
-          navigate(`/dashboard/project/${projectId}/${genTask.id}`);
-          return;
-        }
-      }
-      // If no task exists, create a new one
+      // The unscoped Easy page means "new generation". Never select a prior
+      // project task here; users can deliberately reopen one from its task row.
       const newTask = await createGenerationTask(projectId);
       toast.dismiss(loadingToast);
-      navigate(`/dashboard/project/${projectId}/${newTask.id}`);
+      navigate(`/dashboard/project/${projectId}/advance/${newTask.id}`);
     } catch (err) {
       toast.dismiss(loadingToast);
-      toast.error("Failed to load Advanced Mode");
+      toast.error("Failed to create an Advanced Mode task");
     }
   }
 
@@ -540,10 +597,11 @@ export default function EasyGenerationPage() {
       }
 
       // 2. Create the generation task
-      const task = await createGenerationTask(projectId);
+      const task = taskId ? { id: taskId } : await createGenerationTask(projectId);
 
-      // 3. Navigate to advanced view with prefilled references
-      navigate(`/dashboard/project/${projectId}/${task.id}`, {
+      // 3. Stay in the guided flow: results and feedback are handled by the
+      // Easy Results gallery. Advanced canvas remains an explicit opt-in.
+      navigate(`/dashboard/project/${projectId}/easy/${task.id}/results`, {
         state: {
           guidedMode: true,
           designType: selectedType.id,
@@ -565,11 +623,19 @@ export default function EasyGenerationPage() {
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div ref={containerRef} className="flex h-full flex-col overflow-y-auto p-6 bg-surface-inset/10">
+    <div ref={containerRef} className="flex min-h-full flex-col p-6 bg-surface-inset/10">
       
-      {/* Mode Toggle Tabs */}
-      <div className="mx-auto w-full max-w-4xl mb-6">
-        <div className="flex rounded-lg bg-surface-card p-1 border border-border-default max-w-xs mx-auto shadow-sm">
+      {/* Task navigation and mode switcher stay at the top of the workspace. */}
+      <div className="mx-auto mb-6 grid w-full max-w-4xl grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div>
+          {taskId && (
+            <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/project/${projectId}`)}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Project
+            </Button>
+          )}
+        </div>
+        <div className="flex w-[360px] max-w-full rounded-lg border border-border-default bg-surface-card p-1 shadow-sm">
           <span className="flex-1 text-center py-1.5 text-xs font-semibold rounded-md bg-primary text-primary-foreground shadow-sm">
             Easy Mode
           </span>
@@ -579,6 +645,13 @@ export default function EasyGenerationPage() {
           >
             Advanced Mode
           </button>
+        </div>
+        <div className="flex justify-end">
+          {taskId && (
+            <Button size="sm" onClick={() => navigate(`/dashboard/project/${projectId}/easy/${taskId}/results`)}>
+              Go to Results
+            </Button>
+          )}
         </div>
       </div>
 
@@ -604,7 +677,12 @@ export default function EasyGenerationPage() {
                 return (
                   <Card
                     key={designType.id}
-                    className="cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-lg border-border-default bg-surface-card group overflow-hidden flex flex-col"
+                    aria-pressed={previewingType?.id === designType.id}
+                    className={`cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-lg bg-surface-card group overflow-hidden flex flex-col ${
+                      previewingType?.id === designType.id
+                        ? "border-primary ring-2 ring-primary/20 shadow-md"
+                        : "border-border-default"
+                    }`}
                     onClick={() => handleCardClick(designType)}
                   >
                     {preset?.previewImage && (
@@ -648,14 +726,14 @@ export default function EasyGenerationPage() {
             </div>
           )}
 
-          <Button
+          {!taskId && <Button
             variant="ghost"
             className="self-start text-xs text-text-muted hover:text-text-heading"
             onClick={() => navigate(`/dashboard/project/${projectId}`)}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Project
-          </Button>
+          </Button>}
         </div>
       )}
 
@@ -689,24 +767,7 @@ export default function EasyGenerationPage() {
               <div className="flex-1 space-y-4 pr-0 md:pr-4 md:border-r border-border-default/60">
                 <div className="prose prose-sm dark:prose-invert max-w-none text-xs text-text-muted leading-relaxed space-y-3">
                   {/* Clean custom styling for embedded markdown */}
-                  {DESIGN_PRESETS[previewingType.id]?.markdownGuide.split("\n\n").map((para, i) => {
-                    if (para.startsWith("###")) {
-                      return <h3 key={i} className="text-sm font-bold text-text-heading pt-2 border-b border-border-default pb-1">{para.replace("### ", "")}</h3>;
-                    }
-                    if (para.startsWith("####")) {
-                      return <h4 key={i} className="text-xs font-semibold text-text-heading pt-1">{para.replace("#### ", "")}</h4>;
-                    }
-                    if (para.startsWith("*")) {
-                      return (
-                        <ul key={i} className="list-disc pl-4 space-y-1">
-                          {para.split("\n").map((li, j) => (
-                            <li key={j}>{li.replace("* ", "")}</li>
-                          ))}
-                        </ul>
-                      );
-                    }
-                    return <p key={i}>{para}</p>;
-                  })}
+                  {renderTemplateGuide(DESIGN_PRESETS[previewingType.id]?.markdownGuide || "")}
                 </div>
               </div>
 
@@ -721,7 +782,7 @@ export default function EasyGenerationPage() {
                 </div>
 
                 <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-text-heading uppercase tracking-wider">
+                  <h4 className="text-xs font-semibold text-text-heading uppercase tracking-wider">
                     Smart Preset Values
                   </h4>
                   <div className="space-y-2">
@@ -730,7 +791,7 @@ export default function EasyGenerationPage() {
                         <span className="text-text-muted capitalize">
                           {key.replace("_", " ")}
                         </span>
-                        <span className="font-semibold text-primary truncate max-w-[150px]">
+                        <span className="font-medium text-primary truncate max-w-[150px]">
                           {val}
                         </span>
                       </div>
@@ -764,16 +825,12 @@ export default function EasyGenerationPage() {
 
       {/* Step 3: Dynamic Form */}
       {step === 3 && selectedType && (
-        <div className="step-content mx-auto flex w-full max-w-2xl flex-col gap-6 pt-6 bg-surface-card border border-border-default rounded-xl p-8 shadow-sm">
+        <div className="step-content mx-auto flex w-full max-w-3xl flex-col gap-6 pt-6 bg-surface-card border border-border-default rounded-xl p-6 sm:p-8 shadow-sm">
           <div>
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold tracking-tight text-text-heading">
+              <h1 className="text-2xl font-semibold tracking-tight text-text-heading">
                 Configure {selectedType.label}
               </h1>
-              <span className="text-xs text-text-muted bg-primary/5 border border-primary/20 rounded-full px-3 py-1 font-medium flex items-center gap-1">
-                <Sparkles size={12} className="text-primary" />
-                Easy Mode Form
-              </span>
             </div>
             <p className="mt-2 text-text-muted text-xs">
               {selectedType.description}
@@ -850,6 +907,7 @@ export default function EasyGenerationPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 
@@ -869,15 +927,16 @@ export default function EasyGenerationPage() {
         return null;
       }
       return (
-        <div key={fieldName} className="flex flex-col gap-3 pt-2">
-          <div>
-            <label className="text-xs font-semibold text-text-heading uppercase tracking-wider">
-              {meta.label}
-            </label>
-            <p className="text-[11px] text-text-muted mt-0.5">
-              Upload visuals below. Click the guidance button to see shooting examples.
+        <details key={fieldName} className="group rounded-xl border border-border-default bg-surface-inset/30 px-4 py-3">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-text-heading marker:hidden">
+            <span>Optional visual references</span>
+            <span className="text-xs font-normal text-text-muted group-open:hidden">Add photos, logo, or style inspiration</span>
+            <span className="hidden text-xs font-normal text-text-muted group-open:inline">Hide references</span>
+          </summary>
+          <div className="mt-4 flex flex-col gap-3">
+            <p className="text-[11px] text-text-muted">
+              Add only what you have. Product photo, brand logo, and style reference are all optional.
             </p>
-          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {REF_IMAGE_SLOTS.map((slot) => {
@@ -953,7 +1012,8 @@ export default function EasyGenerationPage() {
               );
             })}
           </div>
-        </div>
+          </div>
+        </details>
       );
     }
 
@@ -993,6 +1053,37 @@ export default function EasyGenerationPage() {
     }
 
     // ── Textarea ────────────────────────────────────────────────────────
+    const choices = EASY_FIELD_CHOICES[fieldName];
+    if (choices) {
+      return (
+        <div key={fieldName} className="flex flex-col gap-2">
+          <label className="text-xs font-semibold text-text-heading uppercase tracking-wider">
+            {meta.label}
+          </label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {choices.map((choice) => {
+              const selected = value === choice;
+              return (
+                <button
+                  key={choice}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => handleFieldChange(fieldName, choice)}
+                  className={`min-h-10 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                    selected
+                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : "border-border-default bg-surface-card text-text-body hover:border-primary/50 hover:bg-primary/5"
+                  }`}
+                >
+                  {choice}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
     if (meta.type === "textarea") {
       return (
         <div key={fieldName} className="flex flex-col gap-1.5">

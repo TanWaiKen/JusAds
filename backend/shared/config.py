@@ -19,6 +19,10 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 # -- Google Vertex AI / Gemini -------------------------------------------------
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
+# Short-lived source/output objects for Gemini Omni Flash Interactions.  This
+# must be a bucket in the configured Vertex project; Omni cannot read the
+# application's AWS S3 URLs directly.
+VERTEX_GCS_BUCKET = os.environ.get("VERTEX_GCS_BUCKET", "")
 SMALL_TEXT_MODEL = os.environ.get("LLM_MODEL_ID", "gemini-2.5-flash")
 
 # -- Model Registry (centralised model IDs) ------------------------------------
@@ -35,7 +39,7 @@ MODEL_IMAGE_ANALYSIS = os.environ.get("MODEL_IMAGE_ANALYSIS", "gemini-3.5-flash"
 # Voice Model
 MODEL_VOICE = os.environ.get("MODEL_VOICE", "eleven_multilingual_v2")
 # Image Inpainting
-MODEL_INPAINT = os.environ.get("MODEL_INPAINT", "gemini-3.1-flash-lite-image")
+MODEL_INPAINT = os.environ.get("MODEL_INPAINT", "gemini-3.1-flash-image")
 
 
 # -- PredictHQ (Events Calendar) -----------------------------------------------

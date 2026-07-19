@@ -17,6 +17,13 @@ interface CheckStepProps {
 
 /** Human-readable labels and descriptions for pipeline nodes */
 const NODE_INFO: Record<string, { label: string; icon: string }> = {
+  fetch_rules_and_personas: { label: "Rules & Audience", icon: "📚" },
+  transcribe_media: { label: "Media Transcription", icon: "🎙️" },
+  main_brain_analysis: { label: "Initial Compliance Analysis", icon: "🔍" },
+  legal_research_agent: { label: "Regulatory Research", icon: "📖" },
+  grounded_compliance_agent: { label: "Evidence Adjudication", icon: "⚖️" },
+  media_evidence_agent: { label: "Evidence Preparation", icon: "📌" },
+  decision_router: { label: "Final Decision", icon: "✅" },
   compliance_check: { label: "Compliance Analysis", icon: "🔍" },
   segment_image: { label: "Image Segmentation", icon: "🖼️" },
   extract_clips: { label: "Video Clip Extraction", icon: "🎬" },
@@ -38,6 +45,8 @@ const NODE_INFO: Record<string, { label: string; icon: string }> = {
 
 function getNodeInfo(nodeName: string): { label: string; icon: string } {
   if (nodeName === "progress") return { label: "Progress", icon: "📌" };
+  if (nodeName === "generate_remediation") return { label: "Generate Fix", icon: "✨" };
+  if (nodeName === "upload_remediated_asset") return { label: "Upload Asset", icon: "☁️" };
   return NODE_INFO[nodeName] ?? { label: nodeName.replace(/_/g, " "), icon: "⚙️" };
 }
 

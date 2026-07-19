@@ -112,6 +112,7 @@ async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
                     "platform": "general",
                     "s3_media_key": s3_key,
                     "status": "completed",
+                    "asset_role": "reference",
                     "prompt_used": f"Uploaded reference: {body.filename}",
                     "metadata": {
                         "is_reference": True,

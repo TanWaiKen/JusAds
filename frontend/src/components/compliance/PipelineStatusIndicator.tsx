@@ -16,6 +16,8 @@ const NODE_ICONS: Record<string, string> = {
   transcribe: "mic",
   parse_violations: "rule",
   extract_clips: "content_cut",
+  generate_remediation: "auto_fix_high",
+  upload_remediated_asset: "cloud_upload",
 };
 
 /** Human-readable labels for each pipeline node */
@@ -27,14 +29,16 @@ const NODE_LABELS: Record<string, string> = {
   transcribe: "Transcribe",
   parse_violations: "Parse Violations",
   extract_clips: "Extract Clips",
+  generate_remediation: "Generate Fix",
+  upload_remediated_asset: "Upload Asset",
 };
 
 /** Pipeline paths by media type */
 const PIPELINE_PATHS: Record<string, string[]> = {
-  video: ["router", "video_check", "parse_violations", "extract_clips"],
-  image: ["router", "image_check"],
-  audio: ["router", "transcribe", "text_check"],
-  text: ["router", "text_check"],
+  video: ["generate_remediation", "upload_remediated_asset"],
+  image: ["generate_remediation", "upload_remediated_asset"],
+  audio: ["generate_remediation", "upload_remediated_asset"],
+  text: ["generate_remediation"],
 };
 
 type NodeState = "completed" | "active" | "pending";

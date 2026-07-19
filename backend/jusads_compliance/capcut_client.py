@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "ffmpeg")
 
+# ffprobe reports container duration with slightly more precision than the
+# CapCut media parser accepts.  Keep the source range narrowly inside the
+# asset to avoid an import failure such as "end exceeds media duration".
+CAPCUT_DURATION_GUARD_US = 10_000
+
 # Where to store generated CapCut drafts (opened by JianYing desktop)
 DRAFTS_DIR = os.path.join(tempfile.gettempdir(), "jusads_capcut_drafts")
 os.makedirs(DRAFTS_DIR, exist_ok=True)
@@ -108,7 +113,7 @@ def create_capcut_draft(
 
         # Get video duration and add segment
         duration = _get_video_duration(video_path)
-        dur_us = int((duration or 10) * 1_000_000)  # Convert seconds to microseconds
+        dur_us = _capcut_duration_us(duration or 10)
 
         video_seg = cc.VideoSegment(
             video_path,
@@ -178,23 +183,32 @@ def create_multi_scene_draft(
         # Add video track
         script.add_track(cc.TrackType.video, "scenes")
 
-        # Add each scene clip
+        # Add each scene clip.  ``target_timerange`` is its position on the
+        # CapCut timeline (not its source range), so advance it for every
+        # clip.  Leaving every segment at zero makes CapCut reject the draft
+        # as overlapping scenes.
+        timeline_cursor_us = 0
         for i, clip_path in enumerate(scene_clips):
             if not os.path.exists(clip_path):
                 logger.warning("[CapCut] Scene clip not found, skipping: %s", clip_path)
                 continue
 
             duration = _get_video_duration(clip_path)
-            dur_us = int((duration or 5) * 1_000_000)
+            dur_us = _capcut_duration_us(duration or 5)
 
-            seg = cc.VideoSegment(clip_path, cc.Timerange(0, dur_us))
+            seg = cc.VideoSegment(
+                clip_path,
+                cc.Timerange(timeline_cursor_us, dur_us),
+                source_timerange=cc.Timerange(0, dur_us),
+            )
             script.add_segment(seg, "scenes")
+            timeline_cursor_us += dur_us
 
         # Add audio track if provided
         if audio_path and os.path.exists(audio_path):
             script.add_track(cc.TrackType.audio, "voiceover")
             audio_dur = _get_video_duration(audio_path)  # ffprobe works for audio too
-            audio_dur_us = int((audio_dur or 30) * 1_000_000)
+            audio_dur_us = _capcut_duration_us(audio_dur or 30)
             audio_seg = cc.AudioSegment(audio_path, cc.Timerange(0, audio_dur_us))
             script.add_segment(audio_seg, "voiceover")
 
@@ -572,6 +586,12 @@ def _get_video_duration(video_path: str) -> Optional[float]:
     except Exception:
         pass
     return None
+
+
+def _capcut_duration_us(duration_seconds: float) -> int:
+    """Convert a probed duration to a safely in-bounds CapCut source range."""
+    duration_us = int(duration_seconds * 1_000_000)
+    return max(1, duration_us - CAPCUT_DURATION_GUARD_US)
 
 
 def _concat_videos(parts: list[str], output_path: str) -> dict:

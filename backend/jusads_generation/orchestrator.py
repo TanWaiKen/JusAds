@@ -119,10 +119,43 @@ def _enrich_brief(user_message: str, context: dict) -> str:
     if context.get("language") and context["language"] != "auto":
         lang_map = {"ms": "Bahasa Melayu", "en": "English", "zh": "Mandarin", "ta": "Tamil"}
         meta.append(f"Copy language: {lang_map.get(context['language'], context['language'])}")
-    if context.get("market") and context["market"] != "malaysia":
-        meta.append(f"Market: {context['market'].title()}")
+    market = context.get("market") or "malaysia"
+    meta.append(f"Market: {market.title()}")
     if meta:
         parts.append("[SETTINGS: " + " | ".join(meta) + "]")
+
+    language = context.get("language") or "auto"
+    language_name = {"ms": "Bahasa Melayu", "en": "English", "zh": "Mandarin", "ta": "Tamil"}.get(language, language)
+    copy_rule = (
+        f"Use {language_name} for approved promotional copy."
+        if language != "auto"
+        else "Use the language explicitly requested by the user; if none is requested, propose copy for review instead of assuming a language."
+    )
+    is_source_revision = bool(context.get("parent_ad_id"))
+    researched_plan = context.get("localization_plan", "").strip()
+    if researched_plan:
+        parts.append(f"[LOCALIZATION PLAN (COMPLIANCE RESEARCH): {researched_plan}]")
+    else:
+        copy_guidance = (
+            "Render quoted promotional copy verbatim and legibly in the image. "
+            if is_source_revision
+            else "Keep the product intent and use a clear copy-safe area rather than generating exact text in the image. "
+        )
+        parts.append(
+            "[LOCALIZATION PLAN (FALLBACK): "
+            f"Market={market.title()}. {copy_rule} {copy_guidance}"
+            "Choose people by product role, attire, conduct and age suitability; do not infer or prescribe ethnicity, religion or nationality. "
+            "Do not create halal, medical, safety, award, official-endorsement or certification badges unless they are explicitly supplied and verified. "
+            "Do not depict or celebrate violence, armed conflict, extremist material or hate content.]"
+        )
+    if is_source_revision:
+        parts.append(
+            "[SOURCE-ANCHORED REVISION: Edit the supplied source image rather than "
+            "inventing a new composition. Preserve its product, framing and useful "
+            "brand details. If the feedback supplies quoted promotional copy, it must "
+            "appear verbatim, legibly, as a deliberate overlay. Requested stickers must "
+            "be visible, discrete graphic elements.]"
+        )
     return "\n".join(parts)
 
 _ASSISTANT_SYSTEM_INSTRUCTION = ASSISTANT_CHAT_PROMPT
@@ -421,6 +454,8 @@ def _build_pipeline_state(
                 node["props"] = {
                     "compliance_status": ad["compliance_status"],
                     "prompt_used": user_message,
+                    "ad_id": ad.get("ad_id") or "",
+                    "asset_url": ad.get("public_url") or "",
                 }
         
         # Connect nodes only if we should_connect and input/output exist
@@ -603,7 +638,7 @@ async def run_generation(
     target_platform: Optional[str],
     current_state: dict,
     skip_compliance: bool = False,
-    video_v3: bool = False,
+    video_v3: bool = True,
     target_ethnicity: Optional[str] = None,
     age_group: Optional[str] = None,
     market: Optional[str] = None,
@@ -611,6 +646,11 @@ async def run_generation(
     product_name: Optional[str] = None,
     product_category: Optional[str] = None,
     gender: Optional[str] = None,
+    generation_mode: str = "advanced",
+    guided_inputs: Optional[dict] = None,
+    parent_ad_id: Optional[str] = None,
+    parent_asset_url: Optional[str] = None,
+    revision_feedback: Optional[str] = None,
     force_media_types: Optional[list[str]] = None,
 ) -> AsyncGenerator[str, None]:
     """Run the generation orchestration, streaming SSE lines.
@@ -682,7 +722,47 @@ async def run_generation(
         "product_name": product_name or "",
         "product_category": product_category or "",
         "gender": gender or "female",
+        "generation_mode": generation_mode,
+        "parent_ad_id": parent_ad_id,
+        "parent_asset_url": parent_asset_url or "",
+        "revision_feedback": revision_feedback or "",
+        "brand_snapshot": {
+            key: value
+            for key, value in (guided_inputs or {}).items()
+            if key in {"brand_tone", "visual_style", "color_palette", "brand_logo"}
+            and value not in (None, "", [])
+        },
     }
+
+    # Reuse the compliance research stack before generation.  There is no
+    # media asset yet, so research is scoped to the campaign brief and returns
+    # creative guidance rather than an approval verdict.
+    yield _sse({"type": "localization_research", "status": "running"})
+    try:
+        from jusads_compliance.agents.research import build_generation_localization_plan
+
+        localization_research = build_generation_localization_plan(
+            brief=user_message,
+            market=gen_context["market"],
+            platform=platform,
+            ethnicity=gen_context["target_ethnicity"],
+            age_group=gen_context["age_group"],
+            language=gen_context["language"],
+            task_id=task_id,
+        )
+        gen_context["localization_plan"] = localization_research.get("localization_plan", "")
+        gen_context["localization_sources"] = localization_research.get("sources", [])
+        yield _sse({
+            "type": "localization_research",
+            "status": "completed",
+            "sources_count": len(gen_context["localization_sources"]),
+            "provider": localization_research.get("provider", "none"),
+        })
+    except Exception as exc:  # Generation stays available if research is unavailable.
+        logger.warning("[Orchestrator] Localisation research unavailable: %s", exc)
+        gen_context["localization_plan"] = ""
+        gen_context["localization_sources"] = []
+        yield _sse({"type": "localization_research", "status": "fallback"})
 
     # 3. Prepare optional multimodal references and stream the assistant reply.
     reference_parts = await _load_reference_parts(reference_urls)
@@ -756,10 +836,11 @@ async def run_generation(
                         task_id=task_id,
                         character_description=gen_context.get("product_name", ""),
                         product_description=gen_context.get("product_category", ""),
-                        video_duration_sec=30.0,
+                        video_duration_sec=15.0,
                         width=1080,
                         height=1920,
                         target_ethnicity=gen_context.get("target_ethnicity", "all"),
+                        reference_image_urls=reference_urls,
                     ):
                         yield sse_line
                 except Exception as exc:  # noqa: BLE001
@@ -780,6 +861,7 @@ async def run_generation(
                     platform=platform,
                     rules=rules,
                     reference_parts=reference_parts,
+                    generation_context=gen_context,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.error("[Orchestrator] %s agent crashed: %s", media_type, exc)

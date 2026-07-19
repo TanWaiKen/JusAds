@@ -7,10 +7,10 @@ import tempfile
 import time
 import uuid
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from google.genai import types
 from shared.clients import gemini, elevenlabs
-from shared.config import MODEL_TEXT
+from shared.config import MODEL_INPAINT, MODEL_TEXT
 from jusads_compliance.prompts import SCULPT_PROMPT_TEMPLATE
 from config import get_voice
 from langchain_core.tools import tool
@@ -20,6 +20,107 @@ logger = logging.getLogger(__name__)
 def _to_base64(file_path):
     with open(file_path, "rb") as f:
         return base64.b64encode(f.read()).decode()
+
+
+def _native_image_bytes(prompt: str, reference_images: list[tuple[bytes, str]] | None = None) -> bytes:
+    """Generate an edited or new image with Gemini's native image model."""
+    contents: list = [prompt]
+    for image_bytes, mime_type in reference_images or []:
+        contents.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+
+    response = gemini.models.generate_content(
+        model=MODEL_INPAINT,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"],
+            image_config=types.ImageConfig(aspect_ratio="1:1", output_mime_type="image/png"),
+        ),
+    )
+    for candidate in response.candidates or []:
+        for part in candidate.content.parts or []:
+            if part.inline_data and part.inline_data.data:
+                return part.inline_data.data
+    raise ValueError("Gemini image model returned no image data")
+
+
+def _localize_copy_overlay(
+    image_path: str, target_language: str, copy_actions: list[dict]
+) -> list[dict]:
+    """Detect promotional copy, then render approved localised copy as an overlay.
+
+    Text is deliberately handled outside the generative inpaint mask: generative
+    image models are not dependable for exact typography or language fidelity.
+    Coordinates are normalised to a 1000px canvas by the vision model.
+    """
+    with open(image_path, "rb") as image_file:
+        image_bytes = image_file.read()
+    requested = [
+        {"original": item.get("original", ""), "replacement": item.get("replacement", "")}
+        for item in copy_actions if isinstance(item, dict) and item.get("replacement")
+    ]
+    prompt = f"""Inspect this ad image and prepare exact promotional-copy overlays in {target_language}.
+Known approved replacements: {json.dumps(requested, ensure_ascii=False)}
+Find each matching visible promotional text block. If a replacement is not supplied, translate the visible promotional copy faithfully without adding claims, prices, badges or certification marks.
+Return JSON only: {{"actions":[{{"original":"detected text","replacement":"exact {target_language} text","bbox":[x,y,width,height]}}]}}.
+Coordinates must be integers on a 1000x1000 normalised canvas. Include only readable promotional copy, not brand logos."""
+    response = gemini.models.generate_content(
+        model=MODEL_TEXT,
+        contents=[types.Content(role="user", parts=[
+            types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+            types.Part.from_text(text=prompt),
+        ])],
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
+    actions = (json.loads(response.text).get("actions") or [])
+    image = Image.open(image_path).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    font_path = "C:/Windows/Fonts/arial.ttf"
+    rendered: list[dict] = []
+    for action in actions:
+        bbox = action.get("bbox") or []
+        replacement = str(action.get("replacement") or "").strip()
+        if len(bbox) != 4 or not replacement:
+            continue
+        x, y, width, height = [int(value) for value in bbox]
+        left, top = max(0, x * image.width // 1000), max(0, y * image.height // 1000)
+        right = min(image.width, left + max(1, width * image.width // 1000))
+        bottom = min(image.height, top + max(1, height * image.height // 1000))
+        # Fill from the nearby background; this is intentionally deterministic
+        # and keeps exact text out of the image generator.
+        sample_x, sample_y = max(0, left - 3), max(0, top - 3)
+        background = image.getpixel((sample_x, sample_y))
+        draw.rectangle((left, top, right, bottom), fill=background)
+        size = max(12, min(max(1, bottom - top), max(1, right - left)) // 3)
+        try:
+            font = ImageFont.truetype(font_path, size=size)
+        except OSError:
+            font = ImageFont.load_default()
+        draw.multiline_text((left, top), replacement, fill="#34204e", font=font, spacing=2)
+        rendered.append({"original": action.get("original", ""), "replacement": replacement, "bbox": bbox})
+    image.save(image_path)
+    return rendered
+
+
+def _localize_copy_with_native_edit(image_path: str, target_language: str, copy_actions: list[dict]) -> list[dict]:
+    """Use Gemini native image editing for copy first; keep the overlay as fallback."""
+    replacements = [
+        f'Replace exactly "{item.get("original", "")}" with "{item.get("replacement", "")}"'
+        for item in copy_actions if isinstance(item, dict) and item.get("replacement")
+    ]
+    instruction = "; ".join(replacements) if replacements else (
+        f"Translate every visible promotional line into concise {target_language} while preserving its meaning"
+    )
+    source_bytes = open(image_path, "rb").read()
+    prompt = (
+        "Edit only the readable promotional text in this finished advertising image. "
+        f"{instruction}. Preserve the person, product, logo, discount badge, colours, lighting, and layout exactly. "
+        "Do not add claims, prices, badges, certifications, or explanatory text. Return only the finished image."
+    )
+    edited_bytes = _native_image_bytes(prompt, [(source_bytes, "image/png")])
+    with open(image_path, "wb") as output_file:
+        output_file.write(edited_bytes)
+    approved = [item for item in copy_actions if isinstance(item, dict) and item.get("replacement")]
+    return approved or [{"original": "visible promotional copy", "replacement": "native translation", "language": target_language}]
 
 
 def _make_binary_mask(segmented_path: str, original_path: str) -> str:
@@ -205,7 +306,7 @@ def edit_image(
       1. Convert segmented overlay to binary mask (white = edit region, black = keep)
       2. Build SCULPT prompt (violations + localization_plan + platform + audience context)
       3. Gemini reads SCULPT to decide edit_mode + inpainting prompt
-      4. Loop: imagen-3.0-capability-002 with user-provided mask -> quality check -> refine if < 70 (max 3 attempts)
+      4. Loop: configured Gemini native image model with original + mask references -> quality check -> refine if < 70 (max 3 attempts)
       5. Upload result to S3
       6. Persist s3_remix_key to Supabase
 
@@ -236,12 +337,31 @@ def edit_image(
     if not task:
         raise RuntimeError(f"Task {task_id} not found in project {project_id}")
     compliance = task.get("compliance", {}) or {}
+    result_json = compliance.get("result_json") or {}
     user_id = project_id
 
     # Extract localization_plan from compliance result_json if not passed explicitly
     if not localization_plan:
-        result_json = compliance.get("result_json") or {}
         localization_plan = result_json.get("localization_plan", "")
+
+    language_result = result_json.get("language_compliance") or {}
+    required_language = str(language_result.get("required_language") or "").strip()
+    copy_actions = ((result_json.get("image_review") or {}).get("copy_actions") or [])
+    copy_localization_required = bool(copy_actions) or language_result.get("is_compliant") is False
+    copy_instruction = ""
+    if copy_localization_required:
+        replacements = [
+            f'Replace "{item.get("original", "visible promotional copy")}" with exactly "{item.get("replacement", "")}"'
+            for item in copy_actions
+            if isinstance(item, dict) and item.get("replacement")
+        ]
+        if replacements:
+            copy_instruction = " Also localise the visible promotional copy: " + "; ".join(replacements) + "."
+        else:
+            copy_instruction = (
+                f" Also replace all visible promotional copy with concise, accurate {required_language or 'target-language'} copy "
+                "that preserves the original offer; do not add new claims, prices, badges, or certifications."
+            )
 
     # Auto-resolve image and segmented mask from S3
     s3_upload_url = compliance.get("s3_upload_key", "")
@@ -277,8 +397,9 @@ def edit_image(
     # Step 3: Gemini reads SCULPT -> edit mode + inpainting prompt
     edit_mode, inpaint_prompt = _decide_edit_mode(sculpt_prompt, feedback)
 
-    image_b64_bytes = base64.b64decode(_to_base64(image_path))
-    mask_b64_bytes = base64.b64decode(_to_base64(mask_path))
+    with open(image_path, "rb") as image_file, open(mask_path, "rb") as mask_file:
+        image_bytes = image_file.read()
+        mask_bytes = mask_file.read()
 
     # Step 4: Edit loop - max 3 attempts
     MAX_ATTEMPTS = 3
@@ -289,48 +410,50 @@ def edit_image(
     for attempt in range(1, MAX_ATTEMPTS + 1):
         logger.info(f"Attempt {attempt}/{MAX_ATTEMPTS} - mode={edit_mode}")
         try:
-            response = gemini.models.edit_image(
-                model="imagen-3.0-capability-002",
-                prompt=inpaint_prompt,
-                reference_images=[
-                    types.RawReferenceImage(
-                        reference_image=types.Image(image_bytes=image_b64_bytes),
-                        reference_id=1,
-                    ),
-                    types.MaskReferenceImage(
-                        reference_image=types.Image(image_bytes=mask_b64_bytes),
-                        reference_id=2,
-                        config=types.MaskReferenceConfig(
-                            mask_mode="MASK_MODE_USER_PROVIDED",
-                        ),
-                    ),
-                ],
-                config=types.EditImageConfig(
-                    edit_mode=edit_mode,
-                    number_of_images=1,
-                    safety_filter_level="BLOCK_SOME",
-                    person_generation="ALLOW_ALL",
-                ),
+            native_prompt = (
+                f"Edit the first reference image. {inpaint_prompt} "
+                "The second reference image is a binary mask: modify only white areas and preserve black areas. "
+                + copy_instruction
+                + " Return one finished, compliant advertising image with no explanatory text."
             )
-
-            if not response.generated_images:
-                raise ValueError("Imagen returned no images")
-
             with open(output_path, "wb") as f:
-                f.write(response.generated_images[0].image.image_bytes)
+                f.write(_native_image_bytes(native_prompt, [(image_bytes, "image/png"), (mask_bytes, "image/png")]))
+
+            rendered_copy_actions: list[dict] = []
+            if copy_localization_required:
+                rendered_copy_actions = _localize_copy_with_native_edit(
+                    output_path,
+                    required_language or "the requested target language",
+                    copy_actions,
+                )
+                if not rendered_copy_actions:
+                    raise ValueError("No approved promotional copy was available for native localisation")
 
             quality_result = check_edit_quality.invoke(
-                {"original_path": image_path, "edited_path": output_path}
+                {
+                    "original_path": image_path,
+                    "edited_path": output_path,
+                    "required_language": required_language,
+                    "require_localized_copy": copy_localization_required,
+                }
             )
             quality_score = quality_result.get("quality_score", 0) if "error" not in quality_result else 0
-            logger.info(f"Quality: {quality_score}/100 (attempt {attempt})")
+            localization_pass = quality_result.get("localization_pass", not copy_localization_required)
+            logger.info(f"Quality: {quality_score}/100 (attempt {attempt}), localization_pass={localization_pass}")
 
-            if quality_score >= 70:
+            if quality_score >= 70 and localization_pass:
                 logger.info(f"Quality passed on attempt {attempt}")
                 break
 
+            if copy_localization_required:
+                # Copy localisation is a dedicated native-edit step. Rewriting
+                # the visual inpaint prompt cannot fix text outside the mask and
+                # tends to replace the ad with unrelated generic imagery.
+                last_error = quality_result.get("explanation", "Localised copy was not verified")
+                break
+
             if attempt < MAX_ATTEMPTS:
-                reason = quality_result.get("feedback", "Quality insufficient")
+                reason = quality_result.get("explanation") or quality_result.get("feedback", "Quality or localization insufficient")
                 refine = gemini.models.generate_content(
                     model=MODEL_TEXT,
                     contents=(
@@ -347,7 +470,7 @@ def edit_image(
 
     if quality_score < 70:
         return {
-            "error": f"All {MAX_ATTEMPTS} attempts failed. Last error: {last_error}",
+            "error": f"All {MAX_ATTEMPTS} attempts failed. The visual edit may be acceptable, but required localised copy was not verified. Last error: {last_error}",
             "original_path": image_path,
             "tool": "edit_image",
         }
@@ -381,9 +504,12 @@ def edit_image(
         "output_path": output_path,
         "s3_url": s3_url,
         "s3_remix_key": s3_remix_key,
-        "model_used": "imagen-3.0-capability-002",
+        "model_used": MODEL_INPAINT,
         "edit_mode": edit_mode,
         "quality_score": quality_score,
+        "localization_verified": bool(quality_result.get("localization_pass", not copy_localization_required)),
+        "required_language": required_language if copy_localization_required else "",
+        "localized_copy_actions": rendered_copy_actions if copy_localization_required else [],
         "attempts": attempt,
         "prompt_used": sculpt_prompt,
     }
@@ -460,36 +586,20 @@ Return ONLY the image generation prompt text."""
         logger.error(f"[GenerateImage] Prompt generation failed: {e}")
         return {"error": f"Prompt generation failed: {e}", "tool": "generate_image"}
 
-    # Step 2: Generate with Imagen 4
+    # Step 2: Generate with the configured Gemini native image model.
     try:
-        logger.info("[GenerateImage] Generating with Imagen 4...")
-        response = gemini.models.generate_images(
-            model="imagen-4.0-generate-001",
-            prompt=generation_prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="1:1",
-            ),
-        )
-
-        if response.generated_images and len(response.generated_images) > 0:
-            result_image = response.generated_images[0]
-            with open(output_path, "wb") as f:
-                f.write(result_image.image.image_bytes)
-            logger.info(f"[GenerateImage] Imagen 4 saved to {output_path}")
-
-            return {
-                "output_path": output_path,
-                "prompt_used": generation_prompt,
-                "model_used": "imagen-4.0-generate-001",
-            }
-        else:
-            logger.warning("[GenerateImage] Imagen 4 returned no images.")
-            return {"error": "Imagen 4 returned no images", "tool": "generate_image"}
+        logger.info("[GenerateImage] Generating with %s...", MODEL_INPAINT)
+        with open(output_path, "wb") as output_file:
+            output_file.write(_native_image_bytes(generation_prompt))
+        return {
+            "output_path": output_path,
+            "prompt_used": generation_prompt,
+            "model_used": MODEL_INPAINT,
+        }
 
     except Exception as e:
-        logger.warning(f"[GenerateImage] Imagen 4 failed: {e}")
-        return {"error": f"Imagen 4 generation failed: {e}", "tool": "generate_image"}
+        logger.warning(f"[GenerateImage] Gemini image generation failed: {e}")
+        return {"error": f"Gemini image generation failed: {e}", "tool": "generate_image"}
 
 
 def _detect_language(text: str) -> str:
@@ -515,8 +625,10 @@ def rewrite_text(
     ethnicity: str,
     age_group: str,
     feedback: str = "",
+    required_language: str = "",
+    localization_plan: str = "",
 ) -> dict:
-    """Rewrite ad text to fix compliance violations while preserving brand voice, language, and length.
+    """Rewrite ad text using the compliance task's language and localization plan.
 
     Args:
         text: Original ad text to rewrite.
@@ -526,21 +638,63 @@ def rewrite_text(
         ethnicity: Target ethnicity (e.g. "malay", "chinese", "indian").
         age_group: Target age group (e.g. "gen_z", "millennial").
         feedback: Optional reviewer feedback for the rewrite.
+        required_language: Required output language from the compliance result.
+        localization_plan: Audience and compliance guidance from the original check.
 
     Returns:
         Dict with "rewritten_text" and "changes_made" on success,
         or original text with error description on failure.
     """
     from jusads_compliance.prompts import TEXT_REWRITE_PROMPT
+    # Keep this import lazy: remix_agent.audio imports this tools module.
+    from jusads_compliance.remix_agent.localization import has_required_script, plan_localization
 
     # Detect language of input text
     detected_language = _detect_language(text)
     logger.info(f"Detected language: {detected_language}")
+    localization = plan_localization(
+        market=market,
+        ethnicity=ethnicity,
+        age_group=age_group,
+        platform=platform,
+        required_language=required_language,
+        localization_plan=localization_plan,
+    )
+    required_language = localization["output_language"]
+    if required_language:
+        secondary_language = localization.get("secondary_language") or ""
+        code_switch = localization.get("code_switch", False)
+        register = localization.get("register") or "audience-appropriate"
+        secondary_instruction = (
+            f" A natural, limited amount of {secondary_language} code-switching is allowed."
+            if code_switch and secondary_language
+            else ""
+        )
+        language_instruction = (
+            f"The source text is {detected_language}, but this compliance task requires "
+            f"{required_language} as the persona's primary language. You MUST write the ad "
+            f"primarily in {required_language}.{secondary_instruction} Use a {register} register. "
+            "Do not retain the source language unless it is explicitly permitted above."
+        )
+        output_language = required_language
+    else:
+        language_instruction = (
+            f"The source text is written in {detected_language}. Produce the rewritten "
+            f"text in the same language ({detected_language})."
+        )
+        output_language = detected_language
 
-    # Calculate length constraints (20% variance)
+    # Chinese script conveys the same spoken content in far fewer characters
+    # than Portuguese/English. Character-for-character constraints would force
+    # an unnaturally long TTS script, so use a word-based spoken-length proxy.
     original_length = len(text)
-    min_length = int(original_length * 0.8)
-    max_length = int(original_length * 1.2)
+    if localization["required_script"] in {"han", "tamil"}:
+        source_words = max(1, len(text.split()))
+        min_length = max(20, int(source_words * 1.5))
+        max_length = max(min_length + 10, int(source_words * 2.5))
+    else:
+        min_length = int(original_length * 0.8)
+        max_length = int(original_length * 1.2)
 
     # Build prompt from template
     violations_text = "\n".join(f"- {v}" for v in violations)
@@ -555,6 +709,8 @@ def rewrite_text(
         age_group=age_group,
         feedback_section=feedback_section,
         detected_language=detected_language,
+        localization_plan=localization_plan or "No additional localization guidance was provided.",
+        language_instruction=language_instruction,
         original_length=original_length,
         min_length=min_length,
         max_length=max_length,
@@ -584,7 +740,8 @@ def rewrite_text(
             retry_prompt = (
                 f"The following rewritten text is {len(rewritten)} characters but must be "
                 f"between {min_length} and {max_length} characters. "
-                f"Adjust it to fit within the length constraint while keeping all fixes.\n\n"
+                f"Adjust it to fit within the length constraint while keeping all fixes. "
+                f"Keep the required output language: {output_language}.\n\n"
                 f"Text: {rewritten}\n\n"
                 f"Return ONLY a JSON object: "
                 f'{{"rewritten_text": "adjusted text", "changes_made": {json.dumps(result.get("changes_made", []))}}}'
@@ -602,6 +759,9 @@ def rewrite_text(
                 return {
                     "rewritten_text": adjusted,
                     "changes_made": retry_result.get("changes_made", result.get("changes_made", [])),
+                    "target_language": output_language,
+                    "script_valid": has_required_script(adjusted, localization["required_script"]),
+                    "localization": localization,
                 }
             # If retry still fails bounds, return what we have with a warning
             logger.warning("Length adjustment retry still out of bounds, returning best effort.")
@@ -609,6 +769,9 @@ def rewrite_text(
         return {
             "rewritten_text": rewritten,
             "changes_made": result.get("changes_made", []),
+            "target_language": output_language,
+            "script_valid": has_required_script(rewritten, localization["required_script"]),
+            "localization": localization,
         }
 
     except Exception as e:
@@ -752,8 +915,8 @@ def remix_audio(
     """Regenerate a non-compliant audio segment with a culturally appropriate voice.
 
     Extracts the violating segment, selects an appropriate ElevenLabs voice based on
-    market/ethnicity/gender, generates replacement TTS audio, and matches the original
-    segment duration. Supports lip-sync dubbing for video contexts.
+    market/ethnicity/gender, and generates replacement TTS audio. Duration is matched
+    only for video/lip-sync contexts; standalone audio retains its spoken length.
 
     Args:
         audio_path: Path to the source audio file.
@@ -910,21 +1073,28 @@ def remix_audio(
     adjusted_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="adjusted_")
     adjusted_tmp.close()
     adjusted_path = adjusted_tmp.name
-    duration_match = _trim_or_pad_audio(output_path, segment_duration, adjusted_path)
+    # Standalone audio must keep the actual TTS duration.  Matching it to the
+    # full compliance window merely adds trailing silence, which then makes a
+    # browser audio player report a misleading longer duration.  Video dubbing
+    # remains timeline-matched for lip-sync.
+    target_duration = segment_duration if is_video_context else _get_audio_duration(output_path)
+    duration_match = _trim_or_pad_audio(output_path, target_duration, adjusted_path)
 
     if duration_match and os.path.exists(adjusted_path):
         # Replace output with adjusted version
         os.replace(adjusted_path, output_path)
         final_duration = _get_audio_duration(output_path)
-        duration_within_tolerance = abs(final_duration - segment_duration) <= 0.2
+        duration_within_tolerance = abs(final_duration - target_duration) <= 0.2
         logger.info(
-            f"Duration matching: target={segment_duration:.2f}s, "
+            f"Duration matching: target={target_duration:.2f}s, "
             f"actual={final_duration:.2f}s, within_tolerance={duration_within_tolerance}"
         )
     else:
         # Trim/pad failed — use raw TTS output and note mismatch
         duration_within_tolerance = False
         logger.warning("Duration trim/pad failed, using raw TTS output.")
+
+    final_duration = _get_audio_duration(output_path)
 
     # Clean up temporary segment file
     if os.path.exists(segment_path):
@@ -938,12 +1108,18 @@ def remix_audio(
         "output_path": output_path,
         "voice_id": voice_id,
         "duration_match": duration_within_tolerance,
+        "duration_seconds": final_duration,
     }
 
 
 @tool
-def check_edit_quality(original_path, edited_path):
-    """Compare original vs edited image — check if edit looks natural."""
+def check_edit_quality(
+    original_path: str,
+    edited_path: str,
+    required_language: str = "",
+    require_localized_copy: bool = False,
+):
+    """Compare visual quality and verify any required promotional-copy localisation."""
     import mimetypes
 
     orig_b64 = _to_base64(original_path)
@@ -951,7 +1127,7 @@ def check_edit_quality(original_path, edited_path):
     orig_mime = mimetypes.guess_type(original_path)[0] or "image/png"
     edit_mime = mimetypes.guess_type(edited_path)[0] or "image/png"
 
-    prompt = """Compare ORIGINAL and EDITED advertisement images.
+    prompt = f"""Compare ORIGINAL and EDITED advertisement images.
 
                 Evaluate the EDITED image:
                 1. Visual integrity (no artifacts, warping, inconsistent lighting)
@@ -959,15 +1135,25 @@ def check_edit_quality(original_path, edited_path):
                 3. Edit naturalness (fix blends seamlessly)
                 4. Advertising appeal (still sells the product)
 
-                Return JSON:
-                {"quality_score": 0-100, "pass": true/false, "issues": ["issue 1"], "explanation": "short reason"}
+                LOCALISATION REQUIREMENT:
+                - Required localised copy: {require_localized_copy}
+                - Required language: {required_language or "not specified"}
+                If localised copy is required, inspect ALL readable promotional text in the EDITED image.
+                Set localization_pass=false if English/original-language promotional copy remains where a required target language should be used, or if the text is unreadable/garbled. Visual realism alone must never pass this check.
 
-                Pass if quality_score >= 70 and no major artifacts."""
+                Return JSON:
+                {{"quality_score": 0-100, "pass": true/false, "localization_pass": true/false, "issues": ["issue 1"], "explanation": "short reason"}}
+
+                Pass only if quality_score >= 70, no major artifacts, and localization_pass=true."""
 
     try:
         response = gemini.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=[types.Content(parts=[
+            model=MODEL_TEXT,
+            # Gemini only accepts conversational `user` and `model` roles.  An
+            # omitted role is serialised as an unsupported system turn by the
+            # current SDK, which made every otherwise-successful image edit
+            # fail its post-edit quality gate.
+            contents=[types.Content(role="user", parts=[
                 types.Part.from_text(text="ORIGINAL:"),
                 types.Part.from_bytes(data=base64.b64decode(orig_b64), mime_type=orig_mime),
                 types.Part.from_text(text="EDITED:"),
@@ -1031,7 +1217,7 @@ Return passed=true if no egregious bias or hallucination issues found."""
 
         response = gemini.models.generate_content(
             model=MODEL_TEXT,
-            contents=[types.Content(parts=[
+            contents=[types.Content(role="user", parts=[
                 types.Part.from_text(text="ORIGINAL:"),
                 types.Part.from_bytes(data=base64.b64decode(orig_b64), mime_type=orig_mime),
                 types.Part.from_text(text="EDITED:"),

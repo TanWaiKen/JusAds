@@ -1,10 +1,11 @@
-import type { NodeStatus, RemixCannotFixEvent, RemixImageEditEvent, RemixEditFailedEvent } from "@/services/complianceApi";
+import type { RemixNodeStatus, RemixCannotFixEvent, RemixImageEditEvent, RemixEditFailedEvent } from "@/services/remix";
 import type { RemixOutcome } from "@/hooks/useComplianceRemix";
-import { PipelineStatusIndicator } from "@/components/compliance/PipelineStatusIndicator";
+import { CheckStep } from "@/components/compliance/CheckStep";
 import { Button } from "@/components/ui/button";
 
 interface RemixStepProps {
-  remixNodes: NodeStatus[];
+  remixNodes: RemixNodeStatus[];
+  currentNode: string | null;
   isRemixing: boolean;
   remixComplete: boolean;
   remixError: string | null;
@@ -24,6 +25,7 @@ interface RemixStepProps {
  */
 export function RemixStep({
   remixNodes,
+  currentNode,
   isRemixing,
   remixComplete,
   remixError,
@@ -38,18 +40,16 @@ export function RemixStep({
   const latestNodeStatus =
     remixNodes.length > 0 ? remixNodes[remixNodes.length - 1] : null;
 
-  // Derive currentNode from the latest running node
-  const currentNode =
-    remixNodes.find((n) => n.status === "running")?.node ?? null;
-
   return (
     <div className="flex flex-col items-center gap-6 py-8">
-      {/* Pipeline progress indicator */}
-      <PipelineStatusIndicator
+      {/* Use the same detailed SSE activity log as compliance checks. */}
+      <CheckStep
         nodeStatuses={remixNodes}
         currentNode={currentNode}
         isStreaming={isRemixing}
-        mediaType={mediaType}
+        mediaType={`${mediaType} remix`}
+        error={remixError ? { message: remixError, retryable: true } : null}
+        onRetry={onRetry}
       />
 
       {/* Visually hidden aria-live region for screen reader announcements */}
@@ -152,25 +152,6 @@ export function RemixStep({
         </div>
       )}
 
-      {/* Global Error state with retry button */}
-      {remixError && (
-        <div
-          className="p-4 bg-error-container rounded-xl flex items-center justify-between w-full max-w-lg"
-          role="alert"
-        >
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-on-error-container">
-              error
-            </span>
-            <p className="text-on-error-container font-label-ui text-label-ui">
-              {remixError}
-            </p>
-          </div>
-          <Button onClick={onRetry} variant="default" size="sm">
-            Retry
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

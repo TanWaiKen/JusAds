@@ -15,11 +15,12 @@ import json
 import logging
 import tempfile
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from shared.supabase_client import SupabaseComplianceStore
 from shared.s3_client import generate_presigned_upload_url, get_public_url, upload_file_public
@@ -40,6 +41,11 @@ from jusads_generation.distribution import (
     DistributionError,
     AccountNotConfiguredError,
     get_ad_analytics,
+    configured_distribution_accounts,
+)
+from jusads_generation.caption_agent import (
+    generate_platform_caption,
+    normalize_platform_caption,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,7 +72,9 @@ class ChatRequest(BaseModel):
     reference_urls: List[str] = []
     target_platform: Optional[str] = None
     skip_compliance: bool = False
-    video_v3: bool = False
+    # V3 is the production video path. Legacy single-clip generation remains
+    # an explicit opt-out for existing workflows only.
+    video_v3: bool = True
     target_ethnicity: Optional[str] = None
     age_group: Optional[str] = None  # gen_z|millennial|gen_x|baby_boomer|all_ages
     market: Optional[str] = None  # malaysia|singapore
@@ -77,6 +85,8 @@ class ChatRequest(BaseModel):
     # Easy Mode fields (Req 14.1, 14.5)
     revision_instruction: Optional[str] = None
     advanced_overrides: Optional[dict] = None
+    parent_ad_id: Optional[str] = None
+    parent_asset_url: Optional[str] = None
 
 
 class UploadUrlRequest(BaseModel):
@@ -120,6 +130,35 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
         "viewport": {"panX": 0, "panY": 0, "zoom": 1}
     }
 
+    # A revision must be tied to a persisted asset in this task. The server
+    # owns this lookup so a client cannot create cross-project parent links.
+    revision_parent: dict | None = None
+    if body.parent_ad_id or body.parent_asset_url:
+        try:
+            from shared.clients import supabase as sb
+
+            query = (
+                sb.table("generated_ads")
+                .select("id, media_type, prompt_used, caption, s3_media_key, metadata")
+                .eq("project_id", project_id)
+                .eq("task_id", task_id)
+                .eq("asset_role", "output")
+            )
+            if body.parent_ad_id:
+                query = query.eq("id", body.parent_ad_id)
+            elif body.parent_asset_url:
+                query = query.contains("metadata", {"s3_url": body.parent_asset_url})
+            rows = query.limit(1).execute().data or []
+            revision_parent = rows[0] if rows else None
+            if not revision_parent:
+                return JSONResponse(status_code=404, content={"error": "Selected source version was not found in this task"})
+            parent_url = (revision_parent.get("metadata") or {}).get("s3_url")
+            if parent_url and parent_url not in body.reference_urls:
+                body.reference_urls.append(parent_url)
+        except Exception as exc:
+            logger.error("[Generation] Failed to load revision source: %s", exc)
+            return JSONResponse(status_code=500, content={"error": "Could not load the selected source version"})
+
     # -- Guided mode: assemble the effective message from form inputs --
     # Easy Mode detection: if revision_instruction or advanced_overrides are present,
     # use the Easy Mode prompt assembly path (Req 13.3, 14.1, 14.5).
@@ -159,6 +198,13 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
     else:
         effective_message = body.message
         forced_media = None
+
+    if revision_parent:
+        effective_message = (
+            f"{effective_message}\n\n[VERSION REVISION]\n"
+            f"Edit the supplied source version; preserve its product, layout, visual identity and useful details unless the feedback explicitly changes them. "
+            f"This output is a new version of asset {revision_parent['id']}."
+        )
 
     # Create a unique run_id for this generation
     run_id = f"{project_id}_{task_id}_{uuid.uuid4().hex[:6]}"
@@ -207,6 +253,11 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                 product_name=body.product_name,
                 product_category=body.product_category,
                 gender=body.gender,
+                generation_mode="easy" if body.guided_mode else "advanced",
+                guided_inputs=body.guided_inputs,
+                parent_ad_id=str(revision_parent["id"]) if revision_parent else None,
+                parent_asset_url=parent_url if revision_parent else None,
+                revision_feedback=(body.revision_instruction or body.message) if revision_parent else None,
                 force_media_types=forced_media,
             ):
                 # Push chunk to queue for any listening SSE client
@@ -236,6 +287,15 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
         # Final persistence — mark as completed
         if final_state:
             try:
+                # Task-level provenance makes the correct surface recoverable
+                # after a refresh: Easy tasks return to the Easy Results gallery.
+                final_state = {
+                    **final_state,
+                    "generation": {
+                        "mode": "easy" if body.guided_mode else "advanced",
+                        "design_type": body.design_type if body.guided_mode else None,
+                    },
+                }
                 _store.update_task_pipeline(
                     project_id=project_id,
                     task_id=task_id,
@@ -437,9 +497,10 @@ async def get_generated_ads(project_id: str, task_id: str) -> JSONResponse:
 
         response = (
             sb.table("generated_ads")
-            .select("id, media_type, platform, s3_media_key, status, metadata, compliance_status, compliance_result, prompt_used")
+            .select("id, media_type, platform, s3_media_key, status, metadata, compliance_status, compliance_result, prompt_used, caption")
             .eq("project_id", project_id)
             .eq("task_id", task_id)
+            .eq("asset_role", "output")
             .order("created_at", desc=True)
             .execute()
         )
@@ -454,14 +515,46 @@ async def get_generated_ads(project_id: str, task_id: str) -> JSONResponse:
                 "platform": row.get("platform", ""),
                 "s3_media_key": row.get("s3_media_key"),
                 "public_url": metadata.get("s3_url"),
-                "caption": row.get("prompt_used") if row.get("media_type") == "text" else None,
+                "aspect_ratio": metadata.get("aspect_ratio"),
+                "caption": row.get("caption") or (row.get("prompt_used") if row.get("media_type") == "text" else None),
                 "gen_status": row.get("status", "completed"),
                 "compliance_status": row.get("compliance_status", "non-final"),
                 "compliance_reasons": row.get("compliance_result") or {},
+                "revision_edit": metadata.get("revision_edit"),
             })
         return JSONResponse(content={"ads": ads})
     except Exception as e:
         logger.error("Failed to fetch generated ads for task %s: %s", task_id, e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.get("/projects/{project_id}/easy-results")
+async def get_easy_results(project_id: str) -> JSONResponse:
+    """Return recent output-bearing tasks so Easy Mode can resume a specific run."""
+    if not _store:
+        return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+
+    try:
+        from shared.clients import supabase as sb
+
+        response = (
+            sb.table("generated_ads")
+            .select("task_id, media_type, platform, generation_mode, created_at")
+            .eq("project_id", project_id)
+            .eq("asset_role", "output")
+            .not_.is_("task_id", "null")
+            .order("created_at", desc=True)
+            .limit(24)
+            .execute()
+        )
+        latest_by_task: dict[str, dict] = {}
+        for row in response.data or []:
+            task_id = row.get("task_id")
+            if task_id and task_id not in latest_by_task:
+                latest_by_task[str(task_id)] = row
+        return JSONResponse(content={"results": list(latest_by_task.values())[:6]})
+    except Exception as e:
+        logger.error("Failed to fetch Easy Mode results for project %s: %s", project_id, e)
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
@@ -508,14 +601,87 @@ async def publish_generated_ad(project_id: str, task_id: str, ad_id: str) -> JSO
         logger.error("[Publish] Store error: %s", e)
         return JSONResponse(status_code=503, content={"error": str(e)})
 
-    return JSONResponse(content=dict(result))
+    # Publishing is also where a shareable caption is created. This avoids ever
+    # treating the internal image-generation prompt as platform post content.
+    caption = ""
+    try:
+        from shared.clients import supabase as sb
+
+        response = (
+            sb.table("generated_ads")
+            .select("platform, media_type, prompt_used, metadata")
+            .eq("id", ad_id)
+            .eq("project_id", project_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if rows:
+            ad = rows[0]
+            caption = generate_platform_caption(
+                platform=ad.get("platform") or "instagram",
+                media_type=ad.get("media_type") or "image",
+                prompt_used=ad.get("prompt_used"),
+                metadata=ad.get("metadata") or {},
+            )
+            sb.table("generated_ads").update(
+                {"caption": caption, "updated_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("id", ad_id).execute()
+    except Exception as exc:  # Approval succeeded; caption generation must not undo it.
+        logger.warning("[Publish] Caption generation failed for %s: %s", ad_id, exc)
+
+    payload = dict(result)
+    payload["caption"] = caption
+    return JSONResponse(content=payload)
+
+
+class DistributionTarget(BaseModel):
+    """One selected connected account for a distribution request."""
+
+    platform: str
+    account_id: Optional[str] = None
+
+
+@router.get("/distribution/accounts")
+async def list_distribution_accounts() -> JSONResponse:
+    """Return normalized connected Zernio accounts for multi-account posting."""
+    try:
+        from shared.zernio_client import get_connected_accounts
+
+        payload = await get_connected_accounts()
+        raw_accounts = payload.get("accounts") or payload.get("data") or []
+        if isinstance(raw_accounts, dict):
+            raw_accounts = raw_accounts.get("accounts") or raw_accounts.get("data") or []
+        accounts: list[dict] = []
+        for raw in raw_accounts if isinstance(raw_accounts, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            raw_platform = raw.get("platform")
+            platform = raw_platform.get("value") if isinstance(raw_platform, dict) else raw_platform
+            account_id = raw.get("id") or raw.get("_id") or raw.get("accountId")
+            if not isinstance(platform, str) or not account_id:
+                continue
+            username = raw.get("username") or raw.get("handle") or raw.get("name")
+            accounts.append({
+                "id": str(account_id),
+                "platform": platform.lower(),
+                "label": f"@{username}" if username else f"{platform.title()} account",
+            })
+        if not accounts:
+            accounts = configured_distribution_accounts()
+        return JSONResponse(content={"accounts": accounts})
+    except Exception as exc:
+        logger.warning("[Distribution] Account discovery failed: %s", exc)
+        return JSONResponse(content={"accounts": configured_distribution_accounts()})
 
 
 class DistributeRequest(BaseModel):
     """Body for distributing a published ad to a social platform."""
 
-    platform: str  # tiktok|instagram|youtube
+    platform: Optional[str] = None  # legacy single-target request
+    account_id: Optional[str] = None
     caption: Optional[str] = None
+    destinations: List[DistributionTarget] = Field(default_factory=list)
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/ads/{ad_id}/distribute")
@@ -535,7 +701,7 @@ async def distribute_generated_ad(
     try:
         from shared.clients import supabase as sb
 
-        resp = sb.table("generated_ads").select("id, status, metadata, media_type, prompt_used").eq("id", ad_id).eq("project_id", project_id).limit(1).execute()
+        resp = sb.table("generated_ads").select("id, status, platform, metadata, media_type, prompt_used, caption").eq("id", ad_id).eq("project_id", project_id).limit(1).execute()
         rows = resp.data or []
         if not rows:
             return JSONResponse(status_code=404, content={"error": f"Ad {ad_id} not found"})
@@ -550,19 +716,72 @@ async def distribute_generated_ad(
     if not media_url:
         return JSONResponse(status_code=409, content={"error": "Ad has no public media URL to distribute"})
 
-    try:
-        result = distribute_ad(
-            ad_id=ad_id,
-            platform=body.platform,
-            media_url=media_url,
-            media_type=ad_row.get("media_type", "image"),
-            caption=body.caption or ad_row.get("prompt_used") or "",
+    destinations = body.destinations or (
+        [DistributionTarget(platform=body.platform, account_id=body.account_id)] if body.platform else []
+    )
+    if not destinations:
+        return JSONResponse(status_code=422, content={"error": "Select at least one connected account"})
+
+    results: list[dict] = []
+    history = list(metadata.get("distribution_history") or [])
+    for target in destinations:
+        platform = target.platform.lower().strip()
+        caption = (
+            normalize_platform_caption(
+                body.caption,
+                platform=platform,
+                media_type=ad_row.get("media_type", "image"),
+            )
+            if body.caption
+            else generate_platform_caption(
+                platform=platform,
+                media_type=ad_row.get("media_type", "image"),
+                prompt_used=ad_row.get("prompt_used"),
+                metadata=metadata,
+            )
         )
-        return JSONResponse(content=result)
-    except AccountNotConfiguredError as e:
-        return JSONResponse(status_code=409, content={"error": str(e)})
-    except DistributionError as e:
-        return JSONResponse(status_code=503, content={"error": str(e)})
+        try:
+            result = distribute_ad(
+                ad_id=ad_id,
+                platform=platform,
+                account_id=target.account_id,
+                media_url=media_url,
+                media_type=ad_row.get("media_type", "image"),
+                caption=caption,
+                metadata=metadata,
+            )
+            results.append(result)
+            history.append({
+                "platform": platform,
+                "account_id": result.get("account_id"),
+                "post_id": result.get("post_id"),
+                "caption": caption,
+                "status": "distributed",
+                "distributed_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except (AccountNotConfiguredError, DistributionError) as exc:
+            logger.warning("[Distribution] %s delivery failed: %s", platform, exc)
+            results.append({"platform": platform, "account_id": target.account_id, "status": "failed", "error": str(exc)})
+
+    # The legacy columns retain the latest successful distribution, while the
+    # JSON history preserves every selected platform/account in a batch.
+    successes = [item for item in results if item.get("status") == "distributed"]
+    try:
+        update: dict = {"metadata": {**metadata, "distribution_history": history}}
+        if successes:
+            latest = successes[-1]
+            update.update({
+                "distributed_at": datetime.now(timezone.utc).isoformat(),
+                "distribution_platform": latest.get("platform"),
+                "distribution_post_id": latest.get("post_id"),
+            })
+        sb.table("generated_ads").update(update).eq("id", ad_id).execute()
+    except Exception as exc:
+        logger.warning("[Distribution] Could not persist distribution history for %s: %s", ad_id, exc)
+
+    if not successes:
+        return JSONResponse(status_code=503, content={"error": results[0].get("error", "Distribution failed"), "results": results})
+    return JSONResponse(content={"status": "distributed", "results": results, "caption": successes[-1].get("caption", "")})
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/ads/{ad_id}/analytics")
@@ -638,6 +857,7 @@ async def upload_reference_asset(project_id: str, task_id: str, file: UploadFile
                 "platform": "general",
                 "s3_media_key": s3_key,
                 "status": "completed",
+                "asset_role": "reference",
                 "prompt_used": f"Uploaded reference: {file.filename}",
                 "metadata": {
                     "is_reference": True,

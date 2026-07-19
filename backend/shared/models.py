@@ -224,6 +224,7 @@ class Remediation_State(TypedDict):
     """
 
     task_id: str
+    project_id: str
     media_type: str              # "text" | "image" | "audio" | "video"
     source_media_url: str
     compliance_result: dict
@@ -232,6 +233,7 @@ class Remediation_State(TypedDict):
     aspect_ratio: str
     strategy: str
     remediated_paths: list
+    remix_url: str
     status: str                  # "pending" | "remediating" | "remediated" | "remix_failed"
 
 
@@ -312,6 +314,15 @@ class ComplianceOutput(BaseModel):
     # Segmentation result (image/video only)
     segmentation: Optional[dict] = None
 
+    # Frontend-ready evidence generated for each media type
+    text_annotations: Optional[list[dict]] = None
+    audio_annotations: Optional[dict] = None
+    violation_clips: Optional[list[dict]] = None
+
+    # Image-specific localisation instructions, including approved promotional
+    # copy replacements consumed by the remediation agent.
+    image_review: Optional[dict] = None
+
     # Verification against regulatory sources
     verification: Optional[dict] = None
 
@@ -324,6 +335,29 @@ class ComplianceOutput(BaseModel):
     # Media-specific metadata
     media_type: str = ""
     transcript: Optional[dict] = None  # audio/video only
+
+    @field_validator("high_risk_indicator", mode="before")
+    @classmethod
+    def normalize_high_risk_indicators(cls, value: object) -> list[str]:
+        """Tolerate common LLM shape mistakes at the API/persistence boundary."""
+        if isinstance(value, list):
+            return [str(item) for item in value if item not in (None, False, "")]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        # Models sometimes return a boolean "has risks" value.  It is not an
+        # indicator and must not cause the complete compliance result to fail.
+        return []
+
+    @field_validator("localization_plan", mode="before")
+    @classmethod
+    def normalize_localization_plan(cls, value: object) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            return "\n".join(str(item).strip() for item in value if item is not None and str(item).strip())
+        if isinstance(value, dict):
+            return "\n".join(f"{key}: {item}" for key, item in value.items() if item is not None)
+        return ""
 
     @classmethod
     def from_pipeline_result(cls, result: dict, media_type: str = "") -> "ComplianceOutput":
@@ -344,6 +378,10 @@ class ComplianceOutput(BaseModel):
             error=result.get("error"),
             violations_timeline=result.get("violations_timeline"),
             segmentation=result.get("segmentation"),
+            text_annotations=result.get("text_annotations"),
+            audio_annotations=result.get("audio_annotations"),
+            violation_clips=result.get("violation_clips"),
+            image_review=result.get("image_review"),
             verification=result.get("verification"),
             evaluation=result.get("evaluation"),
             remix=result.get("remix"),

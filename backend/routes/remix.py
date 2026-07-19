@@ -10,10 +10,14 @@ backward compatibility with existing frontend code that uses the SSE streaming a
 New integrations should use the /remediate endpoint + progress polling instead.
 """
 
+import asyncio
 import json
 import logging
 import os
+import re
 import time as _time
+import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -34,6 +38,24 @@ def init_remix(supabase_store: SupabaseComplianceStore | None) -> None:
     _supabase_store = supabase_store
 
 
+def _publish_remediated_asset(output_path: str, check: dict, task_id: str) -> str:
+    """Upload one generated remediation asset and return its public URL."""
+    if not output_path or not os.path.isfile(output_path):
+        raise FileNotFoundError(f"Remediated asset was not created: {output_path}")
+
+    from shared.s3_client import build_s3_key, upload_file_public
+
+    project_id = str(check.get("project_id") or "remediation")
+    s3_key = build_s3_key(
+        "remixed",
+        "remediation",
+        project_id,
+        task_id,
+        os.path.basename(output_path),
+    )
+    return upload_file_public(output_path, s3_key)
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # POST /api/compliance/{task_id}/remix
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -47,7 +69,7 @@ async def remix_compliance(task_id: str):
     - text: Gemini rewrite preserving brand voice
     - audio: Rewrite + ElevenLabs TTS generation
     - image: Concept analysis → edit (Imagen) or recreate guidance
-    - video: Suggestion only (for now)
+    - video: Timeline-aware media remediation and publish
     """
     if not _supabase_store:
         return JSONResponse(status_code=503, content={"error": "Database unavailable"})
@@ -80,15 +102,22 @@ async def remix_compliance(task_id: str):
             violations = result_json.get("high_risk_indicator", [])
             suggestion = result_json.get("suggestion", "")
 
-            yield emit({"type": "node_status", "node": "generate_remediation", "status": "running"})
+            yield emit({"type": "node_status", "node": "generate_remediation", "status": "running", "description": "Generating compliant remediation"})
             start_t = _time.time()
             remix_result_data: dict = {}
 
             if media_type == "text":
-                remix_result_data = _remix_text(violations, result_json, market, platform, ethnicity, age_group)
+                remix_result_data = await asyncio.to_thread(
+                    _remix_text, violations, result_json, market, platform, ethnicity, age_group
+                )
 
             elif media_type == "audio":
-                remix_result_data = _remix_audio(check, violations, suggestion, result_json, market, platform, ethnicity, age_group)
+                # TTS, FFmpeg, and Gemini calls are synchronous.  Offload them
+                # so the preceding SSE status is sent before generation ends.
+                remix_result_data = await asyncio.to_thread(
+                    _remix_audio, check, violations, suggestion, result_json,
+                    market, platform, ethnicity, age_group,
+                )
 
             elif media_type == "image":
                 # Image remix uses yield for progress streaming
@@ -101,16 +130,70 @@ async def remix_compliance(task_id: str):
                     else:
                         yield event_str
 
+            elif media_type == "video":
+                # Keep the established SSE UX while routing video through the
+                # real remediation agent.  The previous fallback returned a
+                # text suggestion and then incorrectly persisted it as a
+                # successfully remediated video.
+                yield emit({"type": "node_status", "node": "prepare_video_segments", "status": "running", "description": "Preparing timestamped video remediation segments"})
+                yield emit({"type": "node_status", "node": "edit_video_with_omni", "status": "running", "description": "Editing affected scenes with Gemini Omni"})
+                remix_result_data = await asyncio.to_thread(
+                    _remix_video, check, task_id, result_json, market, platform, ethnicity, age_group
+                )
+                yield emit({"type": "node_status", "node": "prepare_video_segments", "status": "completed", "description": "Video remediation segments prepared"})
+                if not remix_result_data.get("error"):
+                    yield emit({"type": "node_status", "node": "edit_video_with_omni", "status": "completed", "description": "Gemini Omni scenes assembled into the original timeline"})
+
             else:
-                remix_result_data = {"type": "suggestion", "suggestion": suggestion, "violations": violations}
+                raise RuntimeError(f"Unsupported remediation media type: {media_type}")
+
+            if remix_result_data.get("error"):
+                raise RuntimeError(remix_result_data["error"])
+
+            # A generated media file must be published before a remediation can
+            # be marked complete. Text-only remediations intentionally have no
+            # asset URL, but audio/image generated files do.
+            output_path = (
+                remix_result_data.pop("audio_output_path", None)
+                or remix_result_data.pop("video_output_path", None)
+            )
+            if output_path:
+                yield emit({"type": "node_status", "node": "upload_remediated_asset", "status": "running", "description": "Uploading remediated media"})
+                try:
+                    s3_remix_url = _publish_remediated_asset(output_path, check, task_id)
+                    remix_result_data["s3_remix_url"] = s3_remix_url
+                    logger.info("[Remix] Published remediated asset: %s", s3_remix_url)
+                finally:
+                    # TTS output is temporary; only the S3 URL is retained.
+                    if output_path and os.path.exists(output_path):
+                        os.remove(output_path)
+                yield emit({"type": "node_status", "node": "upload_remediated_asset", "status": "completed", "description": "Remediated media uploaded"})
 
             duration_ms = int((_time.time() - start_t) * 1000)
-            yield emit({"type": "node_status", "node": "generate_remediation", "status": "completed", "duration_ms": duration_ms})
+            yield emit({"type": "node_status", "node": "generate_remediation", "status": "completed", "description": "Compliant remediation generated", "duration_ms": duration_ms})
+
+            existing_versions = result_json.get("remix_versions", [])
+            if not isinstance(existing_versions, list):
+                existing_versions = []
+            version = {
+                "id": str(uuid.uuid4()),
+                "number": len(existing_versions) + 1,
+                "media_type": media_type,
+                "asset_url": remix_result_data.get("s3_remix_url"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            remix_result_data["version"] = version
+            remix_versions = [*existing_versions, version]
 
             # Persist remix result
             try:
+                persisted_fields = {"result_json": {**result_json, "remix": remix_result_data, "remix_versions": remix_versions}}
+                if remix_result_data.get("s3_remix_url"):
+                    persisted_fields["s3_remix_key"] = remix_result_data["s3_remix_url"]
                 _supabase_store.update_check_status(
-                    task_id, "remediated", result_json={**result_json, "remix": remix_result_data}
+                    task_id,
+                    "remediated",
+                    **persisted_fields,
                 )
             except Exception as e:
                 logger.warning("[Remix] Persist failed: %s", e)
@@ -155,12 +238,82 @@ def _remix_text(violations, result_json, market, platform, ethnicity, age_group)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
+def _audio_violation_timeline(result_json: dict, indicators: list) -> list[dict]:
+    """Return only valid audio ranges, normalised for ``remix_audio``.
+
+    Compliance results have evolved to use both ``start/end`` and
+    ``start_seconds/end_seconds``. Older checks may also have a non-empty
+    timeline with no usable timings, so never pass that data through blindly.
+    """
+    candidates = [
+        *(result_json.get("violations_timeline") or []),
+        *((result_json.get("audio_annotations") or {}).get("violations") or []),
+    ]
+    normalised: list[dict] = []
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = float(item.get("start_seconds", item.get("start")))
+            end = float(item.get("end_seconds", item.get("end")))
+        except (TypeError, ValueError):
+            continue
+        if end > start:
+            normalised.append({**item, "start": start, "end": end})
+    if normalised:
+        return normalised
+
+    # High-risk indicators can contain ranges such as "[00:03-00:45] ...".
+    timestamp = re.compile(r"\[\s*(?:(\d+):)?(\d+(?:\.\d+)?)\s*[-–]\s*(?:(\d+):)?(\d+(?:\.\d+)?)\s*\]")
+    for indicator in indicators:
+        match = timestamp.search(indicator) if isinstance(indicator, str) else None
+        if not match:
+            continue
+        start = int(match.group(1) or 0) * 60 + float(match.group(2))
+        end = int(match.group(3) or 0) * 60 + float(match.group(4))
+        if end > start:
+            normalised.append({"start": start, "end": end, "description": indicator})
+    if normalised:
+        return normalised
+
+    # A timestamped transcript permits an intentional full-audio replacement
+    # when the analyser identified a spoken violation but omitted a timeline.
+    transcript = result_json.get("transcript") or {}
+    segments = transcript.get("segments", []) if isinstance(transcript, dict) else []
+    ranges = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        try:
+            start = float(segment.get("start_seconds", segment.get("start")))
+            end = float(segment.get("end_seconds", segment.get("end")))
+        except (TypeError, ValueError):
+            continue
+        if end > start:
+            ranges.append((start, end))
+    if ranges:
+        return [{
+            "start": min(start for start, _ in ranges),
+            "end": max(end for _, end in ranges),
+            "description": "Full-audio replacement based on the timestamped transcript.",
+            "timing_source": "transcript_fallback",
+        }]
+    return []
+
+
 def _remix_audio(check, violations, suggestion, result_json, market, platform, ethnicity, age_group) -> dict:
     """Rewrite transcript + generate replacement TTS audio."""
     from jusads_compliance.remix_tools import rewrite_text, remix_audio
 
-    transcript = result_json.get("_transcript", {})
+    transcript = result_json.get("transcript") or {}
     transcript_text = transcript.get("transcript", "") if isinstance(transcript, dict) else ""
+    language_compliance = result_json.get("language_compliance") or {}
+    required_language = language_compliance.get("required_language", "") if isinstance(language_compliance, dict) else ""
+    localization_plan = result_json.get("localization_plan", "")
+    logger.info(
+        "[Remix] Audio context task=%s market=%s ethnicity=%s platform=%s required_language=%s",
+        check.get("task_id"), market, ethnicity, platform, required_language or "source language",
+    )
 
     rewrite_result = rewrite_text.invoke({
         "text": transcript_text or suggestion,
@@ -169,12 +322,26 @@ def _remix_audio(check, violations, suggestion, result_json, market, platform, e
         "platform": platform,
         "ethnicity": ethnicity,
         "age_group": age_group,
+        "required_language": required_language,
+        "localization_plan": localization_plan,
     })
     rewritten_text = rewrite_result.get("rewritten_text", "")
+    if rewrite_result.get("script_valid") is False:
+        return {
+            "type": "audio_remix",
+            "error": (
+                f"The rewrite did not satisfy the required output language "
+                f"({rewrite_result.get('target_language', required_language)}). No audio was generated."
+            ),
+            "target_language": rewrite_result.get("target_language", required_language),
+        }
 
-    violations_timeline = result_json.get("violations_timeline") or [
-        {"start": 0, "end": 30, "description": v} for v in violations
-    ]
+    violations_timeline = _audio_violation_timeline(result_json, violations)
+    if not violations_timeline:
+        return {
+            "type": "audio_remix",
+            "error": "No valid timestamps were returned for the audio violations or transcript.",
+        }
     audio_result = remix_audio.invoke({
         "audio_path": check.get("s3_upload_key", ""),
         "violations": violations_timeline,
@@ -183,14 +350,80 @@ def _remix_audio(check, violations, suggestion, result_json, market, platform, e
         "ethnicity": ethnicity,
     })
 
-    remix_data: dict = {"type": "audio_remix", "rewritten_text": rewritten_text}
+    remix_data: dict = {
+        "type": "audio_remix",
+        "rewritten_text": rewritten_text,
+        "target_language": rewrite_result.get("target_language", required_language),
+    }
     if "error" not in audio_result:
         remix_data["audio_output_path"] = audio_result.get("output_path")
         remix_data["voice_id"] = audio_result.get("voice_id")
+        remix_data["duration_seconds"] = audio_result.get("duration_seconds")
     else:
         remix_data["error"] = audio_result.get("error")
 
     return remix_data
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# VIDEO REMIX
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def _remix_video(
+    check: dict, task_id: str, result_json: dict,
+    market: str, platform: str, ethnicity: str, age_group: str,
+) -> dict:
+    """Adapt the concrete video remediation agent to the legacy SSE contract."""
+    from jusads_compliance.remix_agent.video import remediate_video
+    from jusads_compliance.remix_agent.localization import plan_localization
+
+    def json_safe(value):
+        """CapCut returns path-like helper objects; SSE/JSON needs primitives."""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {str(key): json_safe(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [json_safe(item) for item in value]
+        if isinstance(value, os.PathLike):
+            return os.fspath(value)
+        return str(value)
+
+    source_url = check.get("s3_upload_key") or ""
+    if not source_url:
+        return {"type": "video_remix", "error": "The original video is unavailable."}
+
+    language_compliance = result_json.get("language_compliance") or {}
+    localization = plan_localization(
+        market=market,
+        ethnicity=ethnicity,
+        age_group=age_group,
+        platform=platform,
+        required_language=language_compliance.get("required_language", "") if isinstance(language_compliance, dict) else "",
+        localization_plan=result_json.get("localization_plan", ""),
+    )
+    result = remediate_video({
+        "task_id": task_id,
+        "source_media_url": source_url,
+        "remediation_plan": {
+            "violations_timeline": result_json.get("violations_timeline") or [],
+            "localization_plan": result_json.get("localization_plan", ""),
+            "localization": localization,
+        },
+    })
+    if result.get("error"):
+        return {"type": "video_remix", "error": result["error"]}
+    return {
+        "type": "video_remix",
+        "video_output_path": result.get("output_path"),
+        "strategy": result.get("strategy"),
+        "violation_segments": result.get("violation_segments", []),
+        "capcut_draft": json_safe(result.get("capcut_draft", {})),
+        "omni_edit_status": result.get("omni_edit_status"),
+        "omni_interaction_ids": result.get("omni_interaction_ids", []),
+        "verification_status": result.get("verification_status", "pending_compliance_recheck"),
+    }
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -242,6 +475,20 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
 
         # -- Step 1: Triage (pure logic, no AI calls) ----------------------
         localization_plan = result_json.get("localization_plan", "")
+        from jusads_compliance.remix_agent.localization import plan_localization
+        language_compliance = result_json.get("language_compliance") or {}
+        localization = plan_localization(
+            market=market,
+            ethnicity=ethnicity,
+            age_group=age_group,
+            platform=platform,
+            required_language=language_compliance.get("required_language", "") if isinstance(language_compliance, dict) else "",
+            localization_plan=localization_plan,
+        )
+        localization_plan = (
+            f"{localization_plan}\nRequired generated copy language: {localization['output_language']}. "
+            f"Required script: {localization['required_script']}. Tone: {localization['tone']}."
+        )
         segmentation = result_json.get("segmentation")
 
         triage = triage_decide(
@@ -321,23 +568,20 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
             output_path = edit_result.get("output_path", "")
             quality_score = edit_result.get("quality_score", 0)
 
-            # Upload to S3 if we have a local file
-            s3_remix_url = None
-            if output_path:
-                from shared.s3_client import S3MediaClient, build_s3_key
+            # edit_image owns publishing and persistence.  Reuse its URL so an
+            # image remix is not uploaded and written to Supabase twice.
+            s3_remix_url = edit_result.get("s3_url")
+            uploaded_by_agent = bool(s3_remix_url)
+            if not s3_remix_url and output_path:
                 try:
-                    s3_client = S3MediaClient()
-                    user_id = str(check.get("project_id", "unknown"))
-                    project_id = str(check.get("project_id", "default"))
-                    remix_key = build_s3_key("remixed", user_id, project_id, task_id, os.path.basename(output_path))
-                    s3_client.upload_file(output_path, remix_key)
-                    s3_remix_url = s3_client.get_public_url(remix_key)
-                    logger.info("[Remix] Uploaded remix to S3: %s", s3_remix_url)
+                    s3_remix_url = _publish_remediated_asset(output_path, check, task_id)
+                    logger.info("[Remix] Published fallback remix asset: %s", s3_remix_url)
                 except Exception as e:
-                    logger.warning("[Remix] S3 upload failed: %s", e)
+                    logger.warning("[Remix] Fallback S3 upload failed: %s", e)
 
-            # Update DB
-            if s3_remix_url and _supabase_store:
+            # The fallback route upload needs its own DB update; the standard
+            # agent path has already persisted this URL.
+            if s3_remix_url and not uploaded_by_agent and _supabase_store:
                 try:
                     _supabase_store.update_check_status(task_id, "remediated", s3_remix_key=s3_remix_url)
                 except Exception as e:
@@ -368,6 +612,9 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
                 "s3_remix_url": s3_remix_url,
                 "quality_score": quality_score,
                 "edit_mode": edit_result.get("edit_mode", ""),
+                "localization_verified": edit_result.get("localization_verified", True),
+                "required_language": edit_result.get("required_language", ""),
+                "localized_copy_actions": edit_result.get("localized_copy_actions", []),
             }
             if bias_check:
                 image_edit_event["bias_check"] = {

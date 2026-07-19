@@ -26,6 +26,7 @@ from shared.clients import gemini, supabase
 from shared.config import MODEL_TEXT
 from shared.prompts import TEXT_AD_GENERATION_PROMPT
 from shared.s3_client import upload_file_public
+from ..provenance import generated_ad_context_fields
 
 from ..platform_rules import PlatformRule
 from .base import AgentResult, load_guide
@@ -92,6 +93,7 @@ def _record_row(
     prompt_used: str,
     s3_media_key: Optional[str],
     metadata: dict,
+    generation_context: Optional[dict] = None,
 ) -> Optional[str]:
     """Insert one ``generated_ads`` row and return its id (or ``None``).
 
@@ -113,6 +115,7 @@ def _record_row(
                     "s3_media_key": s3_media_key,
                     "status": status,
                     "metadata": metadata,
+                    **generated_ad_context_fields(generation_context),
                 }
             )
             .execute()
@@ -131,6 +134,7 @@ async def generate(*, brief: str,
     platform: str,
     rules: PlatformRule,
     reference_parts: list,
+    generation_context: Optional[dict] = None,
 ) -> AgentResult:
     """Generate one text ad, upload it to S3, and record a ``generated_ads`` row.
 
@@ -190,6 +194,7 @@ async def generate(*, brief: str,
             prompt_used=brief,
             s3_media_key=s3_key,
             metadata={"s3_url": s3_url, "aspect_ratio": rules.get("aspect_ratio")},
+            generation_context=generation_context,
         )
 
         logger.info("[TextAgent] Completed text ad (ad_id=%s)", ad_id)
@@ -215,6 +220,7 @@ async def generate(*, brief: str,
             prompt_used=brief,
             s3_media_key=None,
             metadata={"error": str(e)},
+            generation_context=generation_context,
         )
         return AgentResult(
             ad_id=fail_id,
