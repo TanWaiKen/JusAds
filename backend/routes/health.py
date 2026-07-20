@@ -7,7 +7,7 @@ Health check endpoint.
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-router = APIRouter(tags=["health"])
+router = APIRouter(prefix="/api", tags=["health"])
 
 # Set during app startup
 _s3_available = False
@@ -20,7 +20,7 @@ def init_health(s3_ok: bool, supabase_ok: bool):
     _supabase_available = supabase_ok
 
 
-@router.get("/api/health")
+@router.get("/health")
 async def health() -> JSONResponse:
     """Health check."""
     return JSONResponse(content={
