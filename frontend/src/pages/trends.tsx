@@ -5,7 +5,6 @@ import {
   TrendingUp,
   Calendar,
   ExternalLink,
-  Zap,
   Sparkles,
   Globe,
   Users,
@@ -15,12 +14,15 @@ import {
   Layers,
   AlertCircle,
   MapPin,
+  RefreshCw,
 } from "lucide-react";
 import {
-  fetchTrends,
+  researchTrends,
+  refreshTrends,
   fetchCulturalEvents,
 } from "@/services/trendsApi";
 import type { TrendItem, CulturalEvent } from "@/services/trendsApi";
+import { useAuth } from "@/hooks/useAuth";
 
 gsap.registerPlugin(useGSAP);
 
@@ -83,6 +85,31 @@ function formatDate(d: string): string {
   return new Date(d).toLocaleDateString("en-MY", { day: "numeric", month: "short" });
 }
 
+function getYouTubeThumbnail(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const pathParts = parsed.pathname.split("/").filter(Boolean);
+    let videoId: string | null = null;
+
+    if (host === "youtu.be") {
+      videoId = pathParts[0] ?? null;
+    } else if (["youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"].includes(host)) {
+      if (parsed.pathname === "/watch") {
+        videoId = parsed.searchParams.get("v");
+      } else if (["shorts", "embed", "live"].includes(pathParts[0] ?? "")) {
+        videoId = pathParts[1] ?? null;
+      }
+    }
+
+    return videoId && /^[A-Za-z0-9_-]{11}$/.test(videoId)
+      ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function contentTypeIcon(type: string) {
   switch (type) {
     case "video": return <PlayCircle size={12} />;
@@ -102,24 +129,53 @@ function TrendCard({ item }: TrendCardProps) {
   const views = item.engagement_metrics?.views ?? 0;
   const likes = item.engagement_metrics?.likes ?? 0;
   const velocity = views > 0 ? Math.min(Math.round((likes / views) * 100 * 10), 99) : 0;
+  const previewUrl = getYouTubeThumbnail(item.url);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const showPreview = Boolean(previewUrl) && !previewFailed;
+
+  useEffect(() => setPreviewFailed(false), [previewUrl]);
 
   return (
-    <div className="trend-card bg-surface-elevated border border-border-default rounded-xl overflow-hidden group hover:border-accent-blue/40 transition-all duration-200 cursor-pointer shadow-xs retina-border">
-      <div className="relative h-40 bg-surface-inset overflow-hidden flex items-center justify-center">
-        <div className="text-text-caption opacity-30">
-          {contentTypeIcon(item.content_type)}
-        </div>
-        {item.cultural_event_tag && (
-          <div className="absolute top-2 left-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-            {item.cultural_event_tag.replace(/_/g, " ").toUpperCase()}
-          </div>
-        )}
-        <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm">
-          {formatCount(views)}
-        </div>
-      </div>
+    <article className="trend-card self-start bg-surface-elevated border border-border-default rounded-xl overflow-hidden group hover:border-accent-blue/40 transition-all duration-200 shadow-xs retina-border">
+      {showPreview && previewUrl && (
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="relative block h-40 bg-surface-inset overflow-hidden"
+          aria-label={`Watch ${item.title || "trending video"} on YouTube`}
+        >
+          <img
+            src={previewUrl}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setPreviewFailed(true)}
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+          <span className="absolute inset-0 flex items-center justify-center bg-black/10">
+            <PlayCircle size={38} className="text-white drop-shadow-lg" aria-hidden="true" />
+          </span>
+          {item.cultural_event_tag && (
+            <span className="absolute top-2 left-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+              {item.cultural_event_tag.replace(/_/g, " ").toUpperCase()}
+            </span>
+          )}
+          <span className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm">
+            {formatCount(views)} views
+          </span>
+        </a>
+      )}
 
       <div className="p-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-accent-blue">
+            {item.platform.replace(/_/g, " ")}
+          </span>
+          <span className="flex items-center gap-1 text-[10px] capitalize text-text-caption">
+            {contentTypeIcon(item.content_type)} {item.content_type}
+          </span>
+        </div>
         <h4 className="font-bold text-[13px] text-text-heading mb-1 line-clamp-2">
           {item.title || "Trending Content"}
         </h4>
@@ -128,12 +184,17 @@ function TrendCard({ item }: TrendCardProps) {
             {item.hashtags.slice(0, 3).map((h) => `#${h}`).join(" ")}
           </p>
         )}
+        {item.cultural_event_tag && !showPreview && (
+          <span className="inline-flex mb-3 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded">
+            {item.cultural_event_tag.replace(/_/g, " ")}
+          </span>
+        )}
         <div className="flex justify-between items-center mb-4">
-          <div className="text-center">
+          <div>
             <span className="block text-[9px] uppercase font-bold text-text-caption/60">Views</span>
             <span className="font-mono text-sm font-bold text-text-heading">{formatCount(views)}</span>
           </div>
-          <div className="text-center">
+          <div className="text-right">
             <span className="block text-[9px] uppercase font-bold text-text-caption/60">Velocity</span>
             <span className="font-mono text-sm font-bold text-accent-blue">+{velocity}%</span>
           </div>
@@ -144,16 +205,15 @@ function TrendCard({ item }: TrendCardProps) {
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 py-1.5 text-center rounded-lg border border-border-default text-[12px] font-semibold text-text-body hover:bg-surface-inset transition-colors flex items-center justify-center gap-1"
-            onClick={(e) => e.stopPropagation()}
           >
-            <ExternalLink size={11} /> View
+            <ExternalLink size={11} /> {showPreview ? "Watch" : "View source"}
           </a>
           <button className="flex-1 py-1.5 rounded-lg bg-text-primary dark:bg-white text-white dark:text-text-primary text-[12px] font-semibold hover:opacity-90 transition-all active:scale-95">
             Campaign
           </button>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -198,15 +258,23 @@ function EventCard({ event }: EventCardProps) {
 export default function DashboardTrends() {
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const { user } = useAuth();
+  const ownerEmail = user?.profile?.email ?? "";
   const [platform, setPlatform] = useState("");
   const [eventMarket, setEventMarket] = useState(detectUserMarket);
   const [trendsData, setTrendsData] = useState<Record<string, TrendItem[]>>({});
   const [lastRefresh, setLastRefresh] = useState<Record<string, string>>({});
+  const [researchProvider, setResearchProvider] = useState("none");
+  const [freshness, setFreshness] = useState("unavailable");
+  const [researchSources, setResearchSources] = useState<Array<{ url: string; title?: string }>>([]);
   const [events, setEvents] = useState<CulturalEvent[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState<string | null>(null);
+
+  const [isResearching, setIsResearching] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const allItems = Object.values(trendsData).flat();
   const filteredItems = platform ? (trendsData[platform] ?? []) : allItems;
@@ -218,16 +286,38 @@ export default function DashboardTrends() {
     ? allItems.filter((i) => i.cultural_event_tag === synergyEvent.name.toLowerCase().replace(/\s+/g, "_"))
     : [];
 
+  const handleResearch = useCallback(async () => {
+    setIsResearching(true);
+    setError(null);
+    try {
+      const trendsRes = await researchTrends(ownerEmail, eventMarket, platform);
+      setTrendsData(trendsRes.trends || {});
+      setLastRefresh(trendsRes.last_refresh || {});
+      setResearchProvider(trendsRes.research_provider || "none");
+      setFreshness(trendsRes.freshness || "unavailable");
+      setResearchSources(trendsRes.research_sources || []);
+      setTotalItems(trendsRes.total_items || 0);
+      setEmptyMessage(trendsRes.message ?? null);
+    } catch {
+      setError("Research request failed. Please try again.");
+    } finally {
+      setIsResearching(false);
+    }
+  }, [ownerEmail, eventMarket, platform]);
+
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const [trendsRes, eventsRes] = await Promise.all([
-        fetchTrends(platform || undefined, eventMarket === "all" ? undefined : eventMarket),
+        researchTrends(ownerEmail, eventMarket, platform),
         fetchCulturalEvents(eventMarket === "all" ? undefined : eventMarket, 60),
       ]);
       setTrendsData(trendsRes.trends || {});
       setLastRefresh(trendsRes.last_refresh || {});
+      setResearchProvider(trendsRes.research_provider || "none");
+      setFreshness(trendsRes.freshness || "unavailable");
+      setResearchSources(trendsRes.research_sources || []);
       setTotalItems(trendsRes.total_items || 0);
       setEmptyMessage(trendsRes.message ?? null);
       setEvents(eventsRes.events || []);
@@ -236,7 +326,21 @@ export default function DashboardTrends() {
     } finally {
       setIsLoading(false);
     }
-  }, [platform, eventMarket]);
+  }, [ownerEmail, platform, eventMarket]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    setError(null);
+    try {
+      await refreshTrends(ownerEmail, eventMarket);
+      // After refresh completes, reload the page data to show new results
+      await loadData();
+    } catch {
+      setError("Refresh request failed. Please try again.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [ownerEmail, eventMarket, loadData]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -266,10 +370,15 @@ export default function DashboardTrends() {
               Live Feed
             </span>
             <span className="text-text-caption text-[12px]">
-              {Object.keys(lastRefresh).length > 0
-                ? `Last updated ${formatDate(Object.values(lastRefresh)[0])}`
-                : "Not yet scraped"}
+              {freshness === "fresh"
+                ? `Research fresh • ${researchProvider.replace("_", " ")}`
+                : freshness === "cached"
+                  ? `Showing cached research • ${researchProvider.replace("_", " ")}`
+                  : "Research temporarily unavailable"}
             </span>
+            {researchSources.length > 0 && (
+              <span className="text-text-caption text-[11px]">{researchSources.length} sources</span>
+            )}
           </div>
 
           <h2 className="text-xl font-bold tracking-tight text-text-heading mb-2">
@@ -289,17 +398,27 @@ export default function DashboardTrends() {
             <p className="text-label-ui text-text-caption max-w-2xl mb-5">
               {totalItems > 0
                 ? `${totalItems} trending pieces scraped across TikTok, Instagram, YouTube and Facebook Ads.`
-                : "Trend scraping runs weekly. Trigger a manual refresh to load data."}
+                : "Trend research is unavailable. Cached data may be shown when available."}
             </p>
           )}
 
           <div className="flex gap-3">
-            <a
-              href="/dashboard/generate"
-              className="bg-text-primary text-white dark:bg-white dark:text-text-primary px-5 py-2 rounded-lg font-semibold text-[14px] hover:opacity-90 transition-all flex items-center gap-2 active:scale-95"
+            <button
+              onClick={handleResearch}
+              disabled={isResearching || isLoading}
+              className="bg-text-primary text-white dark:bg-white dark:text-text-primary px-5 py-2 rounded-lg font-semibold text-[14px] hover:opacity-90 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Zap size={16} /> Explore Spikes
-            </a>
+              <Sparkles size={16} className={isResearching ? "animate-spin" : ""} />
+              {isResearching ? "Researching…" : "Research Trends"}
+            </button>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing || isLoading}
+              className="border border-border-default bg-surface-elevated text-text-body px-5 py-2 rounded-lg font-semibold text-[14px] hover:bg-surface-inset transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
+              {isRefreshing ? "Refreshing…" : "Refresh Cache"}
+            </button>
           </div>
         </section>
 
@@ -459,6 +578,31 @@ export default function DashboardTrends() {
                   {p}: {formatDate(ts)}
                 </span>
               ))}
+            </div>
+          )}
+
+          {/* Research Sources — clickable reference links from Google grounding */}
+          {researchSources.length > 0 && (
+            <div className="mt-6 bg-surface-elevated border border-border-default rounded-xl p-5 retina-border shadow-xs">
+              <h4 className="font-bold text-[13px] text-text-heading mb-3 flex items-center gap-2">
+                <Globe size={14} className="text-accent-blue" />
+                Research Sources ({researchSources.length})
+              </h4>
+              <ul className="space-y-2">
+                {researchSources.slice(0, 5).map((src, idx) => (
+                  <li key={idx}>
+                    <a
+                      href={src.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[12px] text-accent-blue hover:underline flex items-center gap-1.5 truncate"
+                    >
+                      <ExternalLink size={11} className="shrink-0" />
+                      {src.title || src.url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </section>

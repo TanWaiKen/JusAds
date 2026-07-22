@@ -65,3 +65,6 @@ diagram/*.png
 
 # CSV data files
 *.csv
+
+.agents
+.kiro

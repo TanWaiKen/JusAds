@@ -32,6 +32,12 @@ export interface TrendsResponse {
   message?: string;
 }
 
+export interface TrendResearchResponse extends TrendsResponse {
+  research_provider: "google_grounding" | "tavily" | "none" | string;
+  freshness: "fresh" | "cached" | "unavailable" | string;
+  research_sources: Array<{ url: string; title?: string; provider?: string }>;
+}
+
 export interface CulturalEvent {
   id: string;
   name: string;
@@ -70,6 +76,26 @@ export async function fetchTrends(
   return response.json();
 }
 
+export async function researchTrends(
+  ownerEmail: string,
+  market: string,
+  platform?: string,
+  limit: number = 30
+): Promise<TrendResearchResponse> {
+  const response = await fetch(`${API_BASE}/api/trends/research`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      owner_email: ownerEmail,
+      market,
+      platform: platform || "",
+      limit,
+    }),
+  });
+  if (!response.ok) throw new Error(`Failed to research trends: ${response.status}`);
+  return response.json();
+}
+
 export async function fetchCulturalEvents(
   market?: string,
   windowDays: number = 60
@@ -78,6 +104,19 @@ export async function fetchCulturalEvents(
   if (market) params.set("market", market);
   const response = await fetch(`${API_BASE}/api/trends/events?${params.toString()}`);
   if (!response.ok) throw new Error(`Failed to fetch events: ${response.status}`);
+  return response.json();
+}
+
+export async function refreshTrends(
+  ownerEmail: string,
+  market: string
+): Promise<{ status: string; message: string; items_count: number }> {
+  const response = await fetch(`${API_BASE}/api/trends/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner_email: ownerEmail, market }),
+  });
+  if (!response.ok) throw new Error(`Failed to refresh trends: ${response.status}`);
   return response.json();
 }
 
