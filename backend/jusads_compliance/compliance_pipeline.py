@@ -1,6 +1,6 @@
 """
 compliance_pipeline.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+──────────────────────
 Compliance-only LangGraph StateGraph pipeline (Pipeline 1).
 
 Flow:
@@ -165,7 +165,7 @@ def fetch_rules_and_personas(state: Compliance_State) -> dict:
         return {"result": result}
 
 
-# â”€â”€â”€ Node 2: Transcribe Media (audio/video only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Node 2: Transcribe Media (audio/video only) ─────────────────────────────
 
 
 def transcribe_media(state: Compliance_State) -> dict:
@@ -234,7 +234,7 @@ def transcribe_media(state: Compliance_State) -> dict:
         return {"result": result}
 
 
-# â”€â”€â”€ Node 3: Main Brain Analysis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Node 3: Main Brain Analysis ─────────────────────────────────────────────
 
 
 def main_brain_analysis(state: Compliance_State) -> dict:
@@ -553,7 +553,7 @@ def judges_agent(state: Compliance_State) -> dict:
         else:
             result["evaluation"] = eval_result
 
-        # â”€â”€ Step 2: Tavily violation validation (new) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Step 2: Tavily violation validation (new) ─────────────────────
         from shared.config import TAVILY_ENABLED
 
         high_risk_indicators = result.get("high_risk_indicator", [])
@@ -664,7 +664,7 @@ def decision_router_node(state: Compliance_State) -> dict:
         return {"status": "remediate"}
 
 
-# â”€â”€â”€ Persistence Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Persistence Helper ──────────────────────────────────────────────────────
 
 
 def _persist_compliance_result(
@@ -707,7 +707,7 @@ def _persist_compliance_result(
         )
 
 
-# â”€â”€â”€ Conditional Edge: Route after fetch_rules_and_personas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Conditional Edge: Route after fetch_rules_and_personas ───────────────────
 
 
 def _route_after_fetch(state: Compliance_State) -> Literal["transcribe_media", "main_brain_analysis"]:
@@ -718,7 +718,7 @@ def _route_after_fetch(state: Compliance_State) -> Literal["transcribe_media", "
     return "main_brain_analysis"
 
 
-# â”€â”€â”€ Build the Compliance Pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Build the Compliance Pipeline ───────────────────────────────────────────
 
 
 _graph = StateGraph(Compliance_State)

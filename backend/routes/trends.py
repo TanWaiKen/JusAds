@@ -9,12 +9,15 @@ Also provides a manual refresh trigger for admins.
 Requirements: 9.1, 9.2, 9.3, 9.4, 9.5
 """
 
+import json
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from shared.clients import supabase
 
@@ -23,18 +26,221 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trends", tags=["trends"])
 
 
-@router.get("")
+class TrendResearchRequest(BaseModel):
+    """Request parameters for a personalized, grounded trend refresh."""
+
+    owner_email: str = ""
+    market: str = "malaysia"
+    platform: str = ""
+    limit: int = 30
+
+
+class TrendResearchResponse(BaseModel):
+    """Structured response metadata returned by trend research."""
+
+    trends: dict[str, list[dict[str, Any]]]
+    last_refresh: dict[str, str]
+    total_items: int
+    research_provider: str
+    freshness: str
+    research_sources: list[dict[str, str]]
+    message: Optional[str] = None
+
+
+def _trend_item(item: dict[str, Any], platform: str) -> dict[str, Any]:
+    """Normalize a cached trend row for the frontend."""
+    return {
+        "id": item.get("id"),
+        "title": item.get("title"),
+        "url": item.get("url"),
+        "platform": platform,
+        "content_type": item.get("content_type"),
+        "engagement_metrics": item.get("engagement_metrics", {}),
+        "hashtags": item.get("hashtags", []),
+        "categories": item.get("categories", []),
+        "cultural_event_tag": item.get("cultural_event_tag"),
+        "scraped_at": item.get("scraped_at"),
+    }
+
+
+def _group_trends(items: list[dict[str, Any]]) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str]]:
+    """Group trend rows by platform and calculate each platform freshness timestamp."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    last_refresh: dict[str, str] = {}
+    for item in items:
+        platform = item.get("platform", "unknown")
+        grouped.setdefault(platform, []).append(_trend_item(item, platform))
+        last_refresh.setdefault(platform, item.get("scraped_at", ""))
+    return grouped, last_refresh
+
+
+@router.post("/research", response_model=TrendResearchResponse)
+async def research_trends(body: TrendResearchRequest) -> JSONResponse:
+    """Research personalized trends with Google grounding and safely cache the result."""
+    market = (body.market or "malaysia").strip().lower()
+    platform = (body.platform or "").strip().lower()
+    owner_email = body.owner_email.strip().lower()
+    limit = max(1, min(body.limit, 50))
+    provider = "none"
+    sources: list[dict[str, str]] = []
+
+    try:
+        profile: dict[str, Any] = {}
+        if owner_email and supabase:
+            profile_response = (
+                supabase.table("business_profiles")
+                .select("company_name, product_category, product_description, target_platforms, target_markets")
+                .eq("owner_email", owner_email)
+                .limit(1)
+                .execute()
+            )
+            profile = (profile_response.data or [{}])[0]
+
+        profile_context = ", ".join(
+            value for value in (
+                f"company: {profile.get('company_name')}" if profile.get("company_name") else "",
+                f"category: {profile.get('product_category')}" if profile.get("product_category") else "",
+                f"description: {profile.get('product_description')}" if profile.get("product_description") else "",
+                f"target platforms: {', '.join(profile.get('target_platforms') or [])}" if profile.get("target_platforms") else "",
+                f"target markets: {', '.join(profile.get('target_markets') or [])}" if profile.get("target_markets") else "",
+            )
+            if value
+        ) or "general advertising and social content"
+        platforms = [platform] if platform else ["tiktok", "instagram", "youtube"]
+        all_items: list[dict[str, Any]] = []
+        batch_id = str(uuid.uuid4())
+
+        from jusads_compliance.agents.research import google_grounded_research
+
+        for current_platform in platforms:
+            query = (
+                f"top 5 currently trending {current_platform} content and advertisements "
+                f"in {market} right now; include real public URLs. "
+                f"Business context: {profile_context}"
+            )
+            research = google_grounded_research(
+                query,
+                "Find the top 5 trending pieces of content on this platform right now. "
+                "Return real, clickable URLs to actual posts/videos. Include engagement numbers if available.",
+            )
+            if not research:
+                continue
+            provider = "google_grounding"
+            sources.extend(research.get("sources", []))
+            parse_prompt = f"""Convert this grounded research into a JSON array of EXACTLY 5 real {current_platform} trend items for {market}.
+Business context: {profile_context}
+Research:
+{research.get('content', '')[:4000]}
+
+IMPORTANT: Only include items where you have a REAL, clickable URL to the actual post/video/ad.
+Do NOT invent or hallucinate URLs. If you cannot find a real URL, skip that item.
+Each item must include title, url, content_type, hashtags, categories, engagement (views, likes, shares, comments), and why_trending.
+Return only a JSON array of up to 5 items."""
+            try:
+                from google.genai import types as genai_types
+                from shared.config import MODEL_TEXT
+                from shared.clients import gemini
+                parsed = gemini.models.generate_content(
+                    model=MODEL_TEXT,
+                    contents=parse_prompt,
+                    config=genai_types.GenerateContentConfig(response_mime_type="application/json"),
+                )
+                raw = (parsed.text or "").replace("```json", "").replace("```", "").strip()
+                items = json.loads(raw)
+                if isinstance(items, list):
+                    for item in items[:5]:
+                        if item.get("title") and item.get("url"):
+                            all_items.append({
+                                "platform": current_platform,
+                                "content_type": item.get("content_type", "video"),
+                                "title": str(item.get("title", ""))[:500],
+                                "url": item.get("url", ""),
+                                "engagement_metrics": item.get("engagement", {}),
+                                "hashtags": item.get("hashtags", [])[:10],
+                                "categories": item.get("categories", []),
+                                "cultural_event_tag": None,
+                                "market": market,
+                                "owner_email": owner_email or None,
+                                "scrape_batch_id": batch_id,
+                            })
+                    # If no items with valid URLs were parsed, use grounding sources as clickable links
+                    platform_items = [i for i in all_items if i.get("platform") == current_platform]
+                    if not platform_items:
+                        for src in research.get("sources", [])[:5]:
+                            if src.get("url"):
+                                all_items.append({
+                                    "platform": current_platform,
+                                    "content_type": "ad",
+                                    "title": src.get("title", "Trending content")[:500],
+                                    "url": src["url"],
+                                    "engagement_metrics": {},
+                                    "hashtags": [],
+                                    "categories": ["trending"],
+                                    "cultural_event_tag": None,
+                                    "market": market,
+                                    "owner_email": owner_email or None,
+                                    "scrape_batch_id": batch_id,
+                                })
+            except Exception as parse_error:
+                logger.warning("[TrendsAPI] Failed to parse grounded %s research: %s", current_platform, parse_error)
+
+        # Cached rows are only replaced within this exact owner/market/platform scope.
+        if all_items and supabase:
+            delete_query = supabase.table("trends_cache").delete().eq("market", market)
+            if owner_email:
+                delete_query = delete_query.eq("owner_email", owner_email)
+            else:
+                delete_query = delete_query.is_("owner_email", "null")
+            if platform:
+                delete_query = delete_query.eq("platform", platform)
+            delete_query.execute()
+            for offset in range(0, len(all_items), 25):
+                supabase.table("trends_cache").insert(all_items[offset:offset + 25]).execute()
+
+        if all_items:
+            grouped, last_refresh = _group_trends(all_items)
+            freshness = "fresh"
+            message = None
+        else:
+            # Grounding may be unavailable; return scoped cached data rather than failing the page.
+            query = supabase.table("trends_cache").select("*").eq("market", market).order("scraped_at", desc=True).limit(limit)
+            if owner_email:
+                query = query.eq("owner_email", owner_email)
+            else:
+                query = query.is_("owner_email", "null")
+            if platform:
+                query = query.eq("platform", platform)
+            cached = query.execute().data or [] if supabase else []
+            grouped, last_refresh = _group_trends(cached)
+            freshness = "cached" if cached else "unavailable"
+            message = "Live research is temporarily unavailable; showing the latest scoped trend data." if cached else "No trend data currently available."
+
+        unique_sources = {source.get("url"): source for source in sources if source.get("url")}
+        return JSONResponse(content={
+            "trends": grouped,
+            "last_refresh": last_refresh,
+            "total_items": sum(len(items) for items in grouped.values()),
+            "research_provider": provider,
+            "freshness": freshness,
+            "research_sources": list(unique_sources.values())[:10],
+            "message": message,
+        })
+    except Exception as exc:
+        logger.exception("[TrendsAPI] Personalized trend research failed: %s", exc)
+        return JSONResponse(status_code=200, content={
+            "trends": {}, "last_refresh": {}, "total_items": 0,
+            "research_provider": provider, "freshness": "unavailable",
+            "research_sources": [], "message": "Trend research is temporarily unavailable.",
+        })
+
 @router.get("/")
 async def get_trends(
     platform: Optional[str] = None,
     market: Optional[str] = None,
+    owner_email: Optional[str] = None,
     limit: int = 50,
 ) -> JSONResponse:
-    """Fetch trending content from trends_cache, grouped by platform.
-
-    Returns items with last_refresh timestamp per platform.
-    Empty message when no data is available.
-    """
+    """Fetch scoped cached trending content, grouped by platform."""
     try:
         query = supabase.table("trends_cache").select("*")
 
@@ -42,6 +248,10 @@ async def get_trends(
             query = query.eq("platform", platform)
         if market:
             query = query.eq("market", market)
+        if owner_email:
+            query = query.eq("owner_email", owner_email.strip().lower())
+        else:
+            query = query.is_("owner_email", "null")
 
         query = query.order("scraped_at", desc=True).limit(limit)
         response = query.execute()
@@ -54,28 +264,7 @@ async def get_trends(
                 "message": "No trend data currently available. Data refreshes weekly.",
             })
 
-        # Group by platform
-        grouped: dict[str, list] = {}
-        last_refresh: dict[str, str] = {}
-
-        for item in items:
-            p = item.get("platform", "unknown")
-            if p not in grouped:
-                grouped[p] = []
-                last_refresh[p] = item.get("scraped_at", "")
-            grouped[p].append({
-                "id": item.get("id"),
-                "title": item.get("title"),
-                "url": item.get("url"),
-                "platform": p,
-                "content_type": item.get("content_type"),
-                "engagement_metrics": item.get("engagement_metrics", {}),
-                "hashtags": item.get("hashtags", []),
-                "categories": item.get("categories", []),
-                "cultural_event_tag": item.get("cultural_event_tag"),
-                "scraped_at": item.get("scraped_at"),
-            })
-
+        grouped, last_refresh = _group_trends(items)
         return JSONResponse(content={
             "trends": grouped,
             "last_refresh": last_refresh,
@@ -229,12 +418,11 @@ async def sync_cultural_events() -> JSONResponse:
 
 
 @router.post("/refresh")
-async def trigger_refresh() -> JSONResponse:
-    """Manually trigger a trend research using Gemini GoogleSearch.
-
-    Fetches personalized trending content based on user's business profile.
-    Uses Gemini's built-in GoogleSearch tool for market-specific results.
-    """
+async def trigger_refresh(
+    owner_email: str = "",
+    market: str = "malaysia",
+) -> JSONResponse:
+    """Manually refresh a scoped trend cache using Gemini GoogleSearch."""
     import asyncio
     import uuid
     import json
@@ -244,8 +432,9 @@ async def trigger_refresh() -> JSONResponse:
     from shared.config import MODEL_TEXT
 
     try:
-        # For now, fetch for default market (could be parameterized)
-        market = "malaysia"
+        # For now, fetch for requested market and scope writes to this owner.
+        market = (market or "malaysia").strip().lower()
+        owner_email = owner_email.strip().lower()
         batch_id = str(uuid.uuid4())
         all_items = []
 
@@ -253,10 +442,10 @@ async def trigger_refresh() -> JSONResponse:
 
         for platform in platforms:
             try:
-                # Step 1: GoogleSearch for trending content
+                # Step 1: GoogleSearch for trending content (top 5 only)
                 search_prompt = (
-                    f"Search for the latest trending {platform} content and advertisements in {market}. "
-                    f"Find 10 REAL currently trending posts/videos/ads with their actual URLs, view counts, and descriptions."
+                    f"Find the top 5 currently trending {platform} content and advertisements in {market}. "
+                    f"Include real clickable URLs to the actual posts/videos, view counts, and descriptions."
                 )
 
                 search_response = gemini.models.generate_content(
@@ -268,15 +457,26 @@ async def trigger_refresh() -> JSONResponse:
                 if not search_text:
                     continue
 
-                # Step 2: Parse into structured JSON
+                # Extract grounding source URLs from search response
+                grounding_sources: list[dict[str, str]] = []
+                if search_response.candidates:
+                    metadata = getattr(search_response.candidates[0], "grounding_metadata", None)
+                    for chunk in getattr(metadata, "grounding_chunks", []) or []:
+                        web = getattr(chunk, "web", None)
+                        uri = getattr(web, "uri", None)
+                        if uri:
+                            grounding_sources.append({"url": uri, "title": getattr(web, "title", "")})
+
+                # Step 2: Parse into structured JSON (top 5)
                 parse_prompt = (
                     f"Parse these search results about trending {platform} content in {market} into a JSON array. "
-                    f"Return exactly 10 items. Each item: "
+                    f"Return EXACTLY 5 items. IMPORTANT: Only include items with REAL, clickable URLs. "
+                    f"Do NOT invent URLs. Each item: "
                     f'{{"title":"...","url":"...","content_type":"video/image/ad",'
                     f'"hashtags":["..."],"categories":["..."],'
                     f'"engagement":{{"views":0,"likes":0,"shares":0,"comments":0}},'
                     f'"why_trending":"..."}}\n\n'
-                    f"SEARCH RESULTS:\n{search_text[:3000]}\n\nReturn ONLY JSON array."
+                    f"SEARCH RESULTS:\n{search_text[:3000]}\n\nReturn ONLY JSON array of up to 5 items."
                 )
 
                 parse_response = gemini.models.generate_content(
@@ -291,8 +491,8 @@ async def trigger_refresh() -> JSONResponse:
                 items = json.loads(cleaned)
 
                 if isinstance(items, list):
-                    for item in items[:10]:
-                        if item.get("title"):
+                    for item in items[:5]:
+                        if item.get("title") and item.get("url"):
                             all_items.append({
                                 "platform": platform,
                                 "content_type": item.get("content_type", "video"),
@@ -302,6 +502,22 @@ async def trigger_refresh() -> JSONResponse:
                                 "hashtags": item.get("hashtags", [])[:10],
                                 "categories": item.get("categories", []),
                                 "market": market,
+                                "owner_email": owner_email or None,
+                                "scrape_batch_id": batch_id,
+                            })
+                    # If parsed items have no valid URLs, use grounding sources directly
+                    if not any(i.get("url") for i in all_items if i.get("platform") == platform):
+                        for src in grounding_sources[:5]:
+                            all_items.append({
+                                "platform": platform,
+                                "content_type": "ad",
+                                "title": src.get("title", "Trending content")[:500],
+                                "url": src.get("url", ""),
+                                "engagement_metrics": {},
+                                "hashtags": [],
+                                "categories": ["trending"],
+                                "market": market,
+                                "owner_email": owner_email or None,
                                 "scrape_batch_id": batch_id,
                             })
             except Exception as platform_err:
@@ -309,7 +525,12 @@ async def trigger_refresh() -> JSONResponse:
 
         # Store to database
         if all_items and supabase:
-            supabase.table("trends_cache").delete().eq("market", market).execute()
+            delete_query = supabase.table("trends_cache").delete().eq("market", market)
+            if owner_email:
+                delete_query = delete_query.eq("owner_email", owner_email)
+            else:
+                delete_query = delete_query.is_("owner_email", "null")
+            delete_query.execute()
             for i in range(0, len(all_items), 25):
                 supabase.table("trends_cache").insert(all_items[i:i+25]).execute()
 

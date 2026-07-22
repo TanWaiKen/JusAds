@@ -423,21 +423,7 @@ def segment_violations(image_path: str, high_risk_indicators: list):
 
 @tool
 def segment_violations_clipseg(image_path: str, high_risk_indicators: list):
-    """Segment non-compliant regions using CLIPSeg (text-to-segmentation).
-
-    Flow:
-      1. Gemini converts high_risk_indicators → short visual prompts for CLIPSeg
-      2. CLIPSeg segments the image using all prompts
-      3. Union all prompt masks into a single binary mask
-      4. Save overlay visualization
-
-    Args:
-        image_path: Path to the source image.
-        high_risk_indicators: List of violation descriptions from compliance result.
-
-    Returns:
-        Dict with segmented_image_path, mask_path, visual_prompts, coverage_percent.
-    """
+    """Segment non-compliant image regions using Gemini visual prompts and CLIPSeg."""
     import torch
     import numpy as np
     from transformers import CLIPSegProcessor, CLIPSegForImageSegmentation
@@ -451,21 +437,21 @@ def segment_violations_clipseg(image_path: str, high_risk_indicators: list):
 
     # Step 1: Gemini converts indicators -> visual prompts
     prompt_text = f"""Convert these compliance violation indicators into short visual descriptions
-that a segmentation model can use to find the violating regions in an image.
+                    that a segmentation model can use to find the violating regions in an image.
 
-INDICATORS:
-{json.dumps(high_risk_indicators, indent=2)}
+                    INDICATORS:
+                    {json.dumps(high_risk_indicators, indent=2)}
 
-RULES:
-- Output 8-15 prompts (max 6 words each)
-- Mix specific AND broad prompts:
-  - Specific: "woman in bra", "bare legs", "alcohol bottle"
-  - Broad: "person", "exposed body", "revealing clothing"
-- The broad prompts help catch the FULL area of the violation
-- Use concrete visible things only
-- Include "person" or "woman" as one of the prompts
+                    RULES:
+                    - Output 8-15 prompts (max 6 words each)
+                    - Mix specific AND broad prompts:
+                    - Specific: "woman in bra", "bare legs", "alcohol bottle"
+                    - Broad: "person", "exposed body", "revealing clothing"
+                    - The broad prompts help catch the FULL area of the violation
+                    - Use concrete visible things only
+                    - Include "person" or "woman" as one of the prompts
 
-Return ONLY a JSON array: ["prompt 1", "prompt 2", ...]"""
+                    Return ONLY a JSON array: ["prompt 1", "prompt 2", ...]"""
 
     response = gemini.models.generate_content(
         model=MODEL_TEXT,

@@ -109,18 +109,17 @@ def _queries(state: Compliance_State, result: dict) -> list[str]:
     ]
 
 
-def _google_grounded_research(query: str) -> dict[str, Any]:
-    """Use Gemini Google Search grounding when supported by this deployment."""
+def google_grounded_research(
+    query: str,
+    instruction: str = "Research this question. Prefer primary and current sources. State only source-supported facts.",
+) -> dict[str, Any]:
+    """Run a Google-grounded research query and return its report and citations."""
     if gemini is None or not hasattr(genai_types, "GoogleSearch"):
         return {}
     try:
         response = gemini.models.generate_content(
             model=MODEL_TEXT,
-            contents=(
-                "Research this advertising-compliance question. Prefer primary "
-                "regulator or platform sources. State only source-supported facts.\n\n"
-                f"QUESTION: {query}"
-            ),
+            contents=f"{instruction}\n\nQUESTION: {query}",
             config=genai_types.GenerateContentConfig(
                 tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
             ),
@@ -145,13 +144,16 @@ def _google_grounded_research(query: str) -> dict[str, Any]:
         return {}
 
 
-def legal_research_agent(state: Compliance_State) -> dict:
-    """Gather source-backed regulatory evidence for detected risks.
+def _google_grounded_research(query: str) -> dict[str, Any]:
+    """Use Gemini Google Search grounding for compliance research."""
+    return google_grounded_research(
+        query,
+        "Research this advertising-compliance question. Prefer primary regulator or platform sources. "
+        "State only source-supported facts.",
+    )
 
-    The agent performs multiple focused queries (one per detected issue, capped at
-    three), deduplicates citations, and persists an auditable research bundle in
-    the graph state for the grounded adjudication agent and frontend.
-    """
+
+def legal_research_agent(state: Compliance_State) -> dict:
     task_id = state["task_id"]
     step_name = "legal_research_agent"
     _tracker.start_step(task_id, step_name)
@@ -217,22 +219,22 @@ def grounded_compliance_agent(state: Compliance_State) -> dict:
             return {"result": result}
 
         prompt = f"""You are a platform-ad approval adjudicator. Reconcile the initial assessment with the cited evidence.
-The verdict answers one practical question: is this creative likely to be accepted by the selected platform in the selected market?
+                    The verdict answers one practical question: is this creative likely to be accepted by the selected platform in the selected market?
 
-Decision calibration:
-- Use "rejected" only for a direct platform prohibition, a clearly applicable law, or an unambiguous safety/claim breach supported by a supplied source.
-- Use "needs_remediation" only when a specific creative change is needed for a documented platform policy, such as an unsupported absolute claim, misleading presentation, or dangerous act.
-- Use "accepted" when a concern is merely cultural/contextual and no supplied primary platform rule or law prohibits it. Put those concerns in localization_plan as optional local-market guidance, not as a violation.
-- Do not invent rule IDs, statutory requirements, or rejection reasons. Do not treat a broad decency standard as an automatic platform rejection.
-- Keep high_risk_indicator and violations_timeline only for documented, actionable findings. Each video timeline item must have a real non-zero time range matching its indicator.
+                    Decision calibration:
+                    - Use "rejected" only for a direct platform prohibition, a clearly applicable law, or an unambiguous safety/claim breach supported by a supplied source.
+                    - Use "needs_remediation" only when a specific creative change is needed for a documented platform policy, such as an unsupported absolute claim, misleading presentation, or dangerous act.
+                    - Use "accepted" when a concern is merely cultural/contextual and no supplied primary platform rule or law prohibits it. Put those concerns in localization_plan as optional local-market guidance, not as a violation.
+                    - Do not invent rule IDs, statutory requirements, or rejection reasons. Do not treat a broad decency standard as an automatic platform rejection.
+                    - Keep high_risk_indicator and violations_timeline only for documented, actionable findings. Each video timeline item must have a real non-zero time range matching its indicator.
 
-Return only JSON matching the initial assessment shape.
+                    Return only JSON matching the initial assessment shape.
 
-MARKET: {state['market']}
-PLATFORM: {state['platform']}
-LOCAL RULES: {json.dumps(result.get('_rules', []), ensure_ascii=False)}
-INITIAL ASSESSMENT: {json.dumps({k: v for k, v in result.items() if not k.startswith('_') and k != 'verification'}, ensure_ascii=False)}
-RESEARCH: {result.get('_research_context', '')}
+                    MARKET: {state['market']}
+                    PLATFORM: {state['platform']}
+                    LOCAL RULES: {json.dumps(result.get('_rules', []), ensure_ascii=False)}
+                    INITIAL ASSESSMENT: {json.dumps({k: v for k, v in result.items() if not k.startswith('_') and k != 'verification'}, ensure_ascii=False)}
+                    RESEARCH: {result.get('_research_context', '')}
 """
         response = gemini.models.generate_content(
             model=MODEL_TEXT,

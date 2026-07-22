@@ -6,9 +6,9 @@ Shared contract and pure helpers for the four independent Media Agents
 
 This module holds only the shared agent result type, the ``generate(...)``
 contract signature, and pure helpers migrated faithfully from the legacy
-``agent/generation_agent.py`` (``load_guide``, ``load_multimodal_reference``,
-``NODE_COORDS``). It contains no per-agent implementation and no orchestration,
-routing, or persistence logic (Req 1.1).
+``agent/generation_agent.py`` (``load_multimodal_reference``, ``NODE_COORDS``).
+It contains no per-agent implementation and no orchestration, routing, or
+persistence logic (Req 1.1).
 """
 
 import logging
@@ -50,22 +50,8 @@ class AgentResult(TypedDict):
 
 
 def load_guide(media_type: str) -> str:
-    """Read the markdown guide file for a specific ad type."""
-    # Guides live alongside the legacy agent package.
-    guides_dir = Path(__file__).resolve().parent.parent.parent / "agent" / "tools_guide"
-
-    mapping = {
-        "text": "text_ad_tool.md",
-        "image": "poster_ad_tool.md",
-        "audio": "audio_ad_tool.md",
-        "video": "tiktok_reels_video_ad_tool.md",
-    }
-
-    filename = mapping.get(media_type, f"{media_type}_ad_tool.md")
-    guide_path = guides_dir / filename
-    if guide_path.exists():
-        return guide_path.read_text(encoding="utf-8")
-    return f"No formal guide found for {media_type} ad generation."
+    """Return a stable fallback after removal of obsolete agent guide files."""
+    return f"Follow the campaign brief, platform rules, and runtime prompt for {media_type} ad generation."
 
 
 async def load_multimodal_reference(url: str) -> Optional[dict]:

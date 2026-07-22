@@ -185,12 +185,14 @@ def insert_to_database(all_items: list[dict], batch_id: str, owner_email: str = 
         print("  ERROR: Supabase not connected")
         return
 
-    # Clear existing data for this user
-    print("  Clearing old trends_cache data...")
+    # Clear existing data only for this exact user and market.
+    print("  Clearing scoped trends_cache data...")
+    delete_query = supabase.table("trends_cache").delete().eq("market", (all_items[0].get("market") if all_items else "malaysia"))
     if owner_email:
-        supabase.table("trends_cache").delete().eq("owner_email", owner_email).execute()
+        delete_query = delete_query.eq("owner_email", owner_email)
     else:
-        supabase.table("trends_cache").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+        delete_query = delete_query.is_("owner_email", "null")
+    delete_query.execute()
 
     # Insert new data in chunks
     records = []
