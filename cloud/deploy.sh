@@ -30,10 +30,10 @@ fi
 
 # Build and deploy
 echo "[2/4] Building containers..."
-docker compose build --no-cache
+docker compose --env-file .env.production build --no-cache
 
 echo "[3/4] Starting services..."
-docker compose up -d
+docker compose --env-file .env.production up -d
 
 echo "[4/4] Checking health..."
 sleep 5

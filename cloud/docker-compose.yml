@@ -14,7 +14,7 @@ services:
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -26,6 +26,9 @@ services:
       dockerfile: ../cloud/Dockerfile.frontend
       args:
         VITE_API_BASE: ""
+        VITE_COGNITO_AUTHORITY: ${VITE_COGNITO_AUTHORITY:-https://cognito-idp.ap-southeast-1.amazonaws.com/ap-southeast-1_8hAosB1se}
+        VITE_COGNITO_CLIENT_ID: ${VITE_COGNITO_CLIENT_ID:-41rfef3ni43sfr2v9lnjk0prj5}
+        VITE_COGNITO_DOMAIN: ${VITE_COGNITO_DOMAIN:-https://ap-southeast-18haosb1se.auth.ap-southeast-1.amazoncognito.com}
     container_name: jusads-frontend
     restart: unless-stopped
     networks:

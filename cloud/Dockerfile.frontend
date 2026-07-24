@@ -11,9 +11,15 @@ RUN npm ci
 # Copy source and build
 COPY . .
 
-# VITE_API_BASE is empty string so frontend calls /api/ (same origin via Nginx)
+# VITE_API_BASE is empty so the browser uses same-origin /api routes via Nginx.
 ARG VITE_API_BASE=""
+ARG VITE_COGNITO_AUTHORITY
+ARG VITE_COGNITO_CLIENT_ID
+ARG VITE_COGNITO_DOMAIN
 ENV VITE_API_BASE=${VITE_API_BASE}
+ENV VITE_COGNITO_AUTHORITY=${VITE_COGNITO_AUTHORITY}
+ENV VITE_COGNITO_CLIENT_ID=${VITE_COGNITO_CLIENT_ID}
+ENV VITE_COGNITO_DOMAIN=${VITE_COGNITO_DOMAIN}
 
 RUN npm run build
 
