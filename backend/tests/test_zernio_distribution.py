@@ -70,7 +70,8 @@ def test_distribute_ad_unconfigured_platform():
 
 @patch("jusads_generation.distribution.ZERNIO_API_KEY", "")
 @patch("jusads_generation.distribution.supabase")
-def test_get_ad_analytics_mocked(mock_supabase):
+def test_get_ad_analytics_requires_configured_zernio(mock_supabase):
+    """Live post analytics must fail clearly when Zernio is not configured."""
     mock_execute = MagicMock()
     mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute = mock_execute
     mock_execute.return_value.data = [
@@ -81,10 +82,6 @@ def test_get_ad_analytics_mocked(mock_supabase):
             "media_type": "video",
         }
     ]
-    
-    result = get_ad_analytics("test-ad-id", "test-project-id")
-    
-    assert result["status"] == "mocked"
-    assert result["platform"] == "tiktok"
-    assert "metrics" in result
-    assert "chart_data" in result
+
+    with pytest.raises(DistributionError, match="Zernio analytics are not configured"):
+        get_ad_analytics("test-ad-id", "test-project-id")

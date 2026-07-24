@@ -1,0 +1,70 @@
+JUSADS VIDEO GENERATION PROMPT — PAWZ & CLAWZ PET PADS
+
+GOAL
+Create a 15-second 9:16 TikTok / Instagram Reels product video for Pawz & Clawz
+Pet Pads. Present an everyday pet-home cleanup moment with warmth and humour,
+then demonstrate the product clearly.
+
+REFERENCE ASSETS
+- Pet Diaper.jpeg = PRIMARY PRODUCT REFERENCE.
+- Pet Diaper Poster.jpeg = BRAND / PACK INFORMATION REFERENCE.
+- Pet Diaper Infographic.jpeg = FEATURE-LAYOUT REFERENCE.
+- Pet Diaper Product Zoom.jpeg = MATERIAL / PRODUCT DETAIL REFERENCE.
+- Pet Diaper with Dog.jpeg = PET-USE / LIFESTYLE REFERENCE.
+
+Preserve the Pawz & Clawz identity, navy-and-gold palette, pad appearance,
+60 × 90 cm size, and 50-piece pack only where those details are visibly present.
+Treat “quick absorb”, odour-control, and antibacterial statements as unapproved
+claims until the advertiser provides substantiation.
+
+STYLE
+Premium but friendly home setting, natural pet behaviour, clean readable text,
+warm daylight, playful pacing, and original copyright-safe music.
+
+DIRECTOR GRID
+Use exactly one complete 2×2 grid with four scenes. Script and video must follow
+the grid one-to-one. Total duration: 15 seconds.
+
+SCENE 1 — 0:00–0:05 — PLAYFUL PROBLEM HOOK
+- A dog looks innocently toward its owner beside a small, non-graphic household
+  cleanup setup.
+- Use a quick reaction zoom; never shame or frighten the animal.
+- Voice: [playfully] “Your pet has plans. Your floor needs one too.”
+- On-screen text: “Everyday pet moments happen.”
+
+SCENE 2 — 0:05–0:10 — PRODUCT DEMONSTRATION
+- Match-cut to a Pawz & Clawz pad being unfolded and placed flat.
+- Macro shot of the real surface and edge construction from the references.
+- Demonstrate placement only; do not fabricate a performance test.
+- Voice: [reassuring] “Set up a simple, dedicated space.”
+- On-screen text: “60 × 90 cm” only if the selected product matches the poster.
+
+SCENE 3 — 0:10–0:13 — HAPPY HOME MOMENT
+- Dog calmly approaches or rests near the prepared area.
+- Show a tidy floor and relaxed owner without claiming a guaranteed outcome.
+- Voice: [warmly] “More calm for pets and their people.”
+- Subtitle must match exactly.
+
+SCENE 4 — 0:13–0:15 — PACK + CTA
+- Exact referenced pack and one clean pad hero shot.
+- On-screen text: “Pawz & Clawz Pet Pads”
+- CTA: “[APPROVED CTA REQUIRED]”
+- Voice: [confident] “Pawz & Clawz.”
+
+AUDIO
+Light original playful rhythm, soft paw steps, pad-unfolding Foley, and a short
+positive finish accent. Keep effects natural and speech intelligible. Preserve
+ElevenLabs V3 emotion tags.
+
+NEGATIVE PROMPT
+No distressed animal, punishment, cage, visible waste, unsafe pet handling,
+veterinary or medical claim, guaranteed odour removal, guaranteed antibacterial
+result, fabricated liquid demonstration, altered pack count, altered size,
+different logo, deformed animal, extra limbs, unreadable copy, mismatched
+subtitles, three-scene storyboard, or incomplete grid.
+
+REQUIRED CHECK BEFORE GENERATION
+Confirm the selected SKU, 60 × 90 cm size, 50-piece count, substantiated feature
+claims, market, language, and final CTA. Do not publish with the CTA placeholder
+or unverified claims.
+

@@ -8,11 +8,9 @@ Usage:
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
-
-from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -48,18 +46,22 @@ logger = logging.getLogger(__name__)
 # Halt before serving any request when a required secret is missing. The check
 # logs the missing secret BY NAME ONLY and raises, preventing the app from
 # starting rather than serving in a broken state.
-from config import verify_required_secrets
+from config import CORS_ORIGINS, ENVIRONMENT, verify_required_secrets
 
 verify_required_secrets()
 
 # -- App -----------------------------------------------------------------------
 app = FastAPI(title="JusAds Compliance API")
 
+if ENVIRONMENT == "production" and not CORS_ORIGINS:
+    logger.warning("[Init] No CORS origins configured; only same-origin requests are expected")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=list(CORS_ORIGINS),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -112,7 +114,6 @@ app.include_router(trends_router)
 app.include_router(statistics_router)
 
 # -- Static files (dev only) --------------------------------------------------
-import os
 IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 

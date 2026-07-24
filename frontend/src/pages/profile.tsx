@@ -4,9 +4,9 @@ import { Mail, User as UserIcon, Shield, Globe, Calendar, LogOut, Building2, Pac
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 
-gsap.registerPlugin(useGSAP);
+import { API_BASE } from "@/lib/apiConfig";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+gsap.registerPlugin(useGSAP);
 
 interface BusinessProfile {
   company_name: string;
@@ -98,9 +98,9 @@ export default function DashboardProfile() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <h2 className="text-[24px] font-bold tracking-[-0.03em] text-text-heading">
+          <h1 className="font-bold tracking-[-0.03em] text-text-heading">
             {displayName}
-          </h2>
+          </h1>
           <p className="text-[15px] text-text-caption font-medium">
             {email ?? "No email available"}
           </p>

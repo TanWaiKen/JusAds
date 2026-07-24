@@ -9,9 +9,9 @@ gsap.registerPlugin(useGSAP, ScrollTrigger);
 // ─── Static Data ──────────────────────────────────────────────────────────────
 
 const FAQS = [
-  { question: "What languages and dialects do you currently support?", answer: "We currently offer deep localization models for Malaysian (Bahasa Melayu, Manglish, Tamil, local Mandarin dialects) and Singaporean (Singlish, local Mandarin) markets. We are actively expanding to Indonesia and Thailand." },
-  { question: "How does JusAds ensure brand safety?", answer: "Our Trend Intelligence engine specifically filters out sensitive, political, or controversial local trends. Before any asset is exported, it passes through our automated cultural resonance check to ensure strict brand safety." },
-  { question: "Do I need technical skills to use the platform?", answer: "Not at all. JusAds is designed for marketing teams. You simply upload your base English assets, select your target demographic, and our AI pipeline handles the transcreation, visual masking, and rendering automatically." },
+  { question: "What languages and dialects can I use?", answer: "JusAds currently supports Bahasa Melayu, Manglish, Tamil, local Mandarin, and Singlish for Malaysian and Singaporean customers. Indonesian and Thai support is planned." },
+  { question: "Will JusAds publish an ad without asking me?", answer: "No. You review and approve every result before it is downloaded or published. JusAds also checks for sensitive or controversial content." },
+  { question: "Do I need design or marketing skills?", answer: "No. Upload a product photo or an existing ad, choose the customers you want to reach, and follow the guided steps. Advanced options are available when you need them." },
 ] as const;
 
 // ─── FAQ Component ────────────────────────────────────────────────────────────
@@ -40,17 +40,17 @@ export default function Faq() {
   return (
     <section ref={containerRef} id="faq" className="max-w-[800px] mx-auto px-6 lg:px-12 mt-[120px] mb-[160px]">
       <div className="text-center mb-12">
-        <h2 className="font-semibold tracking-tight text-foreground mb-4 leading-tight">Frequently asked questions</h2>
-        <p className="text-body-lg text-text-body">Everything you need to know about scaling your localization.</p>
+        <p className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-4 leading-tight">Frequently asked questions</p>
+        <p className="text-body-lg text-text-body">Clear answers before you create your first ad.</p>
       </div>
       <div className="space-y-4">
         {FAQS.map((faq, i) => (
           <div key={i} className="faq-item bg-surface-card border border-border-default rounded-xl overflow-hidden shadow-sm">
-            <button className="w-full px-6 py-5 flex items-center justify-between text-left focus:outline-none" onClick={() => setOpenIndex(openIndex === i ? null : i)}>
+            <button className="w-full px-6 py-5 flex items-center justify-between text-left focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-blue-600" onClick={() => setOpenIndex(openIndex === i ? null : i)} aria-expanded={openIndex === i} aria-controls={`faq-answer-${i}`}>
               <span className="text-body-md font-medium text-foreground">{faq.question}</span>
               <ChevronDown className={`w-5 h-5 text-text-caption transition-transform duration-300 ${openIndex === i ? "rotate-180" : ""}`} />
             </button>
-            <div className={`px-6 overflow-hidden transition-all duration-300 ease-in-out ${openIndex === i ? "max-h-96 pb-5 opacity-100" : "max-h-0 opacity-0"}`}>
+            <div id={`faq-answer-${i}`} className={`px-6 overflow-hidden transition-all duration-300 ease-in-out ${openIndex === i ? "max-h-96 pb-5 opacity-100" : "max-h-0 opacity-0"}`}>
               <p className="text-[15px] text-text-body leading-relaxed">{faq.answer}</p>
             </div>
           </div>

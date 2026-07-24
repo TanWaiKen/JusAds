@@ -1,0 +1,70 @@
+JUSADS VIDEO GENERATION PROMPT — EVERDRY TRAVEL CONFIDENCE
+
+GOAL
+Create a sensitive, dignified 15-second 9:16 video for TikTok, Instagram Reels,
+and YouTube Shorts. The campaign is for adults aged 25–55 who face long journeys,
+delays, and demanding travel schedules.
+
+REFERENCE ASSETS
+- Product.png = PRIMARY PRODUCT REFERENCE. Preserve the EverDry pack designs,
+  colours, proportions, product category, and visible branding.
+- Diaper.jpeg and Diaper Poster.jpeg = PRODUCT / VISUAL REFERENCES. Use only
+  details visibly supported by these assets.
+- nimbushealthco_logo.jpg = COMPANY LOGO REFERENCE. Do not replace EverDry
+  product branding with the company logo or imply a different product name.
+
+APPROVED MESSAGE
+“Travel with confidence. Stay present for every moment.”
+
+TONE
+Premium, cinematic, warm, calm, human, and respectful. Never embarrass the
+subject, focus on bodily functions, infantilise adults, or use fear and shame.
+Do not make medical, leak-proof, absorbency-duration, freshness-duration, or
+health claims unless separately verified.
+
+DIRECTOR GRID
+Use exactly one complete 2×2 grid with four scenes. Script and generated video
+must map one-to-one to the grid. Total duration: 15 seconds.
+
+SCENE 1 — 0:00–0:05 — RELATABLE TRAVEL HOOK
+- Airport departure board changes to “DELAYED”.
+- An adult traveller pauses, then calmly checks the time.
+- Voice: [gently] “Travel days do not always follow the plan.”
+- On-screen text: “Plans change.”
+
+SCENE 2 — 0:05–0:10 — QUIET PRODUCT SUPPORT
+- Respectful packing moment: the referenced EverDry pack is placed discreetly
+  into carry-on luggage.
+- Do not show the product being worn or expose the body.
+- Voice: [reassuring] “Prepare in a way that helps you feel ready.”
+- On-screen text: “Prepare with confidence.”
+
+SCENE 3 — 0:10–0:13 — STAY PRESENT
+- Traveller relaxes near the gate and reconnects with a companion.
+- Warm natural light; authentic, non-medical environment.
+- Voice: [warmly] “Stay present for every moment.”
+- Subtitle must match exactly.
+
+SCENE 4 — 0:13–0:15 — PRODUCT + CTA
+- Clean hero shot using the exact referenced packaging.
+- On-screen text: “EverDry” and “[APPROVED CTA REQUIRED]”.
+- Voice: [confident] “EverDry.”
+- Hold product and CTA until the last frame.
+
+AUDIO
+Original copyright-safe cinematic music: light airport ambience, a soft delay
+chime, then a warm resolving musical lift. Dialogue remains clear. Preserve
+ElevenLabs V3 emotion tags.
+
+NEGATIVE PROMPT
+No medical setting, hospital cues, humiliation, wet clothing, visible accident,
+childlike styling, unrealistic mobility, invented protection duration, “100%”
+claim, leak-proof claim, cure or treatment claim, false testimonials, altered
+packaging, mismatched company/product logos, unreadable text, or incomplete 2×2
+grid.
+
+REQUIRED CHECK BEFORE GENERATION
+The final CTA, market, language strategy, pack variant, product claims, and
+company-logo relationship must be approved. Do not publish with the CTA
+placeholder.
+

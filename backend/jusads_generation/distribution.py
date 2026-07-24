@@ -43,7 +43,6 @@ def _resolve_account_id(platform: str) -> Optional[str]:
     mapping = {
         "tiktok": ZERNIO_ACCOUNT_TIKTOK,
         "instagram": ZERNIO_ACCOUNT_INSTAGRAM,
-        "youtube": ZERNIO_ACCOUNT_INSTAGRAM,  # reuse IG account or add a YT account later
     }
     return mapping.get(platform.lower().strip()) or None
 
@@ -223,30 +222,32 @@ def distribute_ad(
 
 
 def get_ad_analytics(ad_id: str, project_id: str) -> dict:
-    """Retrieve social post analytics from Zernio for a distributed ad.
+    """Retrieve live Zernio analytics for a distributed ad.
 
-    If Zernio is not configured or the post has not been distributed,
-    returns mock/fallback engagement data so the UI can render nicely.
+    Draft ads return an explicit zero-valued draft state. Configured posts never
+    receive synthetic metrics: unavailable upstream analytics raise a
+    :class:`DistributionError` for the API layer to report.
     """
-    platform = None
-    post_id = None
     try:
-        # Fetch the ad from Supabase to get the post_id and platform
-        resp = supabase.table("generated_ads").select(
-            "id, distribution_platform, distribution_post_id, media_type"
-        ).eq("id", ad_id).eq("project_id", project_id).limit(1).execute()
-        rows = resp.data or []
+        response = (
+            supabase.table("generated_ads")
+            .select("id, distribution_platform, distribution_post_id, media_type")
+            .eq("id", ad_id)
+            .eq("project_id", project_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
         if not rows:
             raise ValueError(f"Ad {ad_id} not found")
-        
+
         ad_row = rows[0]
         platform = ad_row.get("distribution_platform")
         post_id = ad_row.get("distribution_post_id")
-        
         if not post_id or not platform:
-            # Not distributed yet - return empty/draft mock analytics
             return {
                 "status": "draft",
+                "source": "none",
                 "metrics": {
                     "impressions": 0,
                     "reach": 0,
@@ -255,74 +256,33 @@ def get_ad_analytics(ad_id: str, project_id: str) -> dict:
                     "shares": 0,
                     "clicks": 0,
                 },
-                "chart_data": []
+                "chart_data": [],
             }
 
         if not ZERNIO_API_KEY:
-            # No API key - return realistic mock data for UI testing
-            return _generate_mock_analytics(platform)
+            raise DistributionError("Zernio analytics are not configured")
 
         client = Zernio(api_key=ZERNIO_API_KEY, timeout=_TIMEOUT_SECONDS)
         data = client.analytics.get_analytics(post_id=str(post_id), platform=platform)
+        metrics = data if isinstance(data, dict) else {}
         return {
             "status": "active",
+            "source": "zernio",
             "platform": platform,
             "post_id": post_id,
-            "raw_data": data,
+            "raw_data": metrics,
             "metrics": {
-                "impressions": data.get("impressions", 1250),
-                "reach": data.get("reach", 980),
-                "likes": data.get("likes", 145),
-                "comments": data.get("comments", 18),
-                "shares": data.get("shares", 7),
-                "clicks": data.get("clicks", 42),
+                "impressions": metrics.get("impressions", 0),
+                "reach": metrics.get("reach", 0),
+                "likes": metrics.get("likes", 0),
+                "comments": metrics.get("comments", 0),
+                "shares": metrics.get("shares", 0),
+                "clicks": metrics.get("clicks", 0),
             },
-            "chart_data": [
-                {"day": "Day 1", "impressions": int(data.get("impressions", 1250) * 0.1), "likes": int(data.get("likes", 145) * 0.1)},
-                {"day": "Day 2", "impressions": int(data.get("impressions", 1250) * 0.25), "likes": int(data.get("likes", 145) * 0.25)},
-                {"day": "Day 3", "impressions": int(data.get("impressions", 1250) * 0.45), "likes": int(data.get("likes", 145) * 0.45)},
-                {"day": "Day 4", "impressions": int(data.get("impressions", 1250) * 0.65), "likes": int(data.get("likes", 145) * 0.65)},
-                {"day": "Day 5", "impressions": int(data.get("impressions", 1250) * 0.85), "likes": int(data.get("likes", 145) * 0.85)},
-                {"day": "Day 6", "impressions": int(data.get("impressions", 1250) * 0.95), "likes": int(data.get("likes", 145) * 0.95)},
-                {"day": "Day 7", "impressions": data.get("impressions", 1250), "likes": data.get("likes", 145)},
-            ]
+            "chart_data": [],
         }
-    except Exception as e:
-        logger.error("[Distribution] Error retrieving analytics: %s", e)
-        return _generate_mock_analytics(platform or "generic")
-
-
-def _generate_mock_analytics(platform: str) -> dict:
-    """Generate realistic analytics data for development/fallback."""
-    import random
-    random.seed(hash(platform) % 1000)
-    
-    impressions = random.randint(500, 3000)
-    likes = int(impressions * random.uniform(0.05, 0.15))
-    comments = int(likes * random.uniform(0.1, 0.2))
-    shares = int(comments * random.uniform(0.2, 0.5))
-    clicks = int(impressions * random.uniform(0.01, 0.04))
-    
-    # Generate daily trend for 7 days
-    chart_data = []
-    for day in range(1, 8):
-        factor = (day / 7.0) ** 1.5
-        chart_data.append({
-            "day": f"Day {day}",
-            "impressions": int(impressions * factor),
-            "likes": int(likes * factor),
-        })
-        
-    return {
-        "status": "mocked",
-        "platform": platform,
-        "metrics": {
-            "impressions": impressions,
-            "reach": int(impressions * 0.8),
-            "likes": likes,
-            "comments": comments,
-            "shares": shares,
-            "clicks": clicks,
-        },
-        "chart_data": chart_data
-    }
+    except (ValueError, DistributionError):
+        raise
+    except Exception as exc:
+        logger.exception("[Distribution] Live analytics request failed")
+        raise DistributionError("Zernio analytics are temporarily unavailable") from exc

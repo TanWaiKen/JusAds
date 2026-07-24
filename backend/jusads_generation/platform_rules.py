@@ -119,6 +119,10 @@ def resolve_rule(platform: str, media_type: MediaType) -> PlatformRule:
     ``additional_rules.max_dimension``. Any sizing supplied by the frontend is
     not consulted (Req 7.3).
 
+    For text and audio media types, when no explicit row exists the function
+    returns sensible platform-agnostic defaults rather than raising, because
+    these types do not require strict pixel/dimension rules.
+
     Args:
         platform: A normalized platform name (see :func:`normalize_platform`).
         media_type: The media type to resolve rules for.
@@ -127,8 +131,9 @@ def resolve_rule(platform: str, media_type: MediaType) -> PlatformRule:
         The resolved ``PlatformRule``.
 
     Raises:
-        MissingRuleError: When no rule exists for the combination (Req 7.7), or
-            when the Supabase lookup fails and no rule can be resolved.
+        MissingRuleError: When no rule exists for image/video combinations
+            (Req 7.7), or when the Supabase lookup fails and no rule can be
+            resolved for a dimension-sensitive media type.
     """
     try:
         response = (
@@ -150,11 +155,26 @@ def resolve_rule(platform: str, media_type: MediaType) -> PlatformRule:
             media_type,
             e,
         )
+        # For text/audio, provide sensible defaults even if DB lookup fails.
+        if media_type in ("text", "audio"):
+            logger.info(
+                "[PlatformRules] Using built-in defaults for (%s, %s) after DB failure",
+                platform, media_type,
+            )
+            return _default_rule(platform, media_type)
         raise MissingRuleError(
             f"Could not resolve platform rule for ('{platform}', '{media_type}'): {e}"
         ) from e
 
     if not rows:
+        # Text and audio don't require strict pixel/dimension rules — return
+        # sensible defaults so generation can proceed rather than rejecting.
+        if media_type in ("text", "audio"):
+            logger.info(
+                "[PlatformRules] No DB rule for (%s, %s); using built-in defaults",
+                platform, media_type,
+            )
+            return _default_rule(platform, media_type)
         logger.warning(
             "[PlatformRules] No rule defined for (%s, %s)", platform, media_type
         )
@@ -183,3 +203,40 @@ def resolve_rule(platform: str, media_type: MediaType) -> PlatformRule:
         rule["max_duration_seconds"],
     )
     return rule
+
+
+# --- Built-in fallback defaults for text/audio --------------------------------
+
+_TEXT_DEFAULTS: dict[str, dict] = {
+    "tiktok": {"aspect_ratio": "9:16", "max_caption_chars": 2200},
+    "instagram": {"aspect_ratio": "1:1", "max_caption_chars": 2200},
+    "shopee": {"aspect_ratio": "1:1", "max_caption_chars": 3000},
+}
+
+_AUDIO_DEFAULTS: dict[str, dict] = {
+    "tiktok": {"aspect_ratio": "9:16", "max_duration_seconds": 180},
+    "instagram": {"aspect_ratio": "1:1", "max_duration_seconds": 90},
+    "shopee": {"aspect_ratio": "1:1", "max_duration_seconds": 60},
+}
+
+
+def _default_rule(platform: str, media_type: MediaType) -> PlatformRule:
+    """Return a hardcoded sensible default rule for text or audio."""
+    if media_type == "text":
+        defaults = _TEXT_DEFAULTS.get(platform, {"aspect_ratio": "1:1", "max_caption_chars": 2200})
+        return {
+            "platform": platform,
+            "media_type": "text",
+            "aspect_ratio": defaults["aspect_ratio"],
+            "max_dimension": 0,
+            "max_duration_seconds": None,
+        }
+    # audio
+    defaults = _AUDIO_DEFAULTS.get(platform, {"aspect_ratio": "1:1", "max_duration_seconds": 120})
+    return {
+        "platform": platform,
+        "media_type": "audio",
+        "aspect_ratio": defaults["aspect_ratio"],
+        "max_dimension": 0,
+        "max_duration_seconds": defaults.get("max_duration_seconds", 120),
+    }

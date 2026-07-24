@@ -36,6 +36,7 @@ import {
   MEDIA_TYPES,
   publishAd,
   distributeAd,
+  API_BASE,
   type GeneratedAdView,
   type MediaType,
   type ComplianceStatus,
@@ -609,14 +610,46 @@ function OutputCard({
         {ad.mediaType === "video" && ad.publicUrl && (
           <button
             type="button"
-            onClick={() => {
-              toast.info(
-                "CapCut draft saved locally. To open: Launch CapCut → Settings → Draft Location → point to %TEMP%\\jusads_capcut_drafts",
-                { duration: 8000 }
-              );
+            onClick={async () => {
+              try {
+                toast.info("Generating CapCut draft...", { duration: 3000 });
+                // Ask the backend to create a CapCut draft from the video URL
+                // The backend fetches from S3 internally (no CORS issues)
+                const res = await fetch(`${API_BASE}/api/capcut/generate-draft-from-url`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    video_url: ad.publicUrl,
+                    draft_name: `jusads_${ad.adId.slice(0, 8)}`,
+                  }),
+                });
+                if (!res.ok) {
+                  const err = await res.json().catch(() => ({ detail: "Draft generation failed" }));
+                  toast.error(typeof err.detail === "string" ? err.detail : "CapCut draft generation failed");
+                  return;
+                }
+                const data = await res.json();
+                const downloadUrl = data.download_url;
+                if (downloadUrl) {
+                  // Trigger browser download
+                  const link = document.createElement("a");
+                  link.href = `${API_BASE}${downloadUrl}`;
+                  link.download = `${data.draft_name || "capcut_draft"}.zip`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  toast.success(
+                    "CapCut draft downloaded! Extract the ZIP into your CapCut Drafts folder, then open CapCut.",
+                    { duration: 8000 }
+                  );
+                }
+              } catch (err) {
+                console.error(err);
+                toast.error("Failed to generate CapCut draft");
+              }
             }}
             className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white dark:bg-[#1f1f1f] px-3 py-2 text-xs font-medium text-[#171717] dark:text-white shadow-[0_0_0_1px_#ebebeb] dark:shadow-[0_0_0_1px_#2e2e2e] hover:bg-gray-50 dark:hover:bg-[#2c2c2c] transition-colors cursor-pointer"
-            title="Draft saved locally — open CapCut desktop to edit"
+            title="Download CapCut draft ZIP — extract into your CapCut Drafts folder"
           >
             <FileText size={12} />
             Open in CapCut

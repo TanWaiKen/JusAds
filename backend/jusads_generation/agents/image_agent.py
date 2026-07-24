@@ -27,7 +27,7 @@ from PIL import Image, ImageDraw
 
 from shared.clients import gemini, supabase
 from shared.config import MODEL_TEXT, MODEL_IMAGE_CREATIVE
-from shared.prompts import IMAGE_AD_GENERATION_PROMPT
+from shared.prompts import IMAGE_AD_GENERATION_PROMPT, COPY_GUARDRAILS
 from shared.s3_client import upload_file_public
 
 from ..platform_rules import PlatformRule
@@ -143,6 +143,18 @@ def _refine_prompt(brief: str, guide: str, has_reference: bool = False) -> str:
         reference_clause=reference_clause,
         guide=guide[:400],
     )
+
+    # Append copy guardrails — prevent the image prompt from including text
+    # overlays with invented claims, prices, certifications, or features.
+    if COPY_GUARDRAILS:
+        refine_prompt += (
+            "\n\nCOPY GUARDRAILS (MANDATORY): "
+            "Do NOT include text overlays with specific prices, percentage claims, "
+            "certifications (halal, FDA, organic), ingredient lists, testimonial quotes, "
+            "ratings, or comparison claims UNLESS they appear verbatim in the brief above. "
+            "Safe text overlays: brand name (if provided), generic CTA ('Shop now', 'Try it'), "
+            "and short benefit phrases that match what the brief actually states."
+        )
 
     try:
         refine_resp = gemini.models.generate_content(
@@ -324,7 +336,11 @@ async def generate(
     from jusads_generation.search_tools import search_creative_context, derive_search_query
 
     search_query = derive_search_query(brief=brief, market="malaysia", theme=f"{platform} visual ad")
-    search_context = await search_creative_context(query=search_query, market="malaysia")
+    search_context = await search_creative_context(
+        query=search_query,
+        market="malaysia",
+        task_id=task_id,
+    )
 
     guide = load_guide("image")
     enriched_brief = brief

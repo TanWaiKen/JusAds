@@ -142,8 +142,8 @@ def _cap_scene_durations(
     return result
 
 
-def _render_scenes(scenes: list[dict], work_dir: Path) -> list[str]:
-    """Render each scene to a mixed VO+SFX ``.mp3`` and return their paths."""
+def _render_scenes(scenes: list[dict], work_dir: Path, emotion: Optional[str] = None, speed: float = 1.0) -> list[str]:
+    """Render each scene to a mixed VO+SFX ``.mp3`` using ElevenLabs v3 with emotion & pitch control."""
     from shared.elevenlabs_utils import generate_sfx, generate_tts, mix_vo_and_sfx
 
     voice_id = DEFAULT_VOICE["voice_id"]
@@ -154,6 +154,7 @@ def _render_scenes(scenes: list[dict], work_dir: Path) -> list[str]:
         num = scene.get("number", 0)
         vo_text = scene.get("script", "")
         sfx_text = scene.get("sfxPrompt", "")
+        scene_emotion = scene.get("emotion") or emotion or "excited"
         duration = min(float(scene.get("duration", _DEFAULT_SCENE_DURATION)), _MAX_SFX_DURATION)
         if not vo_text:
             continue
@@ -162,7 +163,15 @@ def _render_scenes(scenes: list[dict], work_dir: Path) -> list[str]:
         sfx_path = str(work_dir / f"sfx_{num}.mp3")
         scene_path = str(work_dir / f"scene_{num}.mp3")
 
-        vo_ok = generate_tts(vo_text, vo_path, voice_id=voice_id, language_code=lang_code)
+        vo_ok = generate_tts(
+            text=vo_text,
+            output_path=vo_path,
+            voice_id=voice_id,
+            model_id="eleven_v3",
+            language_code=lang_code,
+            emotion=scene_emotion,
+            speed=speed,
+        )
         if not vo_ok:
             continue
 
@@ -270,7 +279,11 @@ async def generate(*, brief: str,project_id: str, task_id: str, platform: str, r
 
         # Step 3+4: render each scene (VO + SFX + mix) then concatenate.
         work_dir = Path(tempfile.mkdtemp(prefix="audio_ad_"))
-        scene_audio_paths = _render_scenes(scenes, work_dir)
+        ctx = generation_context or {}
+        rls = rules or {}
+        target_emotion = ctx.get("emotion") or rls.get("emotion") or "excited"
+        target_speed = float(ctx.get("speed") or rls.get("speed") or 1.0)
+        scene_audio_paths = _render_scenes(scenes, work_dir, emotion=target_emotion, speed=target_speed)
         audio_path = _concat_scenes(scene_audio_paths, work_dir)
 
         # Upload to S3.

@@ -202,9 +202,18 @@ async def remix_compliance(task_id: str):
 
         except Exception as e:
             logger.error("[Remix] Error for %s: %s", task_id, e, exc_info=True)
-            yield emit({"type": "node_status", "node": "error", "status": "error", "description": str(e)[:200]})
+            yield emit({
+                "type": "node_status",
+                "node": "error",
+                "status": "error",
+                "description": "Remix could not be completed. Please try again.",
+            })
 
-    return StreamingResponse(generate_events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

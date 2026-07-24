@@ -9,7 +9,7 @@
  * Route: /dashboard/project/:projectId/easy/:taskId
  */
 
-import { useRef, useState, useEffect, type ReactNode } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { useGSAP } from "@gsap/react";
@@ -27,8 +27,13 @@ import {
   Eye,
   Info,
   CheckCircle2,
+  ShieldCheck,
+  Bot,
+  Send,
+  Lightbulb,
+  ArrowRight,
+  ChevronDown,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,59 +47,66 @@ import {
 import { createGenerationTask } from "@/services/taskApi";
 import { useAuth } from "@/hooks/useAuth";
 import { uploadFileToS3 } from "@/services/fileService";
+import { API_BASE, getApiError } from "@/lib/apiConfig";
+import {
+  fetchDailyCreativeIdea,
+  type DailyCreativeIdea,
+} from "@/services/trendsApi";
 
 gsap.registerPlugin(useGSAP);
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
-
-const PLATFORMS = ["Instagram", "TikTok", "Facebook", "YouTube", "LinkedIn"] as const;
-
-/** Render the small, curated template guides without promoting body copy to headings. */
-function renderTemplateGuide(guide: string): ReactNode[] {
-  const blocks: ReactNode[] = [];
-  let listItems: string[] = [];
-
-  const flushList = () => {
-    if (!listItems.length) return;
-    const key = `guide-list-${blocks.length}`;
-    blocks.push(
-      <ul key={key} className="list-disc space-y-1.5 pl-4 text-text-muted marker:text-primary/70">
-        {listItems.map((item, index) => (
-          <li key={`${key}-${index}`}>{item.replace(/\*\*(.*?)\*\*/g, "$1")}</li>
-        ))}
-      </ul>,
-    );
-    listItems = [];
-  };
-
-  guide.trim().split("\n").forEach((rawLine, index) => {
-    const line = rawLine.trim();
-    if (!line) {
-      flushList();
-      return;
-    }
-    if (line.startsWith("#### ")) {
-      flushList();
-      blocks.push(<h3 key={`guide-subheading-${index}`} className="pt-3 text-sm font-semibold text-text-heading">{line.slice(5)}</h3>);
-      return;
-    }
-    if (line.startsWith("### ")) {
-      flushList();
-      blocks.push(<h3 key={`guide-heading-${index}`} className="text-base font-semibold text-text-heading">{line.slice(4)}</h3>);
-      return;
-    }
-    if (line.startsWith("* ")) {
-      listItems.push(line.slice(2));
-      return;
-    }
-    flushList();
-    blocks.push(<p key={`guide-paragraph-${index}`}>{line.replace(/\*\*(.*?)\*\*/g, "$1")}</p>);
-  });
-  flushList();
-  return blocks;
-}
+const PLATFORMS = ["Instagram", "TikTok", "Shopee"] as const;
+const FORMAT_COPY: Record<string, { label: string; description: string }> = {
+  image_poster: { label: "Poster", description: "One image for social media." },
+  carousel: { label: "Carousel", description: "A set of swipeable images." },
+  video_ad: { label: "Video", description: "A short social-media video." },
+  text_copy: { label: "Caption", description: "A caption or ad message." },
+  audio_ad: { label: "Audio", description: "A spoken ad with optional music." },
+};
+const FORMAT_DETAILS: Record<string, { bestFor: string; example: string }> = {
+  image_poster: {
+    bestFor: "Sales, new products, events, and simple announcements.",
+    example: "A product photo with a short offer and a clear Shop Now button.",
+  },
+  carousel: {
+    bestFor: "Showing several products, benefits, or steps.",
+    example: "Four swipeable images that explain a product from problem to purchase.",
+  },
+  video_ad: {
+    bestFor: "Product demonstrations, stories, and short social videos.",
+    example: "A quick product demo with captions for TikTok or Instagram.",
+  },
+  text_copy: {
+    bestFor: "Writing captions, promotions, and product messages.",
+    example: "A ready-to-post caption with a headline, offer, and call to action.",
+  },
+  audio_ad: {
+    bestFor: "Voiceovers, spoken promotions, and short audio messages.",
+    example: "A friendly product introduction with optional background music.",
+  },
+};
+const ESSENTIAL_FIELDS = new Set([
+  "product_name",
+  "key_message",
+  "platform",
+  "target_audience",
+  "call_to_action",
+  "language",
+  "creative_mode",
+  "opening_hook",
+]);
+const ESSENTIAL_ORDER = [
+  "product_name",
+  "platform",
+  "target_audience",
+  "key_message",
+  "call_to_action",
+  "language",
+  "creative_mode",
+  "opening_hook",
+];
 
 /** Lucide icon map keyed by the backend icon identifier */
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -124,9 +136,20 @@ interface FormSchemaResponse {
 
 type FormState = Record<string, string>;
 
-interface FormErrors {
-  product_name?: string;
-  key_message?: string;
+type FormErrors = Record<string, string>;
+
+interface AutofillResponse {
+  selected_design_type: string;
+  form_values: FormState;
+  assistant_message: string;
+  missing_fields?: string[];
+  reference_recommendations?: string[];
+  used_fallback?: boolean;
+}
+
+interface SetupAssistantMessage {
+  role: "user" | "assistant";
+  text: string;
 }
 
 // ─── Design Presets — default field values & preview images per design type ──
@@ -193,9 +216,14 @@ The Carousel Ad tool creates a sequence of related visual panels (typically 3 to
     previewImage: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=400&h=260&fit=crop&q=80",
     defaults: {
       platform: "tiktok",
-      brand_tone: "Energetic, authentic and trendy",
-      visual_style: "Dynamic cuts and quick text overlays",
+      brand_tone: "Bold and eye-catching",
+      visual_style: "Product-first photography",
       video_duration: "15s",
+      call_to_action: "Learn More",
+      language: "English",
+      creative_mode: "voiceover",
+      opening_hook: "Sudden action → product reveal",
+      code_switching: "No",
     },
     markdownGuide: `### 🎬 Video Ad Design Guide
 
@@ -214,7 +242,7 @@ The Video Ad tool stitches visual elements with auditory elements (voiceover, so
   text_copy: {
     previewImage: "https://images.unsplash.com/photo-1455390582262-044cdead277a?w=400&h=260&fit=crop&q=80",
     defaults: {
-      platform: "facebook",
+      platform: "instagram",
       brand_tone: "Conversational, friendly and persuasive",
       copy_length: "Medium (3-5 sentences)",
       call_to_action: "Shop Now",
@@ -237,7 +265,7 @@ The Text Copy tool generates platform-optimized ad copy using proven advertising
   audio_ad: {
     previewImage: "https://images.unsplash.com/photo-1478737270239-2f02b77fc618?w=400&h=260&fit=crop&q=80",
     defaults: {
-      platform: "youtube",
+      platform: "tiktok",
       brand_tone: "Warm, professional and trust-building",
       voice_tone: "Conversational and friendly",
       audio_duration: "30s",
@@ -263,7 +291,7 @@ const FIELD_META: Record<string, { label: string; type: "text" | "textarea" | "s
   product_name: { label: "Product Name", type: "text", placeholder: "e.g. Tiger Sugar Boba", required: true },
   target_audience: { label: "Target Audience", type: "text", placeholder: "e.g. Gen Z bubble tea lovers" },
   platform: { label: "Platform", type: "select", placeholder: "Select platform" },
-  key_message: { label: "Key Message", type: "textarea", placeholder: "What's the core message of your ad?", required: true },
+  key_message: { label: "Key message", type: "textarea", placeholder: "What should customers know about your product or offer?", required: true },
   brand_tone: { label: "Brand Tone", type: "text", placeholder: "e.g. Playful and trendy" },
   visual_style: { label: "Visual Style", type: "text", placeholder: "e.g. Japanese minimalist" },
   color_palette: { label: "Color Palette", type: "text", placeholder: "e.g. Brown, gold, white" },
@@ -271,11 +299,18 @@ const FIELD_META: Record<string, { label: string; type: "text" | "textarea" | "s
   video_duration: { label: "Video Duration", type: "text", placeholder: "e.g. 15s, 30s, 60s" },
   slide_count: { label: "Number of Slides", type: "text", placeholder: "e.g. 3-5" },
   copy_length: { label: "Copy Length", type: "text", placeholder: "e.g. Short (1-2 lines), Medium, Long" },
-  call_to_action: { label: "Call to Action", type: "text", placeholder: "e.g. Shop Now, Learn More" },
-  language: { label: "Language", type: "text", placeholder: "e.g. English, Malay, auto" },
+  call_to_action: { label: "Approved call to action", type: "text", placeholder: "e.g. Shop Now, Learn More", required: true },
+  language: { label: "Output language", type: "text", placeholder: "e.g. English, Bahasa Melayu", required: true },
   audio_duration: { label: "Audio Duration", type: "text", placeholder: "e.g. 15s, 30s, 60s" },
   voice_tone: { label: "Voice Tone", type: "text", placeholder: "e.g. Warm and conversational" },
+  audio_emotion: { label: "Voice Emotion (ElevenLabs v3)", type: "select", placeholder: "Choose emotion tone" },
   background_music_style: { label: "Background Music Style", type: "text", placeholder: "e.g. Lo-fi chill, Upbeat pop" },
+  creative_mode: { label: "How should the video speak?", type: "select", placeholder: "Select a video style", required: true },
+  opening_hook: { label: "Opening hook", type: "select", placeholder: "Choose how the video stops the scroll", required: true },
+  code_switching: { label: "Allow code-switching?", type: "select", placeholder: "Choose a language policy" },
+  forbidden_claims: { label: "Claims or themes to avoid", type: "textarea", placeholder: "e.g. No medical claims, discounts, guarantees, or competitor comparisons" },
+  brand_rules: { label: "Brand rules", type: "textarea", placeholder: "e.g. Always show the logo; avoid slang; use approved product photography only" },
+  compliance_constraints: { label: "Legal or compliance notes", type: "textarea", placeholder: "Add required disclaimers, category restrictions, or review notes" },
 };
 
 // Easy Mode should favour a confident choice over a blank input. Advanced Mode
@@ -292,7 +327,62 @@ const EASY_FIELD_CHOICES: Record<string, string[]> = {
   language: ["English", "Bahasa Melayu", "Chinese", "Tamil"],
   audio_duration: ["15s", "30s", "60s"],
   voice_tone: ["Conversational and friendly", "Warm and professional", "Energetic and playful", "Calm and reassuring"],
+  audio_emotion: ["Excited", "Warm", "Authoritative", "Urgent", "Playful", "Conversational"],
   background_music_style: ["Lo-fi chill beats", "Upbeat pop", "Soft acoustic", "No background music"],
+  creative_mode: ["speaker_led", "voiceover", "music_first"],
+  opening_hook: [
+    "Sudden action → product reveal",
+    "Shock impact → instant product snap",
+    "Unexpected visual transformation",
+    "Problem first → product solution",
+    "Immediate product demonstration",
+  ],
+  code_switching: ["No", "Yes"],
+};
+
+function normalizeEasyChoice(fieldName: string, value: string): string {
+  const choices = EASY_FIELD_CHOICES[fieldName];
+  if (!choices || !value) return value;
+  const normalized = value.trim().toLocaleLowerCase();
+  return choices.find((choice) => choice.toLocaleLowerCase() === normalized) ?? value;
+}
+
+const CREATIVE_MODE_LABELS: Record<string, { label: string; description: string }> = {
+  speaker_led: {
+    label: "Speaker on camera",
+    description: "A visible person speaks. Includes narration, captions, and lip-sync review.",
+  },
+  voiceover: {
+    label: "Voiceover",
+    description: "Narration plays over product or lifestyle visuals. No face-sync requirement.",
+  },
+  music_first: {
+    label: "Music + on-screen text",
+    description: "No spoken script. The story relies on visuals, captions, pacing, and music.",
+  },
+};
+
+const OPENING_HOOK_LABELS: Record<string, { label: string; description: string }> = {
+  "Sudden action → product reveal": {
+    label: "Action → product reveal",
+    description: "A safe, high-energy clash or stunt interrupts the scroll, then match-cuts into the product.",
+  },
+  "Shock impact → instant product snap": {
+    label: "Shock cut → product",
+    description: "A sharp one-shot impact, speed ramp, and hard snap reveal the product without a slow animated transition.",
+  },
+  "Unexpected visual transformation": {
+    label: "Visual transformation",
+    description: "Begin with an unexpected change in setting, object, or scale that resolves into the product.",
+  },
+  "Problem first → product solution": {
+    label: "Problem → solution",
+    description: "Open on a relatable frustration, then reveal the product as the clear next step.",
+  },
+  "Immediate product demonstration": {
+    label: "Product demonstration",
+    description: "Show the product working immediately with a bold camera move or satisfying close-up.",
+  },
 };
 
 // ─── Reference Image slot definitions ────────────────────────────────────────
@@ -327,6 +417,13 @@ const REF_IMAGE_SLOTS: RefImageSlot[] = [
     description: "An ad layout, color palette, or vibe you want to copy.",
     guideText: "💡 How to choose style references:\n1. Find an ad or graphic you really like on social media.\n2. Choose one that shares your target color palette.\n3. Antigravity AI will mimic its lighting, color grading, and composition style.",
   },
+  {
+    id: "location_ref",
+    label: "Shop / Location",
+    exampleImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600&h=400&fit=crop&q=80",
+    description: "Your shopfront, stall, interior, or campaign location.",
+    guideText: "💡 Best location reference:\n1. Capture the full shopfront or stall signage straight-on.\n2. Include enough surrounding detail to establish the setting.\n3. Avoid covering the storefront with people or vehicles.\n4. Add verified address and opening hours in the brief; the image alone is not treated as proof.",
+  },
 ];
 
 // ─── Fallback schema (used when API is unreachable) ──────────────────────────
@@ -358,8 +455,8 @@ const FALLBACK_SCHEMA: DesignTypeSchema[] = [
     description: "Short-form video ad with hook, pacing, and call-to-action scripting",
     icon: "video",
     fields: {
-      common: ["product_name", "target_audience", "platform", "key_message", "brand_tone"],
-      specific: ["video_duration", "visual_style", "reference_images"],
+      common: ["product_name", "key_message", "call_to_action", "language", "target_audience", "platform", "brand_tone"],
+      specific: ["opening_hook", "creative_mode", "video_duration", "visual_style", "code_switching", "reference_images"],
     },
   },
   {
@@ -379,7 +476,7 @@ const FALLBACK_SCHEMA: DesignTypeSchema[] = [
     icon: "audio-lines",
     fields: {
       common: ["product_name", "target_audience", "platform", "key_message", "brand_tone"],
-      specific: ["audio_duration", "voice_tone", "background_music_style"],
+      specific: ["audio_duration", "voice_tone", "audio_emotion", "background_music_style"],
     },
   },
 ];
@@ -390,6 +487,7 @@ export default function EasyGenerationPage() {
   const { projectId, taskId } = useParams<{ projectId: string; taskId?: string }>();
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
+  const assistantInputRef = useRef<HTMLTextAreaElement>(null);
   const { user } = useAuth();
 
   // Step management: 2 = design type picker, 3 = form
@@ -411,10 +509,24 @@ export default function EasyGenerationPage() {
     product_photo: useRef<HTMLInputElement>(null),
     brand_logo: useRef<HTMLInputElement>(null),
     style_ref: useRef<HTMLInputElement>(null),
+    location_ref: useRef<HTMLInputElement>(null),
   };
 
   // Modal state for Slot guidance
   const [activeSlotGuidance, setActiveSlotGuidance] = useState<RefImageSlot | null>(null);
+  const [safetyDetailsOpen, setSafetyDetailsOpen] = useState(false);
+  const [briefConfirmed, setBriefConfirmed] = useState(false);
+  const [assistantInput, setAssistantInput] = useState("");
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantMessages, setAssistantMessages] = useState<SetupAssistantMessage[]>([
+    {
+      role: "assistant",
+      text: "Tell me about your product and the ad you want. I will ask for anything missing, then fill the form for you.",
+    },
+  ]);
+  const [referenceRecommendations, setReferenceRecommendations] = useState<string[]>([]);
+  const [dailyIdea, setDailyIdea] = useState<DailyCreativeIdea | null>(null);
+  const [dailyIdeaLoading, setDailyIdeaLoading] = useState(true);
 
   // GSAP entrance animation for each step
   useGSAP(() => {
@@ -446,6 +558,24 @@ export default function EasyGenerationPage() {
     }
   }, [step, schema.length]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setDailyIdeaLoading(true);
+    fetchDailyCreativeIdea("malaysia")
+      .then((idea) => {
+        if (!cancelled) setDailyIdea(idea);
+      })
+      .catch((error) => {
+        console.warn("Today's creative idea is unavailable:", error);
+      })
+      .finally(() => {
+        if (!cancelled) setDailyIdeaLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Cleanup reference image previews on unmount
   useEffect(() => {
     return () => {
@@ -476,36 +606,40 @@ export default function EasyGenerationPage() {
     }
   }
 
-  // User clicks a card in Step 2 -> Open Guide Modal
+  // Template guides remain available as optional help.
   function handleCardClick(designType: DesignTypeSchema) {
     setPreviewingType(designType);
     setGuideModalOpen(true);
   }
 
-  // User accepts template in Guide Modal -> Pre-fill defaults & go to step 3
-  function handleApplyTemplate() {
-    if (!previewingType) return;
-    setSelectedType(previewingType);
+  // Select a format, apply safe defaults, and continue immediately.
+  function handleApplyTemplate(designType: DesignTypeSchema) {
+    setSelectedType(designType);
     
     // Apply preset defaults
-    const preset = DESIGN_PRESETS[previewingType.id];
+    const preset = DESIGN_PRESETS[designType.id];
     setFormState(preset ? { ...preset.defaults } : {});
     setFormErrors({});
     setTouched({});
     setSlotFiles({});
+    setSafetyDetailsOpen(false);
+    setBriefConfirmed(false);
     setStep(3);
     setGuideModalOpen(false);
     setPreviewingType(null);
+    requestAnimationFrame(() => containerRef.current?.scrollIntoView({ block: "start" }));
   }
 
   function handleBackToDesignType() {
     setStep(2);
+    requestAnimationFrame(() => containerRef.current?.scrollIntoView({ block: "start" }));
   }
 
   function handleFieldChange(fieldName: string, value: string) {
     setFormState((prev) => ({ ...prev, [fieldName]: value }));
+    setBriefConfirmed(false);
     // Clear error on change if field becomes valid
-    if (fieldName === "product_name" || fieldName === "key_message") {
+    if (fieldName === "product_name" || fieldName === "key_message" || fieldName === "call_to_action" || fieldName === "language" || fieldName === "creative_mode" || fieldName === "opening_hook") {
       if (value.trim()) {
         setFormErrors((prev) => {
           const next = { ...prev };
@@ -525,16 +659,132 @@ export default function EasyGenerationPage() {
     if (fieldName === "key_message" && !formState.key_message?.trim()) {
       setFormErrors((prev) => ({ ...prev, key_message: "Key message is required" }));
     }
+    if (selectedType?.id === "video_ad" && !formState[fieldName]?.trim() && ["call_to_action", "language", "creative_mode", "opening_hook"].includes(fieldName)) {
+      setFormErrors((prev) => ({ ...prev, [fieldName]: `${FIELD_META[fieldName]?.label ?? fieldName} is required` }));
+    }
+  }
+
+  async function handleAssistantSubmit() {
+    const message = assistantInput.trim();
+    if (!message || assistantLoading) return;
+
+    setAssistantMessages((current) => [...current, { role: "user", text: message }]);
+    setAssistantInput("");
+    setAssistantLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/generation/autofill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_prompt: message,
+          current_design_type: selectedType?.id ?? null,
+          current_values: formState,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await getApiError(response, "The setup assistant could not update the form"));
+      }
+
+      const result = (await response.json()) as AutofillResponse;
+      const availableSchema = schema.length > 0 ? schema : FALLBACK_SCHEMA;
+      const suggestedType = availableSchema.find(
+        (designType) => designType.id === result.selected_design_type,
+      );
+      if (!suggestedType) {
+        throw new Error("The assistant selected an unsupported ad format.");
+      }
+
+      const presetValues = DESIGN_PRESETS[suggestedType.id]?.defaults ?? {};
+      const mergedValues = {
+        ...presetValues,
+        ...(selectedType?.id === suggestedType.id ? formState : {}),
+        ...result.form_values,
+      };
+      const nextValues = Object.fromEntries(
+        Object.entries(mergedValues).map(([fieldName, value]) => [
+          fieldName,
+          normalizeEasyChoice(fieldName, value),
+        ]),
+      );
+      setSelectedType(suggestedType);
+      setFormState(nextValues);
+      setFormErrors({});
+      setTouched({});
+      setBriefConfirmed(false);
+      setGuideModalOpen(false);
+      setPreviewingType(null);
+      setSafetyDetailsOpen(Boolean(
+        nextValues.forbidden_claims
+        || nextValues.brand_rules
+        || nextValues.compliance_constraints,
+      ));
+      setReferenceRecommendations(result.reference_recommendations ?? []);
+      setStep(3);
+
+      const missingNote = result.missing_fields?.length
+        ? ` Still needed: ${result.missing_fields.map((field) => FIELD_META[field]?.label ?? field).join(", ")}.`
+        : "";
+      const fallbackNote = result.used_fallback
+        ? " AI extraction was temporarily unavailable, so I used the safest matching preset."
+        : "";
+      setAssistantMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: `${result.assistant_message}${missingNote}${fallbackNote}`,
+        },
+      ]);
+      toast.success(`${suggestedType.label} selected and form updated`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "The setup assistant failed";
+      setAssistantMessages((current) => [
+        ...current,
+        { role: "assistant", text: errorMessage },
+      ]);
+      toast.error(errorMessage);
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
+  function handleUseDailyIdea() {
+    if (!dailyIdea) return;
+    const prompt = [
+      `Adapt today's creative idea for my product: ${dailyIdea.title}.`,
+      dailyIdea.idea,
+      `Opening hook: ${dailyIdea.hook}`,
+      `Recommended format: ${dailyIdea.format}.`,
+      "Ask me for any important product detail that is still missing before finalising the form.",
+    ].join(" ");
+    setAssistantInput(prompt);
+    setAssistantMessages((current) => [
+      ...current,
+      {
+        role: "assistant",
+        text: `I added "${dailyIdea.title}" to the chat. Add your product or offer, then send it.`,
+      },
+    ]);
+    window.setTimeout(() => assistantInputRef.current?.focus(), 50);
   }
 
   function isFormValid(): boolean {
-    return !!(formState.product_name?.trim() && formState.key_message?.trim());
+    const baseValid = !!(formState.product_name?.trim() && formState.key_message?.trim());
+    if (selectedType?.id !== "video_ad") return baseValid && briefConfirmed;
+    return !!(
+      baseValid
+      && formState.call_to_action?.trim()
+      && formState.language?.trim()
+      && formState.creative_mode?.trim()
+      && formState.opening_hook?.trim()
+      && briefConfirmed
+    );
   }
 
   // Handle file addition for a specific slot
   function handleSlotFileChange(slotId: string, files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
+    setBriefConfirmed(false);
     
     // Revoke old object URL if exists
     if (slotFiles[slotId]) {
@@ -552,6 +802,7 @@ export default function EasyGenerationPage() {
 
   // Remove file from slot
   function handleRemoveSlotFile(slotId: string) {
+    setBriefConfirmed(false);
     setSlotFiles((prev) => {
       const copy = { ...prev };
       if (copy[slotId]) {
@@ -573,7 +824,10 @@ export default function EasyGenerationPage() {
     try {
       // 1. Upload files to S3
       const uploadedUrls: string[] = [];
-      const email = user?.profile?.email ?? "demo_user";
+      const email = user?.profile?.email;
+      if (!email) {
+        throw new Error("Your authenticated email is required to upload assets.");
+      }
 
       for (const [slotId, info] of Object.entries(slotFiles)) {
         try {
@@ -623,130 +877,234 @@ export default function EasyGenerationPage() {
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div ref={containerRef} className="flex min-h-full flex-col p-6 bg-surface-inset/10">
-      
-      {/* Task navigation and mode switcher stay at the top of the workspace. */}
-      <div className="mx-auto mb-6 grid w-full max-w-4xl grid-cols-[1fr_auto_1fr] items-center gap-3">
+    <div ref={containerRef} className="flex min-h-full flex-col bg-gradient-to-b from-surface-inset/35 via-background to-background px-4 py-4 sm:px-6">
+      <div className="mx-auto mb-4 grid w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-3">
         <div>
-          {taskId && (
-            <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/project/${projectId}`)}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Project
-            </Button>
-          )}
+          <button
+            type="button"
+            onClick={() => navigate(`/dashboard/project/${projectId}`)}
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-medium text-text-muted hover:bg-surface-inset hover:text-text-heading"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Project
+          </button>
         </div>
         <div className="flex w-[360px] max-w-full rounded-lg border border-border-default bg-surface-card p-1 shadow-sm">
-          <span className="flex-1 text-center py-1.5 text-xs font-semibold rounded-md bg-primary text-primary-foreground shadow-sm">
+          <span className="flex-1 rounded-md bg-primary py-2 text-center text-sm font-semibold text-primary-foreground shadow-sm">
             Easy Mode
           </span>
           <button
+            type="button"
             onClick={handleToggleToAdvanced}
-            className="flex-1 text-center py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            className="flex-1 rounded-md py-2 text-center text-sm font-semibold text-text-muted transition-colors hover:bg-surface-inset hover:text-text-heading"
           >
             Advanced Mode
           </button>
         </div>
         <div className="flex justify-end">
           {taskId && (
-            <Button size="sm" onClick={() => navigate(`/dashboard/project/${projectId}/easy/${taskId}/results`)}>
-              Go to Results
+            <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/project/${projectId}/easy/${taskId}/results`)}>
+              Results
             </Button>
           )}
         </div>
       </div>
 
+      <section
+        aria-label="Today's creative idea"
+        className="mx-auto mb-5 w-full max-w-6xl overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50/90 via-surface-card to-surface-card shadow-sm dark:border-amber-900/60 dark:from-amber-950/25"
+      >
+        {dailyIdeaLoading ? (
+          <div className="flex min-h-24 items-center gap-3 px-5 text-sm text-text-muted">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
+            Finding today&apos;s idea
+          </div>
+        ) : dailyIdea ? (
+          <>
+            <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                  <Lightbulb className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700 dark:text-amber-300">
+                      Today&apos;s idea
+                    </p>
+                    <span className="rounded-full bg-surface-card/80 px-2 py-0.5 text-[11px] font-medium text-text-muted">
+                      Malaysia
+                    </span>
+                  </div>
+                  <h3 className="mt-1 line-clamp-2 text-[15px] font-semibold leading-5 text-text-heading">{dailyIdea.title}</h3>
+                  <p className="mt-1 line-clamp-1 text-sm leading-5 text-text-muted">
+                    {dailyIdea.why_today}
+                  </p>
+                </div>
+              </div>
+              <Button type="button" size="sm" onClick={handleUseDailyIdea} className="shrink-0">
+                Add to chat
+                <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+            <details className="border-t border-amber-200/70 bg-surface-card/55 dark:border-amber-900/50">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-5 py-2.5 text-xs font-semibold text-text-body marker:hidden">
+                Preview idea
+                <ChevronDown className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
+              </summary>
+              <div className="grid gap-3 border-t border-border-default/60 px-5 py-4 text-sm text-text-muted sm:grid-cols-[1fr_auto]">
+                <p className="leading-6">{dailyIdea.idea}</p>
+                <div className="flex flex-wrap items-start gap-2 sm:max-w-64">
+                  <span className="rounded-full bg-surface-inset px-2.5 py-1 text-xs">Hook: {dailyIdea.hook}</span>
+                  <span className="rounded-full bg-surface-inset px-2.5 py-1 text-xs">Format: {dailyIdea.format}</span>
+                </div>
+              </div>
+            </details>
+          </>
+        ) : (
+          <p className="px-5 py-4 text-sm text-text-muted">Today&apos;s idea is temporarily unavailable.</p>
+        )}
+      </section>
+
+      <div className="mx-auto grid w-full max-w-6xl items-start gap-7 lg:grid-cols-[340px_minmax(0,1fr)]">
+      <section aria-label="Fill the form by chat" className="w-full overflow-hidden rounded-2xl border border-border-default/80 bg-surface-card shadow-[0_10px_35px_rgba(15,23,42,0.06)] lg:sticky lg:top-4">
+        <div className="flex items-center gap-3 border-b border-border-default px-4 py-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <Bot className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-[15px] font-semibold leading-5 text-text-heading">Fill with chat</h3>
+            <p className="mt-0.5 text-[13px] leading-5 text-text-muted">Describe your ad. I will fill the form.</p>
+          </div>
+        </div>
+        <div className="max-h-72 min-h-40 space-y-3 overflow-y-auto bg-surface-inset/40 px-4 py-3">
+          {assistantMessages.slice(-4).map((message, index) => (
+            <div key={`${message.role}-${index}-${message.text.slice(0, 16)}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+              <p className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                message.role === "user"
+                  ? "rounded-br-md bg-primary text-primary-foreground"
+                  : "rounded-bl-md border border-border-default bg-surface-card text-text-body"
+              }`}>
+                {message.text}
+              </p>
+            </div>
+          ))}
+          {assistantLoading && (
+            <div className="flex items-center gap-2 text-sm text-text-muted">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              Filling your form
+            </div>
+          )}
+        </div>
+        <div className="border-t border-border-default p-3">
+          {assistantMessages.length === 1 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {["TikTok product video", "Instagram sale poster", "Shopee product ad"].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => setAssistantInput(suggestion)}
+                  className="rounded-full border border-border-default px-3 py-1.5 text-xs font-medium text-text-body hover:border-primary hover:text-primary"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Textarea
+              ref={assistantInputRef}
+              value={assistantInput}
+              onChange={(event) => setAssistantInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void handleAssistantSubmit();
+                }
+              }}
+              placeholder="Tell JusAds what you want to advertise"
+              aria-label="Describe the ad you want"
+              rows={1}
+              className="min-h-11 resize-none"
+            />
+            <Button
+              type="button"
+              onClick={() => void handleAssistantSubmit()}
+              disabled={!assistantInput.trim() || assistantLoading}
+              className="min-w-11 self-stretch px-3"
+              aria-label="Send message"
+            >
+              {assistantLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
+          {referenceRecommendations.length > 0 && (
+            <p className="mt-3 text-xs text-text-muted">
+              Suggested photos: {referenceRecommendations.join(", ")}
+            </p>
+          )}
+        </div>
+      </section>
+
       {/* Step 2: Design Type Picker */}
       {step === 2 && (
-        <div className="step-content mx-auto flex w-full max-w-4xl flex-col gap-6 pt-6">
-          <div className="text-center space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight text-text-heading">What would you like to create?</h1>
-            <p className="text-text-muted text-sm max-w-lg mx-auto">
-              Select a design template below. You'll view its official guide and smart default fields before customizing.
-            </p>
+        <div className="step-content flex w-full min-w-0 flex-col gap-5">
+          <div className="border-b border-border-default/70 pb-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary">Step 1 of 2</p>
+            <h3 className="text-[18px] font-semibold leading-6 tracking-[-0.01em] text-text-heading">Choose an ad format</h3>
+            <p className="mt-2 text-[15px] leading-6 text-text-muted">Pick the result you want to create. You can change it later.</p>
           </div>
 
           {schemaLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="flex items-center justify-center gap-3 py-16 text-sm text-text-muted">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              Loading formats
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {schema.map((designType) => {
                 const IconComponent = ICON_MAP[designType.icon] || Image;
                 const preset = DESIGN_PRESETS[designType.id];
+                const display = FORMAT_COPY[designType.id] ?? {
+                  label: designType.label,
+                  description: designType.description,
+                };
                 return (
-                  <Card
+                  <button
                     key={designType.id}
-                    aria-pressed={previewingType?.id === designType.id}
-                    className={`cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-lg bg-surface-card group overflow-hidden flex flex-col ${
-                      previewingType?.id === designType.id
-                        ? "border-primary ring-2 ring-primary/20 shadow-md"
-                        : "border-border-default"
-                    }`}
+                    type="button"
                     onClick={() => handleCardClick(designType)}
+                    className="group overflow-hidden rounded-xl border border-border-default bg-surface-card text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   >
-                    {preset?.previewImage && (
-                      <div className="relative h-40 w-full overflow-hidden bg-muted">
-                        <img
-                          src={preset.previewImage}
-                          alt={designType.label}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          loading="lazy"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-                        <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm border border-white/15">
-                          <IconComponent className="h-3 w-3" />
-                          {designType.label}
-                        </div>
-                      </div>
-                    )}
-                    <CardHeader className="p-4 flex-1 flex flex-col justify-between">
-                      <div className="space-y-1.5">
-                        <CardTitle className="text-base font-semibold group-hover:text-primary transition-colors">
-                          {designType.label}
-                        </CardTitle>
-                        <CardDescription className="text-xs text-text-muted leading-relaxed">
-                          {designType.description}
-                        </CardDescription>
-                      </div>
-                      
-                      {preset && (
-                        <div className="mt-4 pt-3 border-t border-border-default/60 flex flex-wrap gap-1">
-                          {Object.entries(preset.defaults).slice(0, 3).map(([key, val]) => (
-                            <span key={key} className="inline-flex rounded-full bg-primary/8 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                              {val}
-                            </span>
-                          ))}
-                        </div>
+                    <span className="relative block h-28 overflow-hidden bg-surface-inset">
+                      {preset?.previewImage && (
+                        <img src={preset.previewImage} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
                       )}
-                    </CardHeader>
-                  </Card>
+                      <span className="absolute bottom-2 left-2 flex h-8 w-8 items-center justify-center rounded-lg bg-black/65 text-white backdrop-blur-sm">
+                        <IconComponent className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                    </span>
+                    <span className="block p-4">
+                      <span className="block text-base font-semibold text-text-heading">{display.label}</span>
+                      <span className="mt-1 block text-sm leading-relaxed text-text-muted">{display.description}</span>
+                      <span className="mt-3 block text-sm font-semibold text-primary">View details</span>
+                    </span>
+                  </button>
                 );
               })}
             </div>
           )}
-
-          {!taskId && <Button
-            variant="ghost"
-            className="self-start text-xs text-text-muted hover:text-text-heading"
-            onClick={() => navigate(`/dashboard/project/${projectId}`)}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Project
-          </Button>}
         </div>
       )}
 
       {/* Guide & Preset Preview Modal (Step 2.5) */}
       {guideModalOpen && previewingType && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface-card border border-border-default w-full max-w-3xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
+          <div role="dialog" aria-modal="true" aria-labelledby="format-guide-title" className="bg-surface-card border border-border-default w-full max-w-3xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-border-default flex items-center justify-between bg-muted/30">
               <div className="flex items-center gap-2">
                 <Info className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold text-text-heading">
-                  Template Guide: {previewingType.label}
+                <h2 id="format-guide-title" className="text-lg font-bold text-text-heading">
+                  {FORMAT_COPY[previewingType.id]?.label ?? previewingType.label}
                 </h2>
               </div>
               <button
@@ -756,38 +1114,43 @@ export default function EasyGenerationPage() {
                   setPreviewingType(null);
                 }}
                 className="text-text-muted hover:text-text-heading rounded p-1 hover:bg-muted/80 cursor-pointer"
+                aria-label="Close format guide"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto flex flex-col md:flex-row gap-6">
-              {/* Left Column: Markdown Guide */}
-              <div className="flex-1 space-y-4 pr-0 md:pr-4 md:border-r border-border-default/60">
-                <div className="prose prose-sm dark:prose-invert max-w-none text-xs text-text-muted leading-relaxed space-y-3">
-                  {/* Clean custom styling for embedded markdown */}
-                  {renderTemplateGuide(DESIGN_PRESETS[previewingType.id]?.markdownGuide || "")}
-                </div>
+            <div className="p-6 overflow-y-auto grid gap-6 md:grid-cols-[1.15fr_1fr]">
+              <div className="rounded-xl overflow-hidden border border-border-default bg-muted/20">
+                <img
+                  src={DESIGN_PRESETS[previewingType.id]?.previewImage}
+                  alt={`${FORMAT_COPY[previewingType.id]?.label ?? previewingType.label} example`}
+                  className="w-full h-full min-h-64 object-cover"
+                />
               </div>
 
-              {/* Right Column: Defaults & Preview Image */}
-              <div className="w-full md:w-72 shrink-0 space-y-4">
-                <div className="rounded-lg overflow-hidden border border-border-default bg-muted/20">
-                  <img
-                    src={DESIGN_PRESETS[previewingType.id]?.previewImage}
-                    alt={previewingType.label}
-                    className="w-full h-36 object-cover"
-                  />
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm font-semibold text-text-heading">Best for</p>
+                  <p className="mt-1 text-sm leading-6 text-text-muted">
+                    {FORMAT_DETAILS[previewingType.id]?.bestFor}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-text-heading">Example</p>
+                  <p className="mt-1 text-sm leading-6 text-text-muted">
+                    {FORMAT_DETAILS[previewingType.id]?.example}
+                  </p>
                 </div>
 
-                <div className="space-y-3">
-                  <h4 className="text-xs font-semibold text-text-heading uppercase tracking-wider">
-                    Smart Preset Values
-                  </h4>
-                  <div className="space-y-2">
+                <div className="rounded-lg overflow-hidden border border-border-default bg-muted/20">
+                  <h3 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-text-heading">
+                    Starting settings
+                  </h3>
+                  <div className="space-y-1 p-2">
                     {Object.entries(DESIGN_PRESETS[previewingType.id]?.defaults || {}).map(([key, val]) => (
-                      <div key={key} className="flex justify-between items-center rounded-md bg-surface-inset px-3 py-2 text-xs">
+                      <div key={key} className="flex justify-between gap-4 rounded-md px-2 py-1.5 text-xs">
                         <span className="text-text-muted capitalize">
                           {key.replace("_", " ")}
                         </span>
@@ -810,14 +1173,13 @@ export default function EasyGenerationPage() {
                   setPreviewingType(null);
                 }}
               >
-                Cancel
+                {step === 2 ? "Cancel" : "Close"}
               </Button>
-              <Button
-                onClick={handleApplyTemplate}
-                className="bg-primary hover:bg-primary/95 text-white"
-              >
-                Apply &amp; Continue
-              </Button>
+              {step === 2 && (
+                <Button onClick={() => handleApplyTemplate(previewingType)}>
+                  Use this format
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -825,48 +1187,107 @@ export default function EasyGenerationPage() {
 
       {/* Step 3: Dynamic Form */}
       {step === 3 && selectedType && (
-        <div className="step-content mx-auto flex w-full max-w-3xl flex-col gap-6 pt-6 bg-surface-card border border-border-default rounded-xl p-6 sm:p-8 shadow-sm">
-          <div>
-            <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-semibold tracking-tight text-text-heading">
-                Configure {selectedType.label}
-              </h1>
+        <div className="step-content flex w-full min-w-0 flex-col gap-5">
+          <div className="border-b border-border-default/70 pb-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary">Step 2 of 2</p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-[18px] font-semibold leading-6 tracking-[-0.01em] text-text-heading">Add your ad details</h3>
+                <p className="mt-2 text-[15px] text-text-muted">{FORMAT_COPY[selectedType.id]?.label ?? selectedType.label}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCardClick(selectedType)}
+                className="min-h-11 rounded-lg px-3 text-sm font-medium text-primary hover:bg-primary/5"
+              >
+                Format guide
+              </button>
             </div>
-            <p className="mt-2 text-text-muted text-xs">
-              {selectedType.description}
-            </p>
           </div>
 
-          <div className="flex flex-col gap-5">
-            {/* Common fields */}
-            {selectedType.fields.common.map((fieldName) =>
-              renderField(fieldName)
-            )}
-
-            {/* Specific fields */}
-            {selectedType.fields.specific.map((fieldName) =>
-              renderField(fieldName)
-            )}
+          <div className="flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2.5 text-sm text-text-body">
+            <ShieldCheck className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            JusAds uses only the product facts you provide.
           </div>
+
+          <div className="flex flex-col gap-4 rounded-xl border border-border-default bg-surface-card p-4 sm:p-5">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {[...selectedType.fields.common, ...selectedType.fields.specific]
+              .filter((fieldName) => ESSENTIAL_FIELDS.has(fieldName))
+              .sort((a, b) => ESSENTIAL_ORDER.indexOf(a) - ESSENTIAL_ORDER.indexOf(b))
+              .map((fieldName) => (
+                <div
+                  key={fieldName}
+                  className={["target_audience", "key_message", "creative_mode", "opening_hook"].includes(fieldName) ? "lg:col-span-2" : ""}
+                >
+                  {renderField(fieldName)}
+                </div>
+              ))}
+            </div>
+
+            <details className="rounded-xl border border-border-default">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-semibold text-text-heading marker:hidden">
+                More options
+                <span className="text-xs font-normal text-text-muted">Optional</span>
+              </summary>
+              <div className="flex flex-col gap-4 border-t border-border-default p-4">
+                {[...selectedType.fields.common, ...selectedType.fields.specific]
+                  .filter((fieldName) => !ESSENTIAL_FIELDS.has(fieldName))
+                  .map((fieldName) => renderField(fieldName))}
+              </div>
+            </details>
+
+            <div className="rounded-xl border border-border-default">
+              <button
+                type="button"
+                onClick={() => setSafetyDetailsOpen((open) => !open)}
+                aria-expanded={safetyDetailsOpen}
+                className="flex min-h-12 w-full items-center justify-between gap-3 px-4 text-left"
+              >
+                <span className="text-sm font-semibold text-text-heading">Brand and safety rules</span>
+                <span className="text-xs font-normal text-text-muted">Optional</span>
+              </button>
+              {safetyDetailsOpen && (
+                <div className="flex flex-col gap-4 border-t border-border-default p-4">
+                  {renderField("forbidden_claims")}
+                  {renderField("brand_rules")}
+                  {renderField("compliance_constraints")}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <label className="flex min-h-12 cursor-pointer items-start gap-3 rounded-lg border border-border-default bg-surface-card p-3 text-sm leading-relaxed text-text-body">
+            <input
+              type="checkbox"
+              checked={briefConfirmed}
+              onChange={(event) => setBriefConfirmed(event.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 rounded accent-primary"
+            />
+            <span>
+              <span className="block font-semibold text-text-heading">I have checked these details</span>
+              <span className="mt-1 block text-text-muted">The product facts, offer, and wording are correct.</span>
+            </span>
+          </label>
 
           {/* Actions */}
-          <div className="flex items-center justify-between border-t border-border-default pt-6 mt-4">
-            <Button variant="ghost" onClick={handleBackToDesignType} className="text-xs">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Change Template
+          <div className="flex flex-col-reverse gap-3 border-t border-border-default pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <Button variant="ghost" onClick={handleBackToDesignType}>
+              Change format
             </Button>
 
             <Button
               onClick={handleSubmit}
               disabled={!isFormValid() || submitting}
-              className="bg-primary hover:bg-primary/95 text-white font-semibold"
+              className="min-h-12 bg-primary px-6 text-base font-semibold text-white hover:bg-primary/95"
             >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Generate Ad
+              {selectedType.id === "video_ad" ? "Create storyboard" : "Create my ad"}
             </Button>
           </div>
         </div>
       )}
+      </div>
 
       {/* Reference Image Guidance Modal */}
       {activeSlotGuidance && (
@@ -920,6 +1341,7 @@ export default function EasyGenerationPage() {
     const value = formState[fieldName] || "";
     const error = (formErrors as Record<string, string | undefined>)[fieldName];
     const isTouched = touched[fieldName];
+    const fieldId = `easy-${fieldName}`;
 
     // ── Reference Images — guided slots ──────────────────────────────────
     if (fieldName === "reference_images") {
@@ -927,22 +1349,21 @@ export default function EasyGenerationPage() {
         return null;
       }
       return (
-        <details key={fieldName} className="group rounded-xl border border-border-default bg-surface-inset/30 px-4 py-3">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-text-heading marker:hidden">
+        <div key={fieldName} className="rounded-xl bg-surface-inset/30 p-4">
+          <div className="flex items-center justify-between gap-4 text-sm font-medium text-text-heading">
             <span>Optional visual references</span>
-            <span className="text-xs font-normal text-text-muted group-open:hidden">Add photos, logo, or style inspiration</span>
-            <span className="hidden text-xs font-normal text-text-muted group-open:inline">Hide references</span>
-          </summary>
+            <span className="text-xs font-normal text-text-muted">Photos, logo, or inspiration</span>
+          </div>
           <div className="mt-4 flex flex-col gap-3">
             <p className="text-[11px] text-text-muted">
-              Add only what you have. Product photo, brand logo, and style reference are all optional.
+              Add only what you have. Product, character/logo, style, and shop/location references are optional.
             </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
             {REF_IMAGE_SLOTS.map((slot) => {
               const fileInfo = slotFiles[slot.id];
               return (
-                <div key={slot.id} className="rounded-xl border border-border-default bg-surface-card p-4 flex flex-col justify-between gap-3 relative shadow-xs">
+                <div key={slot.id} className="relative flex flex-col justify-between gap-2 rounded-lg border border-border-default bg-surface-card p-3 shadow-xs">
                   
                   {/* Slot Title + Info Icon */}
                   <div className="flex items-center justify-between">
@@ -1013,7 +1434,7 @@ export default function EasyGenerationPage() {
             })}
           </div>
           </div>
-        </details>
+        </div>
       );
     }
 
@@ -1021,12 +1442,12 @@ export default function EasyGenerationPage() {
     if (meta.type === "select" && fieldName === "platform") {
       return (
         <div key={fieldName} className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-text-heading uppercase tracking-wider">{meta.label}</label>
+          <label htmlFor={fieldId} className="text-sm font-semibold text-text-heading">{meta.label}</label>
           <Select
             value={value || undefined}
             onValueChange={(val) => handleFieldChange(fieldName, val || "")}
           >
-            <SelectTrigger className="w-full bg-surface-card border-border-default">
+            <SelectTrigger id={fieldId} className="min-h-11 w-full bg-surface-card border-border-default">
               <SelectValue placeholder={meta.placeholder} />
             </SelectTrigger>
             <SelectContent>
@@ -1038,13 +1459,11 @@ export default function EasyGenerationPage() {
             </SelectContent>
           </Select>
           {value && (
-            <p className="text-[11px] text-accent-blue font-medium mt-1 pl-1">
-              Aspect ratios: {
+            <p className="text-xs text-text-muted mt-1">
+              Recommended size: {
                 value === "instagram" ? "1:1 (Square) or 4:5 (Vertical) or 9:16 (Reels)" :
                 value === "tiktok" ? "9:16 (Vertical)" :
-                value === "youtube" ? "16:9 (Landscape) or 9:16 (Shorts)" :
-                value === "facebook" ? "1:1 (Square) or 4:5 (Vertical)" :
-                value === "linkedin" ? "1:1 (Square) or 16:9 (Landscape)" : ""
+                value === "shopee" ? "1:1 (Square)" : ""
               }
             </p>
           )}
@@ -1056,13 +1475,22 @@ export default function EasyGenerationPage() {
     const choices = EASY_FIELD_CHOICES[fieldName];
     if (choices) {
       return (
-        <div key={fieldName} className="flex flex-col gap-2">
-          <label className="text-xs font-semibold text-text-heading uppercase tracking-wider">
+        <fieldset key={fieldName} className="flex flex-col gap-2">
+          <legend className="text-sm font-semibold text-text-heading">
             {meta.label}
-          </label>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          </legend>
+          <div className={`grid gap-2 ${
+            fieldName === "creative_mode"
+              ? "grid-cols-1 sm:grid-cols-3"
+              : fieldName === "opening_hook"
+                ? "grid-cols-1 sm:grid-cols-2"
+                : "grid-cols-2 sm:grid-cols-4"
+          }`}>
             {choices.map((choice) => {
               const selected = value === choice;
+              const creativeMode = fieldName === "creative_mode" ? CREATIVE_MODE_LABELS[choice] : undefined;
+              const openingHook = fieldName === "opening_hook" ? OPENING_HOOK_LABELS[choice] : undefined;
+              const choiceDetails = creativeMode ?? openingHook;
               return (
                 <button
                   key={choice}
@@ -1075,23 +1503,30 @@ export default function EasyGenerationPage() {
                       : "border-border-default bg-surface-card text-text-body hover:border-primary/50 hover:bg-primary/5"
                   }`}
                 >
-                  {choice}
+                  <span className="block font-semibold">{choiceDetails?.label ?? choice}</span>
+                  {choiceDetails && (
+                    <span className={`mt-1 block text-[11px] leading-relaxed ${selected ? "text-primary-foreground/80" : "text-text-muted"}`}>
+                      {choiceDetails.description}
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
-        </div>
+          {isTouched && error && <p className="text-xs text-destructive">{error}</p>}
+        </fieldset>
       );
     }
 
     if (meta.type === "textarea") {
       return (
         <div key={fieldName} className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-text-heading uppercase tracking-wider">
+          <label htmlFor={fieldId} className="text-sm font-semibold text-text-heading">
             {meta.label}
             {meta.required && <span className="text-destructive"> *</span>}
           </label>
           <Textarea
+            id={fieldId}
             placeholder={meta.placeholder}
             value={value}
             onChange={(e) => handleFieldChange(fieldName, e.target.value)}
@@ -1109,11 +1544,12 @@ export default function EasyGenerationPage() {
     // ── Default: text input ─────────────────────────────────────────────
     return (
       <div key={fieldName} className="flex flex-col gap-1.5">
-        <label className="text-xs font-semibold text-text-heading uppercase tracking-wider">
+        <label htmlFor={fieldId} className="text-sm font-semibold text-text-heading">
           {meta.label}
           {meta.required && <span className="text-destructive"> *</span>}
         </label>
         <Input
+          id={fieldId}
           placeholder={meta.placeholder}
           value={value}
           onChange={(e) => handleFieldChange(fieldName, e.target.value)}

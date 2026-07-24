@@ -7,7 +7,7 @@
  * 2. Account Overview — overall social media account performance
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+import { API_BASE } from "@/lib/apiConfig";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -69,8 +69,10 @@ export interface StatsResponse {
   post_count: number;
   // Account-level overview
   account_overview: AccountOverview;
+  source: "zernio";
   is_stale: boolean;
   last_refresh: string | null;
+  message?: string;
 }
 
 // ─── API Functions ───────────────────────────────────────────────────────────
@@ -89,6 +91,15 @@ export async function fetchPostStatistics(
     : `${API_BASE}/api/statistics/posts`;
 
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch statistics: ${response.status}`);
+  if (!response.ok) {
+    let message = "Social analytics are currently unavailable.";
+    try {
+      const payload = (await response.json()) as { error?: string };
+      if (payload.error) message = payload.error;
+    } catch {
+      // Keep the stable public message for non-JSON upstream failures.
+    }
+    throw new Error(message);
+  }
   return response.json();
 }

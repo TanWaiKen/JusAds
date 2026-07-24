@@ -130,9 +130,12 @@ async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
             "public_url": public_url,
             "filename": body.filename,
         })
-    except Exception as e:
-        logger.error("[Files] Failed to generate upload URL: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception:
+        logger.exception("[Files] Failed to generate upload URL")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Unable to prepare the upload. Please try again."},
+        )
 
 
 # --- Download URL -------------------------------------------------------------
@@ -155,6 +158,9 @@ async def get_download_url(body: DownloadUrlRequest) -> JSONResponse:
             "download_url": download_url,
             "s3_key": body.s3_key,
         })
-    except Exception as e:
-        logger.error("[Files] Failed to generate download URL: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception:
+        logger.exception("[Files] Failed to generate download URL")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Unable to prepare the download. Please try again."},
+        )

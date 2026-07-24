@@ -104,6 +104,13 @@ export function CanvasNode({
           ? node.props.reference_urls.split(",").map((url: string) => url.trim()).filter(Boolean).slice(0, 4)
           : [])
     : [];
+  const frameUrls: string[] = node.type === "input" && node.props?.frame_urls
+    ? (Array.isArray(node.props.frame_urls)
+        ? node.props.frame_urls.filter((url): url is string => typeof url === "string")
+        : typeof node.props.frame_urls === "string"
+          ? node.props.frame_urls.split(",").map((url: string) => url.trim()).filter(Boolean)
+          : [])
+    : [];
   const colorClass = NODE_COLORS[node.type] ?? "bg-gray-500";
   const statusClass = STATUS_INDICATORS[node.status];
   const isDownloadable = node.status === "done" && DOWNLOADABLE_TYPES.has(node.type as NodeType) && !!node.output;
@@ -119,7 +126,11 @@ export function CanvasNode({
   }
 
   // Use node.width if set (user resized), otherwise compute default
-  const defaultWidth = node.output && (node.type === "image" || node.type === "video" || node.type === "output" || node.type === "text") ? 220 : 180;
+  const defaultWidth = frameUrls.length > 0
+    ? 260
+    : node.output && (node.type === "image" || node.type === "video" || node.type === "output" || node.type === "text")
+      ? 220
+      : 180;
   const nodeWidth = node.width ?? defaultWidth;
 
   return (
@@ -202,14 +213,14 @@ export function CanvasNode({
       </div>
 
       {/* Dynamic Generated Asset Preview */}
-      {node.output && (
+      {(node.output || frameUrls.length > 0) && (
         <div className="border-t border-border bg-muted/20 px-3 py-2 text-xs">
           {node.type === "text" && (
             <div className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[10px] text-muted-foreground bg-background p-1.5 rounded border leading-tight">
               {node.output}
             </div>
           )}
-          {node.type === "image" && (
+          {node.type === "image" && node.output && (
             <div className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}>
               <img
                 src={node.output}
@@ -219,14 +230,14 @@ export function CanvasNode({
               <span className="text-[9px] text-muted-foreground group-hover:text-primary transition-colors mt-0.5 block">Click to preview</span>
             </div>
           )}
-          {node.type === "audio" && (
+          {node.type === "audio" && node.output && (
             <audio
               src={node.output}
               controls
               className="mt-1 w-full scale-90 origin-left"
             />
           )}
-          {node.type === "video" && (
+          {node.type === "video" && node.output && (
             <div className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}>
               <video
                 src={node.output}
@@ -239,7 +250,18 @@ export function CanvasNode({
           )}
           {node.type === "input" && (
             <>
-              {referenceUrls.length > 0 ? (
+              {frameUrls.length > 0 ? (
+                <div className="grid grid-cols-2 gap-1">
+                  {frameUrls.map((url, index) => (
+                    <img
+                      key={`${url}-${index}`}
+                      src={url}
+                      alt={`Sliced scene frame ${index + 1}`}
+                      className="h-20 w-full rounded border bg-background object-cover"
+                    />
+                  ))}
+                </div>
+              ) : referenceUrls.length > 0 ? (
                 <div className="grid grid-cols-3 gap-1">
                   {referenceUrls.map((url, index) => (
                     <img
@@ -255,7 +277,7 @@ export function CanvasNode({
                   "{node.output}"
                 </div>
               )}
-              <p className="mt-1 text-[9px] text-muted-foreground">{node.output}</p>
+              {node.output && <p className="mt-1 text-[9px] text-muted-foreground">{node.output}</p>}
             </>
           )}
           {node.type === "output" && parsedCampaignOutput && (

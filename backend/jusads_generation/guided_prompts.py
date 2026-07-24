@@ -50,8 +50,23 @@ FORM_SCHEMA: dict[str, dict[str, list[str]]] = {
         "specific": ["visual_style", "color_palette", "slide_count", "reference_images"],
     },
     "video_ad": {
-        "common": ["product_name", "target_audience", "platform", "key_message", "brand_tone"],
-        "specific": ["video_duration", "visual_style", "reference_images"],
+        "common": [
+            "product_name",
+            "key_message",
+            "call_to_action",
+            "language",
+            "target_audience",
+            "platform",
+            "brand_tone",
+        ],
+        "specific": [
+            "opening_hook",
+            "creative_mode",
+            "video_duration",
+            "visual_style",
+            "code_switching",
+            "reference_images",
+        ],
     },
     "text_copy": {
         "common": ["product_name", "target_audience", "platform", "key_message", "brand_tone"],
@@ -164,14 +179,24 @@ FIXED_PROMPTS: dict[DesignType, str] = {
         "You are a professional advertising video director creating a short-form video ad "
         "for {product_name}. Your target audience is {target_audience} on {platform}.\n\n"
         "CORE MESSAGE: {key_message}\n\n"
+        "APPROVED CALL TO ACTION: {call_to_action}\n\n"
+        "COPY LANGUAGE: {language}\n\n"
+        "CREATIVE MODE: {creative_mode}\n\n"
+        "OPENING HOOK: {opening_hook}\n\n"
+        "CODE-SWITCHING: {code_switching}\n\n"
+        "FORBIDDEN CLAIMS OR THEMES: {forbidden_claims}\n\n"
+        "BRAND RULES: {brand_rules}\n\n"
+        "LEGAL OR COMPLIANCE CONSTRAINTS: {compliance_constraints}\n\n"
         "BRAND TONE: {brand_tone}\n\n"
         "VIDEO DURATION: {video_duration}\n\n"
         "VISUAL DIRECTION: {visual_style}\n\n"
         "PRODUCTION PRINCIPLES — follow these advertising best practices for video ads:\n"
-        "1. 3-SECOND HOOK: The first 3 seconds must arrest attention with a bold visual, "
+        "1. 3-SECOND HOOK: Execute the user's selected OPENING HOOK in the first scene. "
+        "The first 3 seconds must arrest attention with a bold visual, "
         "unexpected motion, provocative question, or pattern interrupt. 65% of viewers "
         "decide to keep watching or scroll within this window. Open with product in motion, "
-        "a surprising transformation, or a direct-to-camera address.\n"
+        "a surprising transformation, or a direct-to-camera address. Keep action brand-safe "
+        "and context-appropriate; do not introduce violence when it conflicts with the brief.\n"
         "2. PLATFORM PACING: For TikTok/Reels (under 30s) — fast cuts every 2-3 seconds, "
         "text overlays synced to speech, trending transition styles. For YouTube (30s-60s) — "
         "allow breathing room, use a 3-act structure (hook → story → CTA), maintain visual "
@@ -271,6 +296,11 @@ FIXED_PROMPTS: dict[DesignType, str] = {
 # --- Required fields ---------------------------------------------------------
 
 _REQUIRED_FIELDS: set[str] = {"product_name", "key_message"}
+_VIDEO_REQUIRED_FIELDS: set[str] = {
+    "call_to_action",
+    "language",
+    "creative_mode",
+}
 
 # --- Intent signals ----------------------------------------------------------
 # These short prefixes ensure the orchestrator's intent detection correctly
@@ -317,7 +347,10 @@ def assemble_guided_message(
         )
 
     # Validate required fields
-    for field in _REQUIRED_FIELDS:
+    required_fields = set(_REQUIRED_FIELDS)
+    if design_type == "video_ad":
+        required_fields.update(_VIDEO_REQUIRED_FIELDS)
+    for field in required_fields:
         value = form_inputs.get(field, "")
         if not value or (isinstance(value, str) and not value.strip()):
             raise ValueError(

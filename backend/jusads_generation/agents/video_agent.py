@@ -277,7 +277,11 @@ async def generate(*, brief: str, project_id: str, task_id: str,
     from jusads_generation.search_tools import search_creative_context, derive_search_query
 
     search_query = derive_search_query(brief=brief, market="malaysia", theme=f"{platform} short video ad reel")
-    search_context = await search_creative_context(query=search_query, market="malaysia")
+    search_context = await search_creative_context(
+        query=search_query,
+        market="malaysia",
+        task_id=task_id,
+    )
 
     enriched_brief = brief
     if search_context:

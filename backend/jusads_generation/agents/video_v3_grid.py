@@ -35,6 +35,7 @@ import logging
 import math
 import mimetypes
 import os
+import subprocess
 import tempfile
 import time
 import urllib.request
@@ -42,7 +43,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Optional
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 import requests
 from google.auth import default as google_auth_default
@@ -59,7 +60,7 @@ from shared.config import (
     get_voice,
 )
 from shared.elevenlabs_utils import generate_tts
-from shared.prompts import VIDEO_DIRECTOR_PROMPT
+from shared.prompts import VIDEO_DIRECTOR_PROMPT, PLATFORM_CREATIVE_GUIDE, COPY_GUARDRAILS
 from shared.prompts import _load_prompt as _load_prompt_file
 from shared.s3_client import upload_file_public
 from config import S3_BUCKET_NAME
@@ -78,6 +79,59 @@ _SCENE_CLIP_SECONDS = 5
 _MAX_OMNI_SEGMENT_SECONDS = 10
 _MAX_PLAN_DURATION_SECONDS = 60
 
+# --- Platform Creative Guide section extractor --------------------------------
+
+_PLATFORM_SECTION_MAP: dict[str, str] = {
+    "tiktok": "## TikTok / Reels",
+    "instagram": "## Instagram",
+    "youtube": "## YouTube",
+    "shopee": "## Shopee / E-commerce",
+}
+
+
+def _reference_role_label(filename: str) -> str:
+    lowered = filename.lower()
+    if "shop" in lowered or "location" in lowered or "store" in lowered:
+        return "SHOP / LOCATION REFERENCE — preserve this storefront, stall, signage, and spatial identity."
+    if "product" in lowered:
+        return "PRODUCT REFERENCE — preserve the food/product appearance and presentation."
+    if "鸡哥" in filename or "character" in lowered or "mascot" in lowered:
+        return "CHARACTER REFERENCE — preserve this recurring character's recognizable identity."
+    return "VISUAL REFERENCE — preserve relevant identity, composition, and brand details."
+
+
+def _extract_platform_section(platform: str) -> str:
+    """Extract the relevant platform section from the full creative guide.
+
+    Returns only the section for the target platform plus the creative
+    reference patterns at the end. Falls back to the TikTok section when
+    the platform is unknown.
+    """
+    guide = PLATFORM_CREATIVE_GUIDE
+    if not guide:
+        return "(No platform creative guide available)"
+
+    target_header = _PLATFORM_SECTION_MAP.get(platform.lower(), "## TikTok / Reels")
+
+    # Find the target section
+    start = guide.find(target_header)
+    if start == -1:
+        # Fallback: return the first 2000 chars as generic guidance
+        return guide[:2000]
+
+    # Find the next ## section (another platform) to cut off
+    next_section = guide.find("\n## ", start + len(target_header))
+    if next_section == -1:
+        platform_text = guide[start:]
+    else:
+        platform_text = guide[start:next_section]
+
+    # Also include the "Creative Reference" section at the end
+    creative_ref_start = guide.find("## Creative Reference")
+    creative_ref = guide[creative_ref_start:] if creative_ref_start != -1 else ""
+
+    return f"{platform_text.strip()}\n\n{creative_ref.strip()}"
+
 
 def _normalise_plan_duration(video_duration_sec: float) -> int:
     """Return a bounded plan duration rounded up to a five-second scene boundary."""
@@ -86,13 +140,34 @@ def _normalise_plan_duration(video_duration_sec: float) -> int:
 
 
 def _resolve_scene_count(video_duration_sec: float) -> int:
-    """Return N+1 visual frames for five-second scenes covering the requested duration."""
-    scene_count = _normalise_plan_duration(video_duration_sec) // _SCENE_CLIP_SECONDS
-    return scene_count + 1
+    """Return a complete-grid scene count; never create a three-cell board."""
+    base_count = _normalise_plan_duration(video_duration_sec) // _SCENE_CLIP_SECONDS
+    return max(2, base_count if base_count % 2 == 0 else base_count + 1)
 
 
-def _normalise_scenes(raw_scenes: list[dict[str, Any]], scene_count: int, brief: str) -> list[dict[str, Any]]:
-    """Enforce the approved five-second scene contract on Director output."""
+def _scene_durations(video_duration_sec: float, scene_count: int) -> list[int]:
+    """Allocate complete-grid beats while keeping Omni groups at five or ten seconds."""
+    planned_duration = _normalise_plan_duration(video_duration_sec)
+    base_count = planned_duration // _SCENE_CLIP_SECONDS
+    durations = [_SCENE_CLIP_SECONDS] * base_count
+    if base_count < 2:
+        durations = [3, 2]
+    elif base_count % 2:
+        # Split the last five-second beat so an odd three-cell storyboard
+        # becomes a complete 2x2 board without changing the requested runtime.
+        durations[-1:] = [3, 2]
+    if len(durations) != scene_count:
+        raise ValueError("Scene timing could not be aligned to the complete grid")
+    return durations
+
+
+def _normalise_scenes(
+    raw_scenes: list[dict[str, Any]],
+    scene_count: int,
+    brief: str,
+    durations: Optional[list[int]] = None,
+) -> list[dict[str, Any]]:
+    """Align Director output one-to-one with complete-grid storyboard cells."""
     scenes = [dict(scene) for scene in raw_scenes[:scene_count] if isinstance(scene, dict)]
     if not scenes:
         scenes = [{"visual_description": brief, "subtitle": "", "voiceover": "", "camera_angle": "MS static"}]
@@ -104,22 +179,31 @@ def _normalise_scenes(raw_scenes: list[dict[str, Any]], scene_count: int, brief:
         fallback["voiceover"] = fallback.get("voiceover", "")
         scenes.append(fallback)
 
-    for index, scene in enumerate(scenes, start=1):
+    assigned_durations = durations or [
+        max(1, int(scene.get("duration") or _SCENE_CLIP_SECONDS))
+        for scene in scenes
+    ]
+    if len(assigned_durations) != scene_count:
+        assigned_durations = [_SCENE_CLIP_SECONDS] * scene_count
+    for index, (scene, duration) in enumerate(zip(scenes, assigned_durations), start=1):
         scene["scene_index"] = index
-        scene["duration"] = _SCENE_CLIP_SECONDS
+        scene["duration"] = duration
     return scenes
 
 
 def _group_scenes_for_omni(scenes: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    """Group one or two five-second scenes into provider-safe five or ten-second segments."""
+    """Pair storyboard beats into provider-safe five or ten-second segments."""
     return [scenes[index:index + 2] for index in range(0, len(scenes), 2)]
 
 
 def _grid_dimensions(frame_count: int) -> tuple[int, int]:
-    """Calculate grid layout (cols x rows)."""
-    cols = math.ceil(math.sqrt(frame_count))
-    rows = math.ceil(frame_count / cols)
-    return cols, rows
+    """Return a complete factorised grid (columns, rows) with no empty cell."""
+    if frame_count < 2 or frame_count % 2:
+        raise ValueError("Storyboard grids require an even number of cells, with a minimum of two")
+    rows = int(math.sqrt(frame_count))
+    while rows > 1 and frame_count % rows:
+        rows -= 1
+    return frame_count // rows, rows
 
 
 def _sse(data: dict) -> str:
@@ -128,7 +212,13 @@ def _sse(data: dict) -> str:
 
 
 def _load_reference_image_parts(reference_urls: list[str]) -> list:
-    """Download user references as Gemini image parts for V3 visual stages."""
+    """Download user references as Gemini visual parts for V3 visual stages.
+
+    A campaign reference may be a video.  Gemini image stages cannot consume a
+    raw MP4 in this path, so representative stills are extracted instead of
+    silently dropping the reference.  The generated video is therefore guided
+    by product/style frames, not falsely advertised as a direct video edit.
+    """
     if not reference_urls:
         return []
     import urllib.request
@@ -140,11 +230,143 @@ def _load_reference_image_parts(reference_urls: list[str]) -> list:
             with urllib.request.urlopen(reference_url, timeout=20) as response:
                 image_bytes = response.read()
                 mime_type = response.headers.get_content_type() or "image/jpeg"
-            if image_bytes and mime_type.startswith("image/"):
-                parts.append(genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+            extension_mime = mimetypes.guess_type(reference_url.split("?", 1)[0])[0] or ""
+            if image_bytes and (mime_type.startswith("image/") or extension_mime.startswith("image/")):
+                filename = unquote(Path(urlparse(reference_url).path).name)
+                parts.append(f"{_reference_role_label(filename)} Source file: {filename}")
+                parts.append(genai_types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=mime_type if mime_type.startswith("image/") else extension_mime,
+                ))
+            elif image_bytes and (mime_type.startswith("video/") or extension_mime.startswith("video/")):
+                suffix = mimetypes.guess_extension(extension_mime or mime_type) or ".mp4"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as reference_file:
+                    reference_file.write(image_bytes)
+                    video_path = reference_file.name
+                try:
+                    for frame_path in _extract_video_reference_frames(video_path, max_frames=3):
+                        parts.append(genai_types.Part.from_bytes(
+                            data=Path(frame_path).read_bytes(),
+                            mime_type="image/jpeg",
+                        ))
+                finally:
+                    try:
+                        os.unlink(video_path)
+                    except OSError:
+                        pass
         except Exception as exc:
             logger.warning("[V3Grid] Could not load reference %s: %s", reference_url[:80], exc)
     return parts
+
+
+def _extract_video_reference_frames(video_path: str, max_frames: int = 3) -> list[str]:
+    """Extract evenly-spaced stills from a local video reference."""
+    try:
+        duration_response = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video_path],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        duration = max(0.1, float(duration_response.stdout.strip())) if duration_response.returncode == 0 else 1.0
+    except Exception:
+        duration = 1.0
+
+    timestamps = [duration * (index + 1) / (max_frames + 1) for index in range(max_frames)]
+    frames: list[str] = []
+    for index, timestamp in enumerate(timestamps):
+        output_path = os.path.join(tempfile.gettempdir(), f"video_ref_{uuid.uuid4().hex[:8]}_{index}.jpg")
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-ss", f"{timestamp:.3f}", "-i", video_path, "-frames:v", "1", "-q:v", "2", output_path],
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if result.returncode == 0 and os.path.exists(output_path):
+            frames.append(output_path)
+    return frames
+
+
+def _expand_visual_reference_paths(paths: list[str]) -> list[str]:
+    """Return image files suitable for Omni, extracting frames from videos."""
+    visual_paths: list[str] = []
+    for path in paths:
+        mime_type = mimetypes.guess_type(path)[0] or ""
+        if mime_type.startswith("image/"):
+            visual_paths.append(path)
+        elif mime_type.startswith("video/"):
+            visual_paths.extend(_extract_video_reference_frames(path, max_frames=3))
+        else:
+            logger.info("[V3Grid] Ignoring unsupported visual reference: %s", Path(path).name)
+    return visual_paths
+
+
+def _normalise_audio_mode(value: object) -> str:
+    """Map legacy values into the explicit production audio modes."""
+    raw = str(value or "elevenlabs").strip().lower()
+    aliases = {"omni": "native_omni", "native": "native_omni", "music": "music_only", "none": "silent"}
+    mode = aliases.get(raw, raw)
+    return mode if mode in {"elevenlabs", "music_only", "native_omni", "silent"} else "elevenlabs"
+
+
+def _build_music_prompt(scenes: list[dict[str, Any]], market: str, ethnicity: str) -> str:
+    sound_notes = "; ".join(str(scene.get("sound_direction") or scene.get("sfx") or "") for scene in scenes if scene.get("sound_direction") or scene.get("sfx"))
+    return (
+        f"Instrumental commercial soundtrack for a {market} campaign, audience preference: {ethnicity}. "
+        "No vocals, lyrics, spoken words, religious cues, or trademarked melodies. "
+        "Use a premium, warm, modern cinematic arc: gentle hook, confident middle, clean resolved ending. "
+        f"Scene sound direction: {sound_notes or 'subtle uplifting electronic-acoustic texture'}."
+    )
+
+
+def _build_music_tags(scenes: list[dict[str, Any]]) -> list[str]:
+    """Return compact style hints for ElevenLabs video-to-music."""
+    combined = " ".join(
+        str(scene.get("sound_direction") or scene.get("sfx") or "")
+        for scene in scenes
+    ).lower()
+    tags = ["commercial", "cinematic", "instrumental"]
+    if any(word in combined for word in ("fast", "fight", "impact", "shock", "action")):
+        tags.extend(["high-energy", "percussive"])
+    elif any(word in combined for word in ("food", "warm", "cooking", "sizzle")):
+        tags.extend(["warm", "playful"])
+    else:
+        tags.append("modern")
+    return tags[:10]
+
+
+def _build_expressive_voiceover_text(scenes: list[dict[str, Any]]) -> str:
+    """Direct Eleven v3 delivery while preserving user-authored narration."""
+    lines: list[str] = []
+    spoken_scenes = [
+        scene for scene in scenes
+        if str(scene.get("voiceover") or scene.get("script") or "").strip()
+    ]
+    for index, scene in enumerate(spoken_scenes):
+        line = str(scene.get("voiceover") or scene.get("script") or "").strip()
+        if line.startswith("["):
+            lines.append(line)
+        elif index == 0:
+            lines.append(f"[energetic] [fast] {line}")
+        elif index == len(spoken_scenes) - 1:
+            lines.append(f"[warmly] [confident] {line}")
+        else:
+            lines.append(f"[excited] {line}")
+    return " ".join(lines)
+
+
+def _build_sfx_prompt(segment: dict[str, Any]) -> str:
+    """Create a Foley-only prompt that follows one rendered video segment."""
+    direction = str(segment.get("sound_direction") or "").strip()
+    description = str(segment.get("description") or "").strip()
+    return (
+        "Create synchronized cinematic Foley and sound effects only; no music, melody, speech, "
+        "voices, or narration. Follow this visual sequence in order: "
+        f"{description[:900]}. Sound direction: {direction[:400] or 'natural location ambience and product Foley'}. "
+        "Use crisp movement whooshes and a short shock-impact accent for any sudden hook or reveal, "
+        "then immediately support the product action with realistic tactile sounds. "
+        "Keep impacts stylized and brand-safe, never graphic or distressing, and leave space for narration."
+    )
 
 
 def _generate_reference_anchored_image(
@@ -237,6 +459,9 @@ async def plan_script(
     target_ethnicity: str = "all",
     product_description: str = "",
     market: str = "malaysia",
+    platform: str = "tiktok",
+    voiceover_type: str = "elevenlabs",
+    language: str = "auto",
 ) -> dict:
     """Stage 1: Director plans the full script.
 
@@ -249,28 +474,51 @@ async def plan_script(
             "character_summary": "...",
             "product_integration": "...",
             "scenes": [...],
-            "frame_count": N + 1,
-            "grid_layout": "3x2",
+            "frame_count": N,
+            "grid_layout": "rows x columns",
             "clip_count": N,
-            "duration_sec": N * 5,
+            "duration_sec": requested runtime,
         }
     """
     plan_id = uuid.uuid4().hex[:8]
     planned_duration = _normalise_plan_duration(video_duration_sec)
-    scene_count = planned_duration // _SCENE_CLIP_SECONDS
-    frame_count = _resolve_scene_count(planned_duration)
+    scene_count = _resolve_scene_count(planned_duration)
+    scene_durations = _scene_durations(planned_duration, scene_count)
+    frame_count = scene_count
     cols, rows = _grid_dimensions(frame_count)
 
+    # Extract the relevant platform section from the full creative guide
+    platform_guide = _extract_platform_section(platform)
+
+    audio_mode = _normalise_audio_mode(voiceover_type)
     prompt = _DIRECTOR_PROMPT.format(
         clip_count=scene_count,
         duration=planned_duration,
         clip_seconds=_SCENE_CLIP_SECONDS,
+        scene_timing="; ".join(
+            f"Scene {index + 1}: {duration}s"
+            for index, duration in enumerate(scene_durations)
+        ),
         brief=brief,
         ethnicity=target_ethnicity,
         market=market,
+        platform=platform,
+        platform_guide=platform_guide,
     )
     if product_description:
         prompt += f"\n\nProduct: {product_description}"
+    prompt += (
+        f"\n\nCOPY LANGUAGE: {language}. Use this language for all spoken and on-screen copy unless it is auto. "
+        "Never infer religion from ethnicity or add halal/certification claims without verified brand evidence."
+    )
+    if audio_mode in {"music_only", "native_omni", "silent"}:
+        prompt += "\n\nAUDIO MODE: No scripted spoken narration. Return an empty voiceover for every scene."
+
+    # Inject copy guardrails — these override creative instincts and prevent
+    # the Director from inventing claims, prices, certifications, or features
+    # not explicitly provided in the brief.
+    if COPY_GUARDRAILS:
+        prompt += f"\n\n## COPY GUARDRAILS (MANDATORY)\n{COPY_GUARDRAILS}"
 
     try:
         from google.genai import types as genai_types
@@ -299,8 +547,16 @@ async def plan_script(
 
         result = json.loads(response.text)
         if "scenes" in result and isinstance(result["scenes"], list):
-            scenes = _normalise_scenes(result["scenes"], scene_count, brief)
-            logger.info("[V3Grid] Director planned %d fixed-%ss scenes", len(scenes), _SCENE_CLIP_SECONDS)
+            scenes = _normalise_scenes(
+                result["scenes"],
+                scene_count,
+                brief,
+                scene_durations,
+            )
+            if audio_mode in {"music_only", "native_omni", "silent"}:
+                for scene in scenes:
+                    scene["voiceover"] = ""
+            logger.info("[V3Grid] Director planned %d grid-aligned scenes: %s", len(scenes), scene_durations)
             return {
                 "plan_id": plan_id,
                 "character_summary": result.get("character_summary", brief),
@@ -309,10 +565,12 @@ async def plan_script(
                 "visual_style": result.get("visual_style", "cinematic warm-toned photography"),
                 "scenes": scenes,
                 "frame_count": frame_count,
-                "grid_layout": f"{cols}x{rows}",
+                "grid_layout": f"{rows}x{cols}",
                 "clip_count": scene_count,
                 "duration_sec": planned_duration,
                 "market": market,
+                "language": language,
+                "voiceover_type": audio_mode,
             }
     except Exception as e:
         logger.error("[V3Grid] Director planning failed: %s", e)
@@ -327,6 +585,7 @@ async def plan_script(
         ],
         scene_count,
         brief,
+        scene_durations,
     )
     return {
         "plan_id": plan_id,
@@ -336,10 +595,12 @@ async def plan_script(
         "visual_style": "cinematic warm-toned photography, consistent lighting",
         "scenes": fallback_scenes,
         "frame_count": frame_count,
-        "grid_layout": f"{cols}x{rows}",
+        "grid_layout": f"{rows}x{cols}",
         "clip_count": scene_count,
         "duration_sec": planned_duration,
         "market": market,
+        "language": language,
+        "voiceover_type": audio_mode,
     }
 
 
@@ -368,7 +629,9 @@ async def generate_assets(
     product_integration = plan.get("product_integration", "")
     visual_style = plan.get("visual_style", "cinematic warm-toned photography, consistent lighting")
     scenes = plan.get("scenes", [])
-    frame_count = plan.get("frame_count", len(scenes) + 1)
+    # One script beat equals one storyboard cell. There is no unscripted
+    # boundary/CTA frame appended after the Director's scenes.
+    frame_count = len(scenes)
     cols, rows = _grid_dimensions(frame_count)
     reference_image_urls = reference_image_urls or []
     reference_parts = _load_reference_image_parts(reference_image_urls)
@@ -401,7 +664,15 @@ async def generate_assets(
             if path:
                 s3_key = f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/character_sheet.png"
                 char_sheet_url = upload_file_public(path, s3_key)
-                _persist_ad(project_id, task_id, "image", char_sheet_url, f"Character Sheet: {char_summary[:80]}", "Character Sheet")
+                _persist_ad(
+                    project_id,
+                    task_id,
+                    "image",
+                    char_sheet_url,
+                    f"Character Sheet: {char_summary[:80]}",
+                    "Character Sheet",
+                    asset_role="intermediate",
+                )
 
                 # Also store at project level for reuse across tasks
                 project_char_key = f"generated_ads/{project_id}/character_sheet_latest.png"
@@ -421,16 +692,16 @@ async def generate_assets(
         yield _sse({"node": "character_sheet", "status": "completed", "data": {"url": None, "message": "Skipped (No character needed)"}})
 
     # -- Scene Grid (uses character sheet as reference image if generated) -------------
-    yield _sse({"node": "scene_grid", "status": "in-progress", "data": {"message": f"Generating {cols}x{rows} scene grid..."}})
+    yield _sse({"node": "scene_grid", "status": "in-progress", "data": {"message": f"Generating {rows}x{cols} scene grid..."}})
 
     grid_url = None
     grid_path = None
     try:
         scene_descriptions = "\n".join(
-            f"Panel {i+1}: {s.get('camera_angle', 'MS')} — {s.get('visual_description', '')[:60]}"
+            f"Panel {i+1} / Script beat {i+1} ({s.get('duration', 5)}s): "
+            f"{s.get('camera_angle', 'MS')} — {s.get('visual_description', '')[:100]}"
             for i, s in enumerate(scenes)
         )
-        scene_descriptions += f"\nPanel {len(scenes)+1}: Final CTA pose"
 
         grid_prompt = SCENE_GRID_PROMPT.replace("[num]", str(frame_count))
         grid_prompt = grid_prompt.replace(
@@ -459,7 +730,15 @@ async def generate_assets(
         if grid_path:
             s3_key = f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/scene_grid.png"
             grid_url = upload_file_public(grid_path, s3_key)
-            _persist_ad(project_id, task_id, "image", grid_url, f"Scene Grid ({cols}x{rows})", "Scene Grid")
+            _persist_ad(
+                project_id,
+                task_id,
+                "image",
+                grid_url,
+                f"Scene Grid ({rows}x{cols})",
+                "Scene Grid",
+                asset_role="intermediate",
+            )
     except Exception as e:
         logger.error("[V3Grid] Scene grid failed: %s", e)
 
@@ -493,8 +772,14 @@ async def generate_assets(
         "grid_url": grid_url,
         "frame_urls": frame_urls,
         "frame_count": len(frame_urls),
-        "clip_count": len(frame_urls) - 1,
+        "clip_count": len(scenes),
         "scenes": scenes,
+        "reference_image_urls": reference_image_urls,
+        "target_ethnicity": plan.get("target_ethnicity", "all"),
+        "market": plan.get("market", "malaysia"),
+        "gender": plan.get("gender", "female"),
+        "language": plan.get("language", "auto"),
+        "voiceover_type": plan.get("voiceover_type", "elevenlabs"),
     }})
 
 
@@ -520,10 +805,10 @@ def _build_omni_segment_prompt(
         description = scene.get("visual_description") or scene.get("description") or "Continue the approved commercial story."
         camera = scene.get("camera_angle") or scene.get("camera_movement") or "cinematic camera movement"
         action = scene.get("character_action") or scene.get("character_requirements") or ""
-        subtitle = scene.get("subtitle") or ""
         timeline.append(
             f"[{elapsed_seconds}-{end_seconds}s] {description} Camera: {camera}. Action: {action}. "
-            f"On-screen text: {subtitle or 'none'}."
+            "Do not render subtitles, captions, or other added text into the footage; the exact approved copy is "
+            "added during post-production. Preserve only text and branding already visible in supplied references."
         )
         elapsed_seconds = end_seconds
 
@@ -541,7 +826,7 @@ def _build_omni_segment_prompt(
         "and brand identity, and use the following timed direction: "
         + " ".join(timeline)
         + " Keep people, wardrobe, setting, lighting, and product appearance consistent. "
-        "Use natural motion, no scene beyond the listed timing, and no unrequested text or spoken dialogue."
+        "Use natural motion, no scene beyond the listed timing, no baked-in added text, and no spoken dialogue."
         + final_constraint
     )
 
@@ -552,19 +837,29 @@ async def execute_production(
     task_id: str,
     brief: str = "",
 ) -> AsyncGenerator[str, None]:
-    """Render approved fixed-five-second scenes through Interactions and assemble their segments."""
+    """Render approved grid-aligned script beats and assemble their segments."""
     plan_id = assets.get("plan_id", uuid.uuid4().hex[:8])
     raw_scenes = [scene for scene in assets.get("scenes", []) if isinstance(scene, dict)]
     if not raw_scenes:
         yield _sse({"error": "No approved V3 scenes found — regenerate the storyboard first"})
         return
 
-    scenes = _normalise_scenes(raw_scenes, len(raw_scenes), brief)
+    approved_durations = [
+        max(1, int(scene.get("duration") or _SCENE_CLIP_SECONDS))
+        for scene in raw_scenes
+    ]
+    scenes = _normalise_scenes(
+        raw_scenes,
+        len(raw_scenes),
+        brief,
+        approved_durations,
+    )
     scene_segments = _group_scenes_for_omni(scenes)
     frame_urls = [url for url in assets.get("frame_urls", []) if isinstance(url, str) and url]
     reference_image_urls = [url for url in assets.get("reference_image_urls", []) if isinstance(url, str) and url][:4]
     local_frames: list[str] = []
     local_references: list[str] = []
+    local_grid_reference: Optional[str] = None
     scene_clips: list[str] = []
     segment_metadata: list[dict[str, Any]] = []
     aspect_ratio = assets.get("aspect_ratio", "9:16")
@@ -581,12 +876,24 @@ async def execute_production(
             local_frames.append(path)
         except Exception as exc:
             logger.warning("[V3Grid] Frame download failed for scene %d: %s", index + 1, exc)
-    if len(local_frames) < len(scenes) + 1:
+    if len(local_frames) < len(scenes):
         yield _sse({"node": "download_frames", "status": "failed", "data": {
             "error": "The approved scene frames are incomplete. Regenerate the Scene Grid before rendering.",
         }})
         return
     yield _sse({"node": "download_frames", "status": "completed", "data": {"count": len(local_frames)}})
+
+    # Send the approved Scene Grid itself as a continuity reference in addition
+    # to its sliced boundary frames.  This preserves the director's complete
+    # visual narrative without asking Omni to infer it from isolated panels.
+    grid_url = str(assets.get("grid_url") or "")
+    if grid_url:
+        try:
+            local_grid_reference = os.path.join(tempfile.gettempdir(), f"dl_grid_{plan_id}.png")
+            urllib.request.urlretrieve(grid_url, local_grid_reference)
+        except Exception as exc:
+            logger.warning("[V3Grid] Scene Grid download failed: %s", exc)
+            local_grid_reference = None
 
     if reference_image_urls:
         yield _sse({"node": "download_references", "status": "in-progress", "data": {
@@ -600,6 +907,7 @@ async def execute_production(
                 local_references.append(path)
             except Exception as exc:
                 logger.warning("[V3Grid] Reference download failed: %s", exc)
+        local_references = _expand_visual_reference_paths(local_references)
         yield _sse({"node": "download_references", "status": "completed", "data": {"count": len(local_references)}})
 
     yield _sse({"node": "omni_video", "status": "in-progress", "data": {
@@ -616,7 +924,7 @@ async def execute_production(
             }})
             return
 
-        segment_frames = local_frames[scene_offset:scene_offset + len(segment_scenes) + 1]
+        segment_frames = local_frames[scene_offset:scene_offset + len(segment_scenes)]
         prompt = _build_omni_segment_prompt(
             segment_scenes,
             aspect_ratio=aspect_ratio,
@@ -633,7 +941,12 @@ async def execute_production(
         }})
         render_result = await _generate_omni_video_clip(
             prompt=prompt,
-            reference_paths=[segment_frames[0], *local_references, *segment_frames[1:]],
+            reference_paths=[
+                segment_frames[0],
+                *([local_grid_reference] if local_grid_reference else []),
+                *local_references,
+                *segment_frames[1:],
+            ],
             scene_index=segment_index,
             plan_id=plan_id,
             project_id=project_id,
@@ -664,6 +977,11 @@ async def execute_production(
                 str(scene.get("voiceover") or scene.get("script") or "")
                 for scene in segment_scenes
             ).strip(),
+            "sound_direction": "; ".join(
+                str(scene.get("sound_direction") or scene.get("sfx") or "")
+                for scene in segment_scenes
+                if scene.get("sound_direction") or scene.get("sfx")
+            ),
         })
         _persist_ad(
             project_id,
@@ -686,20 +1004,29 @@ async def execute_production(
         yield _sse({"error": "Video generation failed — Gemini Omni could not produce any segments"})
         return
 
-    # -- Generate ElevenLabs voiceover narration if selected -----------------
+    # Download once so ElevenLabs can follow the rendered timing and the same
+    # files can then be passed to the final assembler.
+    local_clips: list[str] = []
+    for index, url in enumerate(scene_clips):
+        try:
+            path = os.path.join(tempfile.gettempdir(), f"dl_clip_{plan_id}_{index:02d}.mp4")
+            urllib.request.urlretrieve(url, path)
+            local_clips.append(path)
+        except Exception as exc:
+            logger.warning("[V3Grid] Could not download rendered segment %d: %s", index + 1, exc)
+    if not local_clips:
+        yield _sse({"error": "Rendered segments could not be downloaded for audio design and assembly"})
+        return
+
+    # -- Build a narration track only when explicitly selected ----------------
     vo_path = None
-    voiceover_type = assets.get("voiceover_type", "elevenlabs")
+    audio_program_path = None
+    music_path = None
+    voiceover_type = _normalise_audio_mode(assets.get("voiceover_type", "elevenlabs"))
     
     if voiceover_type == "elevenlabs":
         try:
-            # Extract voiceover from scenes
-            vo_lines = []
-            for scene in scenes:
-                line = scene.get("voiceover") or scene.get("script") or ""
-                if line:
-                    vo_lines.append(line)
-            
-            combined_vo_text = " ".join(vo_lines).strip()
+            combined_vo_text = _build_expressive_voiceover_text(scenes)
             if combined_vo_text:
                 yield _sse({"node": "elevenlabs_vo", "status": "in-progress", "data": {"message": "Generating ElevenLabs premium voiceover..."}})
                 temp_vo_path = os.path.join(tempfile.gettempdir(), f"vo_{plan_id}.mp3")
@@ -728,27 +1055,107 @@ async def execute_production(
     else:
         logger.info("[V3Grid] Bypassing ElevenLabs TTS — using native Gemini Omni audio only.")
 
+    # Build one duration-locked program track.  This is later used to replace
+    # incidental Omni audio, avoiding competing narration and abrupt silence.
+    if voiceover_type in {"elevenlabs", "music_only"}:
+        try:
+            from shared.elevenlabs_utils import (
+                build_video_audio_program,
+                generate_music,
+                generate_music_from_video,
+                generate_sfx,
+            )
+
+            target_duration = float(sum(segment.get("duration", 0) for segment in segment_metadata))
+            yield _sse({"node": "elevenlabs_music", "status": "in-progress", "data": {
+                "message": "Uploading rendered clips for a video-synchronised ElevenLabs soundtrack...",
+            }})
+            music_path = os.path.join(tempfile.gettempdir(), f"music_{plan_id}.mp3")
+            music_prompt = _build_music_prompt(
+                scenes,
+                str(assets.get("market") or "malaysia"),
+                str(assets.get("target_ethnicity") or "all"),
+            )
+            music_ok = generate_music_from_video(
+                local_clips,
+                music_path,
+                description=music_prompt,
+                tags=_build_music_tags(scenes),
+            )
+            if not music_ok:
+                logger.info("[V3Grid] Falling back to text-directed ElevenLabs music generation.")
+                music_ok = generate_music(music_prompt, music_path, target_duration)
+            if music_ok:
+                yield _sse({"node": "elevenlabs_music", "status": "completed", "data": {
+                    "message": "Video-synchronised instrumental soundtrack generated.",
+                }})
+            else:
+                music_path = None
+                yield _sse({"node": "elevenlabs_music", "status": "failed", "data": {
+                    "error": "Instrumental generation failed; using narration only when available.",
+                }})
+
+            yield _sse({"node": "elevenlabs_sfx", "status": "in-progress", "data": {
+                "message": "Generating scene-timed Foley, hook impacts, and product sounds...",
+            }})
+            sound_effects: list[dict[str, Any]] = []
+            start_seconds = 0.0
+            for index, segment in enumerate(segment_metadata):
+                sfx_path = os.path.join(tempfile.gettempdir(), f"sfx_{plan_id}_{index:02d}.mp3")
+                segment_duration = float(segment.get("duration") or 5)
+                if generate_sfx(
+                    _build_sfx_prompt(segment),
+                    sfx_path,
+                    duration_seconds=segment_duration,
+                    prompt_influence=0.55,
+                ):
+                    sound_effects.append({
+                        "path": sfx_path,
+                        "start_seconds": start_seconds,
+                        "volume": 0.72 if index == 0 else 0.62,
+                    })
+                start_seconds += segment_duration
+            yield _sse({"node": "elevenlabs_sfx", "status": "completed", "data": {
+                "message": f"Generated {len(sound_effects)} synchronized sound-effects layer(s).",
+                "count": len(sound_effects),
+            }})
+
+            program_path = os.path.join(tempfile.gettempdir(), f"audio_program_{plan_id}.m4a")
+            if build_video_audio_program(
+                program_path,
+                target_duration,
+                voiceover_path=vo_path,
+                music_path=music_path,
+                sound_effects=sound_effects,
+            ):
+                audio_program_path = program_path
+        except Exception as exc:
+            logger.error("[V3Grid] ElevenLabs audio program failed: %s", exc)
+            yield _sse({"node": "elevenlabs_music", "status": "failed", "data": {"error": str(exc)}})
+    elif voiceover_type == "native_omni":
+        logger.info("[V3Grid] Retaining native Gemini Omni audio by user choice.")
+    else:
+        logger.info("[V3Grid] Producing a silent video by user choice.")
+
     # -- AI Editor + Assembly ----------------------------------------------
     yield _sse({"node": "assembler", "status": "in-progress", "data": {"message": "AI editing + assembling final video..."}})
 
     try:
         from .video_assembler import assemble_dual_output
 
-        # Download clips locally for FFmpeg
-        local_clips = []
-        for i, url in enumerate(scene_clips):
-            try:
-                path = os.path.join(tempfile.gettempdir(), f"dl_clip_{plan_id}_{i:02d}.mp4")
-                urllib.request.urlretrieve(url, path)
-                local_clips.append(path)
-            except Exception:
-                pass
-
         if local_clips:
             result = await assemble_dual_output(
                 scene_clips=local_clips,
                 scenes=segment_metadata[:len(local_clips)],
-                audio_path=vo_path,
+                caption_scenes=scenes,
+                audio_path=audio_program_path,
+                replace_audio=bool(audio_program_path),
+                # If an explicit ElevenLabs treatment fails, do not leak
+                # unreviewed Omni dialogue/music into a supposedly localised
+                # export. The user receives a silent, editable video instead.
+                mute_audio=voiceover_type == "silent" or (
+                    voiceover_type in {"elevenlabs", "music_only"} and not audio_program_path
+                ),
                 draft_name=f"v3_{plan_id}",
             )
 
@@ -859,12 +1266,16 @@ async def _generate_omni_video_clip(
             for path in reference_paths:
                 if not os.path.exists(path):
                     continue
+                mime_type = mimetypes.guess_type(path)[0] or "image/png"
+                if not mime_type.startswith("image/"):
+                    logger.warning("[V3Grid] Skipping non-image Omni reference: %s", Path(path).name)
+                    continue
                 with open(path, "rb") as reference_file:
                     image_data = base64.b64encode(reference_file.read()).decode("ascii")
                 inputs.append({
                     "type": "image",
                     "data": image_data,
-                    "mime_type": mimetypes.guess_type(path)[0] or "image/png",
+                    "mime_type": mime_type,
                 })
             if not inputs:
                 return {"error": f"Omni segment {scene_index + 1} has no usable visual references.", "interaction_id": ""}
@@ -987,6 +1398,10 @@ async def run_grid_pipeline(
     target_ethnicity: str = "all",
     market: str = "malaysia",
     gender: str = "female",
+    platform: str = "tiktok",
+    voiceover_type: str = "elevenlabs",
+    language: str = "auto",
+    creative_mode: str = "",
 ) -> AsyncGenerator[str, None]:
     """Orchestrator-compatible entry point. Runs Stage 1 + Stage 2 inline.
 
@@ -1007,8 +1422,15 @@ async def run_grid_pipeline(
         target_ethnicity=target_ethnicity,
         product_description=product_description or character_description,
         market=market,
+        platform=platform,
+        voiceover_type=voiceover_type,
+        language=language,
     )
     plan["gender"] = gender
+    plan["target_ethnicity"] = target_ethnicity
+    plan["voiceover_type"] = _normalise_audio_mode(voiceover_type)
+    plan["creative_mode"] = creative_mode
+    plan["language"] = language
     plan["reference_image_urls"] = reference_image_urls
 
     yield _sse({"node": "director", "status": "completed", "data": {
@@ -1017,6 +1439,7 @@ async def run_grid_pipeline(
     }})
 
     # Stage 2: Generate assets (capture URLs for pipeline_state)
+    asset_error = ""
     async for event in generate_assets(
         plan,
         project_id,
@@ -1026,8 +1449,10 @@ async def run_grid_pipeline(
         yield event
         # Capture asset URLs from the v3_assets event
         try:
-            if "v3_assets" in event:
-                data = json.loads(event.replace("data: ", "").strip())
+            data = json.loads(event.replace("data: ", "", 1).strip())
+            if data.get("error"):
+                asset_error = str(data["error"])
+            if "v3_assets" in data:
                 assets_data = data.get("v3_assets", {})
                 plan["_char_url"] = assets_data.get("character_sheet_url", "")
                 plan["_grid_url"] = assets_data.get("grid_url", "")
@@ -1036,9 +1461,33 @@ async def run_grid_pipeline(
         except Exception:
             pass
 
+    frame_urls = [
+        url for url in plan.get("_frame_urls", [])
+        if isinstance(url, str) and url.strip()
+    ]
+    grid_url = plan.get("_grid_url", "")
+    if asset_error or not grid_url or len(frame_urls) < len(plan.get("scenes", [])):
+        message = asset_error or (
+            "Storyboard asset generation did not return a scene grid and one sliced frame per scene."
+        )
+        yield _sse({
+            "error": message,
+            "node": "v3_pipeline",
+            "status": "failed",
+            "data": {
+                "grid_ready": bool(grid_url),
+                "frame_count": len(frame_urls),
+                "required_frame_count": len(plan.get("scenes", [])),
+            },
+        })
+        return
+
+    plan["_frame_urls"] = frame_urls
+    plan["frame_urls"] = frame_urls
+    plan["frame_count"] = len(frame_urls)
+
     # Emit the plan for frontend "Continue" button (same pattern as V2)
     # Add keyframe_url to each scene so the storyboard shows thumbnails
-    frame_urls = plan.get("_frame_urls", [])
     enriched_scenes = []
     for i, scene in enumerate(plan.get("scenes", [])):
         enriched = dict(scene)
@@ -1129,7 +1578,12 @@ async def run_grid_pipeline(
             )
 
     # Include video_plan in pipeline_state so it survives page refresh (B3 fix)
-    v3_video_plan = {**plan, "pipeline_version": "v3_grid"}
+    v3_video_plan = {
+        **plan,
+        "scenes": enriched_scenes,
+        "frame_urls": frame_urls,
+        "pipeline_version": "v3_grid",
+    }
     yield _sse({"pipeline_state": {
         "nodes": v3_nodes,
         "edges": v3_edges,

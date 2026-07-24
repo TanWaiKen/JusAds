@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Trash2,
   Home,
+  CirclePlus,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { API_BASE } from "@/services/complianceApi";
@@ -53,8 +54,9 @@ interface SidebarProps {
 
 const navItems: NavItem[] = [
   { label: "Home", icon: Home, to: "/dashboard", end: true },
+  { label: "New Project", icon: CirclePlus, to: "/dashboard/new" },
   { label: "Assets", icon: ImageIcon, to: "/dashboard/assets" },
-  { label: "Trends", icon: TrendingUp, to: "/dashboard/trends" },
+  { label: "Content ideas", icon: TrendingUp, to: "/dashboard/trends" },
 ];
 
 const MAX_VISIBLE_PROJECTS = 5;
@@ -202,6 +204,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
           transform: isOpen ? "translateX(0px)" : `translateX(-${SIDEBAR_WIDTH}px)`,
         }}
         aria-label="Sidebar navigation"
+        aria-hidden={!isOpen}
+        inert={!isOpen}
       >
         {/* Sidebar Header with close button */}
         <div className="flex items-center justify-between px-4 h-16 shrink-0 border-b border-border-default">

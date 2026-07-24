@@ -110,6 +110,9 @@ def assemble_ffmpeg(
     scene_clips: list[str],
     edit_plan: list[dict],
     audio_path: Optional[str] = None,
+    replace_audio: bool = False,
+    mute_audio: bool = False,
+    caption_scenes: Optional[list[dict]] = None,
     output_path: Optional[str] = None,
 ) -> Optional[str]:
     """Assemble scene clips into a final .mp4 using FFmpeg.
@@ -120,7 +123,10 @@ def assemble_ffmpeg(
     Args:
         scene_clips: Ordered list of scene video file paths.
         edit_plan: AI-generated edit decisions per scene.
-        audio_path: Optional voiceover/music audio to mix in.
+        audio_path: Optional voiceover/music audio to mix in or replace with.
+        replace_audio: When true, use ``audio_path`` as the final duration-safe
+            program track instead of blending it with model-generated audio.
+        mute_audio: Remove all audio from the final MP4.
         output_path: Where to save the final .mp4 (auto-generated if None).
 
     Returns:
@@ -163,9 +169,25 @@ def assemble_ffmpeg(
     if not final_video:
         return None
 
-    # Step 3: Mix audio if provided
+    # Burn exact captions after clip grouping/transitions. A ten-second Omni
+    # segment may contain two five-second storyboard scenes, so per-clip text
+    # would show the wrong caption for half the segment.
+    if caption_scenes:
+        captioned_video = _burn_timed_captions(final_video, caption_scenes)
+        if captioned_video:
+            final_video = captioned_video
+
+    # Step 3: Mix, replace, or remove audio.
+    if mute_audio:
+        muted_path = output_path
+        cmd = [FFMPEG_BIN, "-y", "-i", final_video, "-map", "0:v", "-c:v", "copy", "-an", muted_path]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            return muted_path if result.returncode == 0 else final_video
+        except Exception:
+            return final_video
     if audio_path and os.path.exists(audio_path):
-        mixed = _mix_audio(final_video, audio_path, output_path)
+        mixed = _mix_audio(final_video, audio_path, output_path, replace_audio=replace_audio)
         if mixed:
             return mixed
 
@@ -183,37 +205,16 @@ def assemble_ffmpeg(
 def _apply_scene_edits(
     clip_path: str, scene_index: int, speed: float, text: str, position: str
 ) -> Optional[str]:
-    """Apply speed change and text overlay to a single scene clip."""
+    """Apply speed changes to one rendered clip."""
     out_path = os.path.join(tempfile.gettempdir(), f"scene_edited_{scene_index}.mp4")
     filters = []
 
-    # Speed filter
     if speed != 1.0 and 0.25 <= speed <= 4.0:
         filters.append(f"setpts={1.0/speed}*PTS")
 
-    # Text overlay
-    if text:
-        safe_text = text.replace("'", "\\'").replace(":", "\\:").replace(",", "\\,")
-        y_map = {"top": "h*0.1", "center": "(h-text_h)/2", "bottom": "h*0.85"}
-        y_expr = y_map.get(position, "h*0.85")
-
-        font_clause = ""
-        if os.name == "nt":
-            font_clause = ":fontfile=C\\\\:/Windows/Fonts/arial.ttf"
-
-        filters.append(
-            f"drawtext=text='{safe_text}'{font_clause}"
-            f":fontsize=36:fontcolor=white"
-            f":x=(w-text_w)/2:y={y_expr}"
-            f":box=1:boxcolor=black@0.5:boxborderw=8"
-        )
-
     if not filters:
-        return None  # No edits needed, use original
+        return None
 
-    filter_str = ",".join(filters)
-
-    # Build audio filter for speed
     audio_filters = []
     if speed != 1.0 and 0.25 <= speed <= 4.0:
         if speed > 2.0:
@@ -225,10 +226,13 @@ def _apply_scene_edits(
 
     cmd = [FFMPEG_BIN, "-y", "-i", clip_path]
     if audio_filters:
-        cmd += ["-filter_complex", f"[0:v]{filter_str}[v];[0:a]{','.join(audio_filters)}[a]"]
-        cmd += ["-map", "[v]", "-map", "[a]"]
+        cmd += [
+            "-filter_complex",
+            f"[0:v]{','.join(filters)}[v];[0:a]{','.join(audio_filters)}[a]",
+            "-map", "[v]", "-map", "[a]",
+        ]
     else:
-        cmd += ["-vf", filter_str, "-c:a", "copy"]
+        cmd += ["-vf", ",".join(filters), "-c:a", "copy"]
     cmd.append(out_path)
 
     try:
@@ -240,6 +244,174 @@ def _apply_scene_edits(
         logger.warning("[VideoAssembler] Scene %d edit error: %s", scene_index, e)
 
     return None
+
+
+def _burn_timed_captions(video_path: str, scenes: list[dict]) -> Optional[str]:
+    """Burn scene captions on a timeline scaled to the real assembled duration."""
+    actual_duration = _get_duration(video_path)
+    usable_scenes = [
+        scene for scene in scenes
+        if str(scene.get("subtitle") or "").strip()
+    ]
+    planned_duration = sum(float(scene.get("duration") or 5) for scene in scenes)
+    if not actual_duration or not usable_scenes or planned_duration <= 0:
+        return None
+
+    overlays: list[tuple[str, float, float]] = []
+    planned_start = 0.0
+    scale = actual_duration / planned_duration
+    for index, scene in enumerate(scenes):
+        scene_duration = float(scene.get("duration") or 5)
+        subtitle = str(scene.get("subtitle") or "").strip()
+        if subtitle:
+            position = "center" if index == len(scenes) - 1 else "bottom"
+            overlay_path = _create_caption_overlay(video_path, subtitle, position, index)
+            if overlay_path:
+                overlays.append((
+                    overlay_path,
+                    planned_start * scale,
+                    (planned_start + scene_duration) * scale,
+                ))
+        planned_start += scene_duration
+    if not overlays:
+        return None
+
+    output_path = os.path.join(tempfile.gettempdir(), f"captioned_{os.getpid()}.mp4")
+    command = [FFMPEG_BIN, "-y", "-i", video_path]
+    for overlay_path, _, _ in overlays:
+        command += ["-loop", "1", "-i", overlay_path]
+
+    filters: list[str] = []
+    previous = "0:v"
+    for index, (_, start, end) in enumerate(overlays):
+        output_label = f"v{index}"
+        filters.append(
+            f"[{previous}][{index + 1}:v]overlay=0:0:format=auto:"
+            f"enable='between(t,{start:.3f},{end:.3f})'[{output_label}]"
+        )
+        previous = output_label
+
+    command += [
+        "-filter_complex", ";".join(filters),
+        "-map", f"[{previous}]",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
+        "-t", f"{actual_duration:.3f}",
+        output_path,
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        if result.returncode == 0 and os.path.exists(output_path):
+            return output_path
+        logger.warning("[VideoAssembler] Timed caption render failed: %s", result.stderr[-300:])
+    except Exception as exc:
+        logger.warning("[VideoAssembler] Timed caption render error: %s", exc)
+    return None
+
+
+def _create_caption_overlay(
+    video_path: str,
+    text: str,
+    position: str,
+    scene_index: int,
+) -> Optional[str]:
+    """Render a transparent caption PNG using a Unicode-capable local font."""
+    dimensions = _get_video_dimensions(video_path)
+    if not dimensions or not text.strip():
+        return None
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+
+        width, height = dimensions
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+        font_size = max(24, round(height * 0.038))
+        candidates = [
+            r"C:\Windows\Fonts\msyhbd.ttc",
+            r"C:\Windows\Fonts\msyh.ttc",
+            r"C:\Windows\Fonts\arialbd.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ]
+        font = next(
+            (ImageFont.truetype(path, font_size) for path in candidates if os.path.exists(path)),
+            ImageFont.load_default(),
+        )
+
+        lines = _wrap_caption_text(draw, text.strip(), font, round(width * 0.86))
+        line_height = round(font_size * 1.35)
+        block_height = line_height * len(lines)
+        y = round((height - block_height) / 2) if position == "center" else round(height * 0.79)
+        padding_y = round(height * 0.012)
+        box_top = max(0, y - padding_y)
+        box_bottom = min(height, y + block_height + padding_y)
+        draw.rounded_rectangle(
+            (round(width * 0.04), box_top, round(width * 0.96), box_bottom),
+            radius=max(8, round(height * 0.012)),
+            fill=(0, 0, 0, 178),
+        )
+        for line_number, line in enumerate(lines):
+            bounds = draw.textbbox((0, 0), line, font=font, stroke_width=1)
+            line_width = bounds[2] - bounds[0]
+            draw.text(
+                ((width - line_width) / 2, y + line_number * line_height),
+                line,
+                font=font,
+                fill=(255, 255, 255, 255),
+                stroke_width=1,
+                stroke_fill=(0, 0, 0, 220),
+            )
+
+        output_path = os.path.join(
+            tempfile.gettempdir(),
+            f"caption_overlay_{os.getpid()}_{scene_index}.png",
+        )
+        canvas.save(output_path, "PNG")
+        return output_path
+    except Exception as exc:
+        logger.warning("[VideoAssembler] Caption overlay generation failed: %s", exc)
+        return None
+
+
+def _wrap_caption_text(draw, text: str, font, max_width: int) -> list[str]:
+    """Wrap Latin text by words and CJK-heavy text by characters."""
+    if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+        return [text]
+
+    separator = " " if " " in text else ""
+    tokens = text.split(" ") if separator else list(text)
+    lines: list[str] = []
+    current = ""
+    for token in tokens:
+        candidate = f"{current}{separator if current else ''}{token}"
+        if current and draw.textbbox((0, 0), candidate, font=font)[2] > max_width:
+            lines.append(current)
+            current = token
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines[:3]
+
+
+def _get_video_dimensions(path: str) -> Optional[tuple[int, int]]:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        width, height = result.stdout.strip().split("x", 1)
+        return int(width), int(height)
+    except Exception:
+        return None
 
 
 def _concat_with_transitions(clips: list[str], edit_plan: list[dict]) -> Optional[str]:
@@ -306,14 +478,43 @@ def _concat_with_transitions(clips: list[str], edit_plan: list[dict]) -> Optiona
     return out_path
 
 
-def _mix_audio(video_path: str, audio_path: str, output_path: str) -> Optional[str]:
-    """Mix voiceover/music audio onto the assembled video."""
+def _mix_audio(
+    video_path: str,
+    audio_path: str,
+    output_path: str,
+    *,
+    replace_audio: bool = False,
+) -> Optional[str]:
+    """Add a duration-safe audio program to a video.
+
+    Generated narration/music must replace the incidental Omni audio.  Mixing
+    both at a fixed gain produces competing speech, abrupt endings, and the
+    unsynchronised result that users reported.  Retain the legacy blend only
+    for callers that explicitly request it.
+    """
+    duration = _get_duration(video_path)
+    if duration is None:
+        logger.warning("[VideoAssembler] Cannot determine video duration for audio mix")
+        return None
+
+    if replace_audio:
+        audio_filter = (
+            f"[1:a]aresample=48000,aformat=channel_layouts=stereo,apad,"
+            f"atrim=duration={duration:.3f}[a]"
+        )
+    else:
+        audio_filter = (
+            f"[0:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.3[bg];"
+            f"[1:a]aresample=48000,aformat=channel_layouts=stereo,apad,"
+            f"atrim=duration={duration:.3f}[fg];"
+            "[bg][fg]amix=inputs=2:duration=first:dropout_transition=0[a]"
+        )
+
     cmd = [
         FFMPEG_BIN, "-y", "-i", video_path, "-i", audio_path,
-        "-filter_complex",
-        "[0:a]volume=0.3[bg];[bg][1:a]amix=inputs=2:duration=first[a]",
-        "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-shortest",
-        output_path,
+        "-filter_complex", audio_filter,
+        "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
+        "-t", f"{duration:.3f}", output_path,
     ]
 
     try:
@@ -453,7 +654,10 @@ def assemble_capcut_draft(
 async def assemble_dual_output(
     scene_clips: list[str],
     scenes: list[dict],
+    caption_scenes: Optional[list[dict]] = None,
     audio_path: Optional[str] = None,
+    replace_audio: bool = False,
+    mute_audio: bool = False,
     subtitles_srt: Optional[str] = None,
     draft_name: str = "ai_video_ad",
     width: int = 1080,
@@ -484,7 +688,14 @@ async def assemble_dual_output(
     edit_plan = await plan_edits(scenes)
 
     # Step 2: FFmpeg renders instant .mp4
-    mp4_path = assemble_ffmpeg(scene_clips, edit_plan, audio_path)
+    mp4_path = assemble_ffmpeg(
+        scene_clips,
+        edit_plan,
+        audio_path,
+        replace_audio=replace_audio,
+        mute_audio=mute_audio,
+        caption_scenes=caption_scenes,
+    )
 
     # Step 3: CapCut draft for user editing
     capcut_draft = assemble_capcut_draft(

@@ -57,9 +57,11 @@ export function useComplianceRemix(): UseComplianceRemixReturn {
     let completedResult: RemediationResult | null = null;
     let streamFailure: string | null = null;
     let receivedTerminalEvent = false;
+    let controller: AbortController | null = null;
     try {
       abortRef.current?.abort();
-      abortRef.current = new AbortController();
+      controller = new AbortController();
+      abortRef.current = controller;
       await streamRemix(checkId, (event: RemixStreamEvent) => {
         console.log("[Remix] SSE event:", event);
         switch (event.type) {
@@ -110,7 +112,7 @@ export function useComplianceRemix(): UseComplianceRemixReturn {
             setRemixError(streamFailure);
             break;
         }
-      });
+      }, controller.signal);
 
       if (streamFailure) throw new Error(streamFailure);
       if (!receivedTerminalEvent) {
@@ -125,7 +127,9 @@ export function useComplianceRemix(): UseComplianceRemixReturn {
     } finally {
       setIsRemixing(false);
       setCurrentNode(null);
-      abortRef.current = null;
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
     }
   }, []);
 

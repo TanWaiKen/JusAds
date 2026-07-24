@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import { ArrowLeft, CheckCircle2, Loader2, Rocket, Send, Sparkles } from "lucide-react";
+import { ArrowLeft, AudioLines, CheckCircle2, Loader2, Rocket, Send, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { VideoPlanStoryboard } from "@/components/workspace/canvas/VideoPlanStoryboard";
 import {
   distributeToAccounts,
+  executeVideoPlan,
   getDistributionAccounts,
   getGeneratedAds,
+  normalizeVideoPlan,
   publishAd,
   streamChat,
   streamGuidedGeneration,
   type DistributionAccount,
   type GeneratedAdView,
+  type VideoPlan,
 } from "@/services/generationApi";
+import { getTask } from "@/services/taskApi";
 
 interface GuidedNavigationState {
   guidedMode?: boolean;
@@ -35,6 +40,8 @@ export default function EasyResultsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [videoPlan, setVideoPlan] = useState<VideoPlan | null>(null);
+  const [planRendering, setPlanRendering] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
   const [accounts, setAccounts] = useState<DistributionAccount[]>([]);
@@ -55,13 +62,45 @@ export default function EasyResultsPage() {
       : generated[0]?.adId ?? null);
   }, [projectId, taskId]);
 
+  const refreshVideoPlan = useCallback(async () => {
+    if (!projectId || !taskId) return null;
+    const task = await getTask(projectId, taskId);
+    const rawPlan = task.type === "generation"
+      ? task.pipeline_state?.video_plan
+      : undefined;
+    const normalized = normalizeVideoPlan(rawPlan);
+    setVideoPlan(normalized ?? null);
+    return normalized ?? null;
+  }, [projectId, taskId]);
+
   useEffect(() => {
-    void refreshOutputs().catch(() => {}).finally(() => setLoading(false));
-  }, [refreshOutputs]);
+    if (!projectId || !taskId) return;
+
+    let active = true;
+    void Promise.all([
+      getGeneratedAds(projectId, taskId).catch(() => []),
+      getTask(projectId, taskId).catch(() => null),
+    ]).then(([generated, task]) => {
+      if (!active) return;
+      setAds(generated);
+      setSelectedId(generated[0]?.adId ?? null);
+      const rawPlan = task?.type === "generation"
+        ? task.pipeline_state?.video_plan
+        : undefined;
+      setVideoPlan(normalizeVideoPlan(rawPlan) ?? null);
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [projectId, taskId]);
 
   useEffect(() => {
     if (
       started.current ||
+      loading ||
       !guidedState?.guidedMode ||
       !guidedState.designType ||
       !guidedState.guidedInputs ||
@@ -70,9 +109,11 @@ export default function EasyResultsPage() {
     ) return;
 
     started.current = true;
-    setGenerating(true);
-    window.history.replaceState({}, document.title);
-    void (async () => {
+    navigate(location.pathname, { replace: true, state: null });
+    if (videoPlan) return;
+
+    void Promise.resolve().then(async () => {
+      setGenerating(true);
       try {
         for await (const event of streamGuidedGeneration(
           projectId,
@@ -82,16 +123,32 @@ export default function EasyResultsPage() {
           guidedState.guidedReferences ?? [],
         )) {
           if (event.error) throw new Error(event.error);
+          const eventPlan = normalizeVideoPlan(
+            event.video_plan
+              ?? (event.pipeline_state as Record<string, unknown> | undefined)?.video_plan,
+          );
+          if (eventPlan) setVideoPlan(eventPlan);
         }
+        const persistedPlan = await refreshVideoPlan();
         await refreshOutputs();
-        toast.success("Your ad is ready.");
+        toast.success(persistedPlan ? "Storyboard ready for review." : "Your ad is ready.");
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Could not generate the ad");
       } finally {
         setGenerating(false);
       }
-    })();
-  }, [guidedState, projectId, refreshOutputs, taskId]);
+    });
+  }, [
+    guidedState,
+    loading,
+    location.pathname,
+    navigate,
+    projectId,
+    refreshOutputs,
+    refreshVideoPlan,
+    taskId,
+    videoPlan,
+  ]);
 
   useEffect(() => {
     void getDistributionAccounts().then(setAccounts).catch(() => setAccounts([]));
@@ -111,18 +168,25 @@ export default function EasyResultsPage() {
   useEffect(() => {
     if (!selected) return;
     const recommendedPlatforms = selected.mediaType === "video"
-      ? ["tiktok", "instagram", "youtube"]
+      ? ["tiktok", "instagram"]
       : selected.mediaType === "image"
         ? ["instagram", "tiktok"]
-        : ["instagram", "youtube"];
-    setSelectedAccountIds(accounts
-      .filter((account) => recommendedPlatforms.includes(account.platform.toLowerCase()))
-      .map((account) => account.id));
-    setPublishedCaption(selected.caption ?? "");
-    setPublishError(null);
-    setDistributionError(null);
-    setDistributed(false);
-  }, [selected?.adId, accounts]);
+        : ["instagram", "tiktok"];
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setSelectedAccountIds(accounts
+        .filter((account) => recommendedPlatforms.includes(account.platform.toLowerCase()))
+        .map((account) => account.id));
+      setPublishedCaption(selected.caption ?? "");
+      setPublishError(null);
+      setDistributionError(null);
+      setDistributed(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [selected, accounts]);
 
   const submitFeedback = async () => {
     if (!feedback.trim() || !projectId || !taskId || !selected) return;
@@ -149,6 +213,22 @@ export default function EasyResultsPage() {
       toast.error(error instanceof Error ? error.message : "Could not generate a variation");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleContinuePlan = async (approvedPlan: VideoPlan) => {
+    if (!projectId || !taskId) return;
+    setPlanRendering(true);
+    try {
+      for await (const event of executeVideoPlan(projectId, taskId, approvedPlan)) {
+        if (event.error) throw new Error(event.error);
+      }
+      await Promise.all([refreshOutputs(), refreshVideoPlan()]);
+      toast.success("Video render completed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not render the approved video");
+    } finally {
+      setPlanRendering(false);
     }
   };
 
@@ -201,8 +281,14 @@ export default function EasyResultsPage() {
             <ArrowLeft className="h-3.5 w-3.5" />
             Generate new ad
           </button>
-          <h1 className="text-2xl font-semibold tracking-tight text-text-heading">Your generated ads</h1>
-          <p className="mt-1 text-sm text-text-muted">Choose a version, preview it, then describe what you would like to improve.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-text-heading">
+            {videoPlan ? "Review your video storyboard" : "Your generated ads"}
+          </h1>
+          <p className="mt-1 text-sm text-text-muted">
+            {videoPlan
+              ? "Review the scenes, confirm the approved facts and localization, then start production."
+              : "Choose a version, preview it, then describe what you would like to improve."}
+          </p>
         </div>
         <div className="flex w-full max-w-[360px] justify-self-center rounded-lg border border-border-default bg-surface-card p-1 shadow-sm xl:max-w-none xl:justify-self-stretch">
           <button
@@ -223,11 +309,20 @@ export default function EasyResultsPage() {
         <div aria-hidden="true" />
       </header>
 
-      {loading || generating && ads.length === 0 ? (
+      {loading || generating && ads.length === 0 && !videoPlan ? (
         <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-2xl border border-border-default bg-surface-card">
           <Loader2 className="h-7 w-7 animate-spin text-primary" />
           <p className="text-sm text-text-muted">{generating ? "Generating your ad…" : "Loading generated ads…"}</p>
         </div>
+      ) : videoPlan ? (
+        <section className="rounded-2xl border border-border-default bg-surface-card p-4 sm:p-6">
+          <VideoPlanStoryboard
+            key={videoPlan.planId}
+            plan={videoPlan}
+            onContinue={(plan) => void handleContinuePlan(plan)}
+            isRendering={planRendering}
+          />
+        </section>
       ) : ads.length === 0 ? (
         <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border-default bg-surface-card text-center">
           <Sparkles className="h-7 w-7 text-primary" />
@@ -281,6 +376,16 @@ export default function EasyResultsPage() {
                         playsInline
                         preload="metadata"
                       />
+                    ) : ad.mediaType === "audio" ? (
+                      <div className="flex aspect-square flex-col items-center justify-center gap-3 bg-gradient-to-br from-primary/15 via-surface-card to-accent-blue/10 text-primary">
+                        <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-surface-card shadow-sm">
+                          <AudioLines className="h-7 w-7" aria-hidden="true" />
+                        </span>
+                        <span className="text-xs font-semibold text-text-heading">Audio file</span>
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                          MP3
+                        </span>
+                      </div>
                     ) : (
                       <div className="flex aspect-square items-center justify-center bg-surface-inset text-xs text-text-muted">{ad.mediaType}</div>
                     )}
@@ -313,6 +418,30 @@ export default function EasyResultsPage() {
                 >
                   Your browser does not support video playback.
                 </video>
+              </div>
+            )}
+
+            {selected?.mediaType === "audio" && selected.publicUrl && (
+              <div className="rounded-2xl border border-border-default bg-surface-card p-5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  Audio preview
+                </p>
+                <audio
+                  src={selected.publicUrl}
+                  controls
+                  preload="metadata"
+                  className="mt-3 w-full"
+                >
+                  Your browser does not support audio playback.
+                </audio>
+                {selected.caption && (
+                  <div className="mt-4 rounded-xl bg-surface-inset p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+                      Transcript
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-text-body">{selected.caption}</p>
+                  </div>
+                )}
               </div>
             )}
           </section>

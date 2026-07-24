@@ -4,8 +4,9 @@
  */
 
 import type { PipelineState } from "@/components/workspace/canvas/graphModel";
+import { API_BASE } from "@/lib/apiConfig";
 
-export const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+export { API_BASE };
 
 export interface ViolationSummary {
   type: string;

@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from shared.clients import supabase
+from shared.predicthq_client import PredictHQServiceError, fetch_predicthq_events
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,30 @@ class TrendResearchResponse(BaseModel):
     message: Optional[str] = None
 
 
+class CreativeSignalResearchRequest(BaseModel):
+    """Request parameters for evidence-backed creative signal research."""
+
+    owner_email: str = ""
+    market: str = "malaysia"
+    platform: str = ""
+
+
+@router.get("/daily-idea")
+async def get_daily_idea(market: str = "malaysia") -> JSONResponse:
+    """Return one market-wide creative idea that stays fixed for the local day."""
+    from jusads_trends.daily_idea import get_daily_creative_idea
+
+    try:
+        idea = await get_daily_creative_idea(market)
+        return JSONResponse(content=idea)
+    except Exception:
+        logger.exception("[TrendsAPI] Daily creative idea failed")
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Today's creative idea is temporarily unavailable."},
+        )
+
+
 def _trend_item(item: dict[str, Any], platform: str) -> dict[str, Any]:
     """Normalize a cached trend row for the frontend."""
     return {
@@ -72,6 +97,54 @@ def _group_trends(items: list[dict[str, Any]]) -> tuple[dict[str, list[dict[str,
         grouped.setdefault(platform, []).append(_trend_item(item, platform))
         last_refresh.setdefault(platform, item.get("scraped_at", ""))
     return grouped, last_refresh
+
+
+@router.get("/signals")
+async def get_creative_signals(
+    market: str = "malaysia",
+    platform: str = "",
+    owner_email: str = "",
+    limit: int = 30,
+) -> JSONResponse:
+    """Return persisted evidence-backed Creative Trend Signals."""
+    from jusads_trends.creative_signals import CreativeSignalError, fetch_creative_signals
+
+    try:
+        signals = fetch_creative_signals(
+            market=(market or "malaysia").strip().lower(),
+            platform=platform.strip().lower(),
+            owner_email=owner_email.strip().lower(),
+            limit=max(1, min(limit, 50)),
+        )
+        return JSONResponse(content={"signals": signals, "count": len(signals)})
+    except CreativeSignalError as exc:
+        return JSONResponse(status_code=503, content={"error": str(exc), "signals": [], "count": 0})
+
+
+@router.post("/signals/research")
+async def research_creative_signals(body: CreativeSignalResearchRequest) -> JSONResponse:
+    """Research and persist only evidence-backed creative patterns for campaign ideation."""
+    from jusads_trends.creative_signals import CreativeSignalError, research_creative_signals
+
+    try:
+        signals = await research_creative_signals(
+            market=(body.market or "malaysia").strip().lower(),
+            platform=body.platform.strip().lower(),
+            owner_email=body.owner_email.strip().lower(),
+        )
+        return JSONResponse(content={
+            "signals": signals,
+            "count": len(signals),
+            "freshness": "fresh",
+            "message": "Signals are returned for this session. Apply migration 021 to save them for later.",
+        })
+    except CreativeSignalError as exc:
+        message = str(exc)
+        if message.startswith("No evidence-backed creative trend signals"):
+            logger.info("[TrendsAPI] Creative signal research produced no verified signals")
+            return JSONResponse(content={"signals": [], "count": 0, "freshness": "unavailable", "message": message})
+        logger.warning("[TrendsAPI] Creative signal research unavailable: %s", exc)
+        return JSONResponse(status_code=503, content={"error": message, "signals": [], "count": 0})
 
 
 @router.post("/research", response_model=TrendResearchResponse)
@@ -233,6 +306,7 @@ Return only a JSON array of up to 5 items."""
             "research_sources": [], "message": "Trend research is temporarily unavailable.",
         })
 
+@router.get("")
 @router.get("/")
 async def get_trends(
     platform: Optional[str] = None,
@@ -271,11 +345,11 @@ async def get_trends(
             "total_items": len(items),
         })
 
-    except Exception as e:
-        logger.error("[TrendsAPI] Failed to fetch trends: %s", e)
+    except Exception:
+        logger.exception("[TrendsAPI] Failed to fetch trends")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "trends": [], "last_refresh": {}},
+            content={"error": "Unable to load trend data.", "trends": [], "last_refresh": {}},
         )
 
 
@@ -356,11 +430,16 @@ async def get_cultural_events(
             "count": len(filtered_events),
         })
 
-    except Exception as e:
-        logger.error("[TrendsAPI] Failed to fetch cultural events: %s", e)
+    except Exception:
+        logger.exception("[TrendsAPI] Failed to fetch cultural events")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "events": [], "global_events": [], "national_events": []},
+            content={
+                "error": "Unable to load cultural events.",
+                "events": [],
+                "global_events": [],
+                "national_events": [],
+            },
         )
 
 
@@ -368,8 +447,6 @@ async def get_cultural_events(
 async def sync_cultural_events() -> JSONResponse:
     """Synchronize local database events with PredictHQ API for the next 30 days."""
     try:
-        from shared.predicthq_client import fetch_predicthq_events
-
         logger.info("[TrendsAPI] Starting PredictHQ event sync...")
 
         # Fetch Malaysia events and global events
@@ -409,11 +486,20 @@ async def sync_cultural_events() -> JSONResponse:
             "count": len(to_insert),
         })
 
-    except Exception as e:
-        logger.error("[TrendsAPI] PredictHQ sync failed: %s", e)
+    except PredictHQServiceError as exc:
+        logger.warning("[TrendsAPI] PredictHQ sync unavailable: %s", exc)
+        return JSONResponse(
+            status_code=503 if exc.not_configured else 502,
+            content={
+                "error": str(exc),
+                "code": "predicthq_not_configured" if exc.not_configured else "predicthq_unavailable",
+            },
+        )
+    except Exception:
+        logger.exception("[TrendsAPI] PredictHQ sync failed")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e)},
+            content={"error": "Unable to synchronize cultural events."},
         )
 
 
@@ -541,9 +627,9 @@ async def trigger_refresh(
             "items_count": len(all_items),
         })
 
-    except Exception as e:
-        logger.error("[TrendsAPI] Refresh failed: %s", e)
+    except Exception:
+        logger.exception("[TrendsAPI] Refresh failed")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "status": "failed"},
+            content={"error": "Unable to refresh trends.", "status": "failed"},
         )

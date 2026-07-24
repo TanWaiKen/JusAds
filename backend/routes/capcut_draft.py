@@ -198,6 +198,111 @@ async def generate_draft_from_local(
     })
 
 
+from pydantic import BaseModel as _BaseModel
+
+
+class _GenerateDraftFromUrlRequest(_BaseModel):
+    """Request body for generating a CapCut draft from a video URL."""
+
+    video_url: str
+    draft_name: str = "jusads_video"
+
+
+@router.post("/generate-draft-from-url")
+async def generate_draft_from_url(body: _GenerateDraftFromUrlRequest) -> JSONResponse:
+    """Generate a CapCut draft from a video URL (fetched server-side, no CORS issues).
+
+    The backend downloads the video from S3/URL, creates a CapCut draft, and
+    returns a download URL for the ZIP. This avoids browser CORS restrictions
+    when fetching from S3.
+    """
+    if not CAPCUT_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="CapCut draft generation unavailable. Install pycapcut: pip install pycapcut"
+        )
+
+    import urllib.request
+
+    # Download video from URL (server-side — no CORS)
+    temp_dir = Path(tempfile.mkdtemp(prefix="capcut_url_"))
+    video_path = temp_dir / "video.mp4"
+
+    try:
+        urllib.request.urlretrieve(body.video_url, str(video_path))
+    except Exception as e:
+        logger.error("[CapCutDraft] Failed to download video from URL: %s", e)
+        raise HTTPException(status_code=400, detail="Could not download video from the provided URL")
+
+    if not video_path.exists() or video_path.stat().st_size == 0:
+        raise HTTPException(status_code=400, detail="Downloaded video is empty or invalid")
+
+    draft_name = body.draft_name.strip() or "jusads_video"
+
+    try:
+        # Create a simple CapCut draft with just the video (no image overlay)
+        result = _create_video_only_draft(str(video_path), draft_name)
+
+        if not result:
+            raise HTTPException(status_code=500, detail="CapCut draft creation failed")
+
+        return JSONResponse({
+            "success": True,
+            "draft_name": draft_name,
+            "download_url": f"/api/capcut/download/{draft_name}",
+            "instructions": _get_import_instructions(),
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[CapCutDraft] URL-based generation failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Draft generation failed: {str(e)}")
+    finally:
+        # Cleanup temp download
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _create_video_only_draft(video_path: str, draft_name: str) -> Optional[dict]:
+    """Create a CapCut draft containing just the video on the main track."""
+    try:
+        import subprocess
+
+        # Get video duration
+        dur_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                   "-of", "default=noprint_wrappers=1:nokey=1", video_path]
+        dur_result = subprocess.run(dur_cmd, capture_output=True, text=True, timeout=10)
+        video_dur_sec = float(dur_result.stdout.strip()) if dur_result.returncode == 0 else 15.0
+        video_dur_us = int(video_dur_sec * 1_000_000)
+
+        drafts_path = str(DRAFTS_DIR)
+        draft_folder = cc.DraftFolder(drafts_path)
+        script = draft_folder.create_draft(draft_name, 1080, 1920, 30, allow_replace=True)
+
+        # Add a main video track
+        script.add_track(cc.TrackType.video, "main_video")
+
+        # Add the video segment
+        video_seg = cc.VideoSegment(
+            video_path,
+            cc.Timerange(0, video_dur_us),
+        )
+        script.add_segment(video_seg, "main_video")
+
+        script.save()
+
+        logger.info("[CapCutDraft] Video-only draft '%s' created at: %s", draft_name, drafts_path)
+        return {
+            "draft_folder": drafts_path,
+            "draft_name": draft_name,
+        }
+    except Exception as e:
+        logger.error("[CapCutDraft] Video-only draft creation failed: %s", e)
+        return None
+
+
 @router.get("/download/{draft_name}")
 async def download_draft(draft_name: str) -> FileResponse:
     """Download the generated CapCut draft as a ZIP file.

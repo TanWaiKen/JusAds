@@ -90,6 +90,16 @@ _CLARIFICATION_MESSAGE = (
 )
 
 
+def _guided_video_duration(guided_inputs: Optional[dict]) -> float:
+    """Parse an Easy Mode duration such as ``15s`` without trusting free text."""
+    raw = str((guided_inputs or {}).get("video_duration", "15")).lower()
+    cleaned = raw.replace("seconds", "").replace("second", "").replace("s", "").strip()
+    try:
+        return float(cleaned)
+    except (TypeError, ValueError):
+        return 15.0
+
+
 def _enrich_brief(user_message: str, context: dict) -> str:
     """Prepend generation context to the user brief so agents are aware of settings.
 
@@ -231,6 +241,81 @@ async def _load_reference_parts(reference_urls: list[str]) -> list:
     return parts
 
 
+# --- History compression (avoids token-limit issues on long sessions) --------
+
+_HISTORY_COMPRESS_THRESHOLD = 10  # Summarize when history exceeds this many turns
+_RECENT_TURNS_TO_KEEP = 6  # Always keep the most recent N turns verbatim
+
+
+def _compress_history_if_needed(history: list[dict]) -> list[dict]:
+    """Compress older conversation turns into a summary when history is long.
+
+    Keeps the most recent turns verbatim for context continuity, and replaces
+    older turns with a single synthetic summary turn. This prevents Gemini from
+    hitting token limits or losing focus on the current task.
+
+    The summary is generated synchronously using a short Gemini call. If
+    summarization fails, it falls back to keeping only the recent turns.
+
+    Args:
+        history: The full list of chat turns (oldest → newest).
+
+    Returns:
+        A compressed history list suitable for Gemini conversation context.
+    """
+    if len(history) <= _HISTORY_COMPRESS_THRESHOLD:
+        return history
+
+    older_turns = history[:-_RECENT_TURNS_TO_KEEP]
+    recent_turns = history[-_RECENT_TURNS_TO_KEEP:]
+
+    # Build a text representation of older turns for summarization
+    older_text_parts: list[str] = []
+    for turn in older_turns:
+        role = turn.get("role", "user")
+        content = (turn.get("content") or "")[:500]  # Truncate long individual turns
+        older_text_parts.append(f"{role}: {content}")
+
+    older_text = "\n".join(older_text_parts)
+
+    # Generate a concise summary
+    try:
+        from google.genai import types as genai_types
+
+        summary_prompt = (
+            "Summarize this conversation history into a brief context paragraph (max 200 words). "
+            "Focus on: what product/brand is being discussed, what was already generated, "
+            "what platform/audience settings were chosen, and any key decisions made. "
+            "Do not include greetings or filler.\n\n"
+            f"CONVERSATION:\n{older_text[:4000]}"
+        )
+        response = gemini.models.generate_content(
+            model=_GEMINI_MODEL,
+            contents=summary_prompt,
+            config=genai_types.GenerateContentConfig(temperature=0.1),
+        )
+        summary = (response.text or "").strip()
+        if not summary:
+            raise ValueError("Empty summary returned")
+
+        logger.info(
+            "[Orchestrator] Compressed %d older turns into %d-char summary",
+            len(older_turns), len(summary),
+        )
+
+        # Return: one synthetic "model" summary turn + recent verbatim turns
+        summary_turn = {
+            "role": "assistant",
+            "content": f"[Context from earlier in this session: {summary}]",
+        }
+        return [summary_turn] + recent_turns
+
+    except Exception as exc:
+        logger.warning("[Orchestrator] History compression failed: %s; using recent turns only", exc)
+        # Fallback: just use the recent turns without the older context
+        return recent_turns
+
+
 async def _stream_assistant_reply(
     user_message: str,
     history: list[dict],
@@ -241,11 +326,19 @@ async def _stream_assistant_reply(
     The accumulated ``text_chunk`` values form the assistant turn persisted later.
     Any streaming failure degrades to a single fallback chunk so the run
     continues (Req 3.2).
+
+    When the conversation history exceeds a threshold, older turns are
+    compressed into a summary so the model context stays focused on what
+    matters without hitting token limits.
     """
     from google.genai import types as genai_types
 
+    # Compress history when it's getting long — summarize older turns so the
+    # model keeps recent context without hitting the token budget.
+    effective_history = _compress_history_if_needed(history)
+
     contents = []
-    for turn in history:
+    for turn in effective_history:
         role = turn.get("role", "user")
         # Gemini expects 'model' for assistant turns.
         gem_role = "model" if role == "assistant" else "user"
@@ -726,6 +819,13 @@ async def run_generation(
         "parent_ad_id": parent_ad_id,
         "parent_asset_url": parent_asset_url or "",
         "revision_feedback": revision_feedback or "",
+        "creative_mode": (guided_inputs or {}).get("creative_mode", ""),
+        "voiceover_type": (
+            "music_only"
+            if (guided_inputs or {}).get("creative_mode") == "music_first"
+            else "elevenlabs"
+        ),
+        "video_duration_sec": _guided_video_duration(guided_inputs),
         "brand_snapshot": {
             key: value
             for key, value in (guided_inputs or {}).items()
@@ -836,13 +936,17 @@ async def run_generation(
                         task_id=task_id,
                         character_description=gen_context.get("product_name", ""),
                         product_description=gen_context.get("product_category", ""),
-                        video_duration_sec=15.0,
+                        video_duration_sec=gen_context.get("video_duration_sec", 15.0),
                         width=1080,
                         height=1920,
                         target_ethnicity=gen_context.get("target_ethnicity", "all"),
                         market=gen_context.get("market", "malaysia"),
                         gender=gen_context.get("gender", "female"),
                         reference_image_urls=reference_urls,
+                        platform=platform,
+                        voiceover_type=gen_context.get("voiceover_type", "elevenlabs"),
+                        language=gen_context.get("language", "auto"),
+                        creative_mode=gen_context.get("creative_mode", ""),
                     ):
                         yield sse_line
                 except Exception as exc:  # noqa: BLE001
@@ -984,6 +1088,7 @@ async def run_video_plan_execution(
             "target_ethnicity": plan.get("target_ethnicity", "all"),
             "market": plan.get("market", "malaysia"),
             "gender": plan.get("gender", "female"),
+            "language": plan.get("language", "auto"),
             "voiceover_type": plan.get("voiceover_type") or plan.get("voiceoverType") or "elevenlabs",
             "aspect_ratio": plan.get("aspect_ratio", "9:16"),
             "duration_sec": plan.get("duration_sec"),

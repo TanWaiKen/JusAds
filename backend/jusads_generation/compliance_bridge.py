@@ -505,7 +505,10 @@ async def run_compliance_for_ad(
             from jusads_compliance.compliance_pipeline import compliance_pipeline
 
             final_state = await asyncio.wait_for(
-                compliance_pipeline.ainvoke(state),
+                compliance_pipeline.ainvoke(
+                    state,
+                    config={"configurable": {"thread_id": check_id}},
+                ),
                 timeout=COMPLIANCE_TIMEOUT_SECONDS,
             )
             compliance_status = _map_verdict(final_state)

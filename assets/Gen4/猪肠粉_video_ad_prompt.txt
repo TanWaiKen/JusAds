@@ -1,0 +1,140 @@
+JUSADS VIDEO GENERATION PROMPT — 鸡哥猪肠粉
+
+PURPOSE
+Create a 15-second vertical social video selling 猪肠粉 for a fictional draft shop concept.
+This is a non-halal food advertisement. The product contains pork or is prepared as a
+non-halal item according to the approved campaign brief. Do not add any other ingredient,
+health, price, popularity, heritage, quality, or performance claim.
+
+REFERENCE ASSET ROLES
+- 鸡哥.jpg = CHARACTER REFERENCE. Preserve 鸡哥’s recognizable identity, face, clothing,
+  proportions, and overall visual character.
+- Product.jpg = PRODUCT REFERENCE. Preserve the real 猪肠粉 appearance, serving style,
+  colour, sauce, texture, portion, and container. Do not redesign or beautify it into a
+  different dish.
+- Shop.png = SHOP / LOCATION REFERENCE. Preserve the shop-lot facade, signage placement,
+  entrance, colours, architectural features, and overall environment.
+
+OUTPUT
+- Platform: TikTok / Instagram Reels
+- Aspect ratio: 9:16
+- Duration: exactly 15 seconds
+- Storyboard grid: exactly 2×2, four complete scenes
+- Scene durations: 5 seconds, 5 seconds, 3 seconds, 2 seconds
+- Creative mode: fast comedic hook transitioning into a clear product sale
+- Language: Malaysian Mandarin with natural local rhythm
+- Subtitles: Simplified Chinese, matching the spoken words exactly
+- Speaker: 鸡哥
+
+CORE CONCEPT
+Begin with an obviously staged, playful confrontation outside the shop. Use fast movement,
+mock fighting poses, glove-like whooshes, and a sudden shock-stop to capture attention.
+No weapons, injury, blood, pain, threatening behaviour, or realistic violence.
+
+At the strongest impact moment, match-cut from the mock confrontation to sauce landing on
+the 猪肠粉. The energy changes immediately from chaotic to appetising and welcoming. 鸡哥
+reveals that the real thing worth “fighting for” is the food, then directs viewers to the
+shop.
+
+DIRECTOR GRID — SCRIPT MUST FOLLOW THIS GRID ONE-TO-ONE
+
+SCENE 1 — GRID CELL 1 — 0:00–0:05 — COMEDIC FIGHT HOOK
+Visual:
+- Exterior of the referenced shop lot.
+- Two people perform exaggerated, clearly playful fighting poses.
+- 鸡哥 enters frame or turns toward the commotion.
+- Fast handheld push-in, sharp speed ramp, bold movement, strong first-frame action.
+- Keep the shop recognizable in the background.
+Audio:
+- Fast footsteps, two clean air-whooshes, light crowd reaction.
+- Do not use realistic punches or sounds of injury.
+Dialogue:
+[shouts] “喂！打什么打？”
+Subtitle:
+“喂！打什么打？”
+
+SCENE 2 — GRID CELL 2 — 0:05–0:10 — SHOCK TRANSITION + PRODUCT REVEAL
+Visual:
+- A single stylized shock impact freezes the action.
+- Match-cut the circular motion of a fist or hand into sauce being poured over the exact
+  referenced 猪肠粉.
+- Macro food shot: sauce movement, texture, steam only if supported by the reference,
+  clean product focus.
+- Do not distort the dish, duplicate ingredients, or change the serving container.
+Audio:
+- One short cinematic shock hit.
+- Immediate sauce-pour and plate Foley.
+- Music pivots from tense percussion to upbeat food-stall energy.
+Dialogue:
+[surprised] “要争，就争最后一碟猪肠粉啦！”
+Subtitle:
+“要争，就争最后一碟猪肠粉啦！”
+
+SCENE 3 — GRID CELL 3 — 0:10–0:13 — CHARACTER + SHOP PROOF
+Visual:
+- 鸡哥 presents the product at the referenced shop entrance.
+- Show the product and shop in the same composition.
+- Add temporary draft information:
+  “鸡哥猪肠粉”
+  “[示范地点：请发布前填写真实地址]”
+  “[示范营业时间：请发布前填写真实时间]”
+- Never present the placeholders as verified business information.
+Audio:
+- Warm shop ambience; music stays below the voice.
+Dialogue:
+[warmly] “鸡哥猪肠粉，来店里找我！”
+Subtitle:
+“鸡哥猪肠粉，来店里找我！”
+
+SCENE 4 — GRID CELL 4 — 0:13–0:15 — CTA + NON-HALAL DISCLOSURE
+Visual:
+- Clean hero shot of the referenced product.
+- 鸡哥 gestures toward the entrance or product.
+- Large CTA: “今天来试试”
+- Clear disclosure: “非清真食品 / NON-HALAL”
+- Keep both lines readable until the final frame.
+Audio:
+- Short appetising finish sting; no abrupt cutoff.
+Dialogue:
+[confident] “今天来试试！”
+Subtitle:
+“今天来试试！”
+
+ELEVENLABS V3 VOICE DIRECTION
+Use one consistent 鸡哥 voice. Preserve the emotional tags:
+[shouts] for the interruption, [surprised] for the product pivot, [warmly] for the shop
+invitation, and [confident] for the CTA. Keep delivery quick but intelligible. Do not add
+spoken facts that are absent from this prompt. Generate voice only after the script and
+four-scene timing are approved.
+
+SOUND DESIGN PROMPT
+Create a 15-second synchronized sound-effects bed with:
+- playful air-whooshes and fast footsteps during 0:00–0:05;
+- one clean shock-impact transition at approximately 0:05;
+- sauce-pour, plate, and subtle food-stall Foley during 0:05–0:13;
+- a short positive finish accent during 0:13–0:15.
+No realistic injury sounds, screams of pain, weapons, copyrighted melody, dominant music,
+or effects that obscure speech.
+
+MUSIC DIRECTION
+Original, copyright-safe instrumental only. Begin with fast percussive tension, then pivot
+at the product reveal into playful Malaysian street-food energy. Keep music under dialogue.
+Do not imitate a named artist, song, film score, or viral audio.
+
+NEGATIVE PROMPT
+No real violence, weapons, blood, injury, fear, harassment, unsafe food handling, invented
+price, invented discount, invented address, invented opening hours, fake award, “best”
+claim, health claim, halal logo, halal implication, altered character identity, different
+shop facade, unrelated dish, warped food, duplicated hands, unreadable text, subtitle and
+voice mismatch, three-scene storyboard, incomplete 2×2 grid, or generic slow transitions.
+
+PRE-GENERATION VALIDATION
+Before spending a video-generation run, confirm:
+1. The three reference images are loaded and visible in their correct roles.
+2. The approved real location and opening hours have replaced both placeholders, or the
+   draft remains clearly labelled and is not publishable.
+3. The advertiser confirms the exact non-halal disclosure.
+4. Four scenes exist and map exactly to the 2×2 director grid.
+5. Durations total exactly 15 seconds: 5 + 5 + 3 + 2.
+6. Spoken script, subtitles, on-screen text, and CTA agree.
+

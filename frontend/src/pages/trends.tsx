@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -17,11 +18,15 @@ import {
   RefreshCw,
 } from "lucide-react";
 import {
+  fetchTrends,
   researchTrends,
   refreshTrends,
   fetchCulturalEvents,
+  fetchCreativeSignals,
+  researchCreativeSignals,
 } from "@/services/trendsApi";
-import type { TrendItem, CulturalEvent } from "@/services/trendsApi";
+import type { CreativeTrendSignal, TrendItem, CulturalEvent } from "@/services/trendsApi";
+import type { TrendBrief } from "@/services/session";
 import { useAuth } from "@/hooks/useAuth";
 
 gsap.registerPlugin(useGSAP);
@@ -126,9 +131,7 @@ interface TrendCardProps {
 }
 
 function TrendCard({ item }: TrendCardProps) {
-  const views = item.engagement_metrics?.views ?? 0;
-  const likes = item.engagement_metrics?.likes ?? 0;
-  const velocity = views > 0 ? Math.min(Math.round((likes / views) * 100 * 10), 99) : 0;
+  const views = item.engagement_metrics?.views;
   const previewUrl = getYouTubeThumbnail(item.url);
   const [previewFailed, setPreviewFailed] = useState(false);
   const showPreview = Boolean(previewUrl) && !previewFailed;
@@ -161,9 +164,11 @@ function TrendCard({ item }: TrendCardProps) {
               {item.cultural_event_tag.replace(/_/g, " ").toUpperCase()}
             </span>
           )}
-          <span className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm">
-            {formatCount(views)} views
-          </span>
+          {typeof views === "number" && views > 0 && (
+            <span className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm">
+              {formatCount(views)} views
+            </span>
+          )}
         </a>
       )}
 
@@ -189,29 +194,72 @@ function TrendCard({ item }: TrendCardProps) {
             {item.cultural_event_tag.replace(/_/g, " ")}
           </span>
         )}
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <span className="block text-[9px] uppercase font-bold text-text-caption/60">Views</span>
-            <span className="font-mono text-sm font-bold text-text-heading">{formatCount(views)}</span>
-          </div>
-          <div className="text-right">
-            <span className="block text-[9px] uppercase font-bold text-text-caption/60">Velocity</span>
-            <span className="font-mono text-sm font-bold text-accent-blue">+{velocity}%</span>
-          </div>
+        {typeof views === "number" && views > 0 && (
+        <div className="mb-4">
+          <span className="block text-[9px] uppercase font-bold text-text-caption/60">Views</span>
+          <span className="font-mono text-sm font-bold text-text-heading">
+            {formatCount(views)}
+          </span>
         </div>
+        )}
         <div className="flex gap-2">
           <a
             href={item.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 py-1.5 text-center rounded-lg border border-border-default text-[12px] font-semibold text-text-body hover:bg-surface-inset transition-colors flex items-center justify-center gap-1"
+            className="w-full py-1.5 text-center rounded-lg border border-border-default text-[12px] font-semibold text-text-body hover:bg-surface-inset transition-colors flex items-center justify-center gap-1"
           >
-            <ExternalLink size={11} /> {showPreview ? "Watch" : "View source"}
+            <ExternalLink size={11} /> {showPreview ? "Watch source" : "View source"}
           </a>
-          <button className="flex-1 py-1.5 rounded-lg bg-text-primary dark:bg-white text-white dark:text-text-primary text-[12px] font-semibold hover:opacity-90 transition-all active:scale-95">
-            Campaign
-          </button>
         </div>
+      </div>
+    </article>
+  );
+}
+
+interface CreativeSignalCardProps {
+  signal: CreativeTrendSignal;
+  onUseInCampaign: (signal: CreativeTrendSignal) => void;
+}
+
+function CreativeSignalCard({ signal, onUseInCampaign }: CreativeSignalCardProps) {
+  return (
+    <article className="signal-card self-start rounded-xl border border-border-default bg-surface-elevated p-5 shadow-xs retina-border">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-accent-blue">
+          {signal.signal_type.replace(/_/g, " ")}
+        </span>
+        <span className="text-[10px] capitalize text-text-caption">{signal.momentum} · {signal.confidence} confidence</span>
+      </div>
+      <h4 className="mb-2 text-sm font-bold text-text-heading">{signal.title}</h4>
+      <p className="mb-3 rounded-lg bg-surface-inset p-3 text-xs leading-relaxed text-text-body">
+        <strong className="text-text-heading">Try this: </strong>{signal.suggested_adaptation}
+      </p>
+      <details className="mb-3 rounded-lg border border-border-default">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-text-body">Why this idea</summary>
+        <div className="space-y-2 border-t border-border-default px-3 py-2 text-xs leading-relaxed text-text-caption">
+          <p>{signal.summary}</p>
+          {signal.do_not_do && <p><strong className="text-text-heading">Avoid: </strong>{signal.do_not_do}</p>}
+        </div>
+      </details>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => onUseInCampaign(signal)}
+          className="flex-1 rounded-lg bg-text-primary py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 dark:bg-white dark:text-text-primary"
+        >
+          Use in campaign
+        </button>
+        {signal.evidence_urls[0] && (
+          <a
+            href={signal.evidence_urls[0]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-lg border border-border-default px-3 py-1.5 text-xs font-semibold text-text-body hover:bg-surface-inset"
+          >
+            Evidence
+          </a>
+        )}
       </div>
     </article>
   );
@@ -228,28 +276,23 @@ function EventCard({ event }: EventCardProps) {
   const typeColor = EVENT_TYPE_COLORS[event.event_type] ?? "bg-gray-100 text-gray-700";
 
   return (
-    <div className="event-card p-4 rounded-lg bg-surface-inset border-l-4 border-accent-blue hover:bg-surface-elevated transition-colors cursor-pointer retina-border">
+    <article className="event-card rounded-xl border border-border-default bg-surface-card p-4 shadow-xs">
       <span className="text-[11px] font-bold text-accent-blue uppercase block mb-1">
         {formatDate(event.start_date)} — {formatDate(event.end_date)}
       </span>
       <h4 className="font-bold text-[14px] text-text-heading mb-2">{event.name}</h4>
-      <div className="flex flex-wrap gap-1 mb-3">
+      <div className="mb-3">
         <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${typeColor}`}>
           {event.event_type}
         </span>
-        {event.tags.slice(0, 2).map((tag) => (
-          <span key={tag} className="text-[10px] bg-surface-panel border border-border-subtle px-2 py-0.5 rounded">
-            {tag}
-          </span>
-        ))}
       </div>
       <div className="flex justify-between items-center border-t border-border-subtle pt-2">
         <span className="text-[10px] uppercase text-text-caption font-bold">
           {daysUntil > 0 ? `in ${daysUntil}d` : daysUntil === 0 ? "today" : "ongoing"}
         </span>
-        <span className="font-mono text-[14px] font-bold text-accent-blue">{event.impact_score}/100</span>
+        <span className="text-[11px] font-semibold text-text-body">Relevance {event.impact_score}</span>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -257,6 +300,7 @@ function EventCard({ event }: EventCardProps) {
 
 export default function DashboardTrends() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   const { user } = useAuth();
   const ownerEmail = user?.profile?.email ?? "";
@@ -275,16 +319,12 @@ export default function DashboardTrends() {
 
   const [isResearching, setIsResearching] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [creativeSignals, setCreativeSignals] = useState<CreativeTrendSignal[]>([]);
+  const [signalMessage, setSignalMessage] = useState<string | null>(null);
+  const [isSignalResearching, setIsSignalResearching] = useState(false);
 
   const allItems = Object.values(trendsData).flat();
   const filteredItems = platform ? (trendsData[platform] ?? []) : allItems;
-
-  const synergyEvent = events.find((ev) =>
-    allItems.some((item) => item.cultural_event_tag === ev.name.toLowerCase().replace(/\s+/g, "_"))
-  );
-  const synergyItems = synergyEvent
-    ? allItems.filter((i) => i.cultural_event_tag === synergyEvent.name.toLowerCase().replace(/\s+/g, "_"))
-    : [];
 
   const handleResearch = useCallback(async () => {
     setIsResearching(true);
@@ -309,20 +349,24 @@ export default function DashboardTrends() {
     setIsLoading(true);
     setError(null);
     try {
-      const [trendsRes, eventsRes] = await Promise.all([
-        researchTrends(ownerEmail, eventMarket, platform),
+      const [trendsRes, eventsRes, signalsRes] = await Promise.all([
+        fetchTrends(platform || undefined, eventMarket, 30, ownerEmail || undefined),
         fetchCulturalEvents(eventMarket === "all" ? undefined : eventMarket, 60),
+        fetchCreativeSignals(ownerEmail, eventMarket, platform || undefined).catch((): { signals: CreativeTrendSignal[]; count: number; message?: string } => ({ signals: [], count: 0 })),
       ]);
-      setTrendsData(trendsRes.trends || {});
+      const cachedTrends = Array.isArray(trendsRes.trends) ? {} : trendsRes.trends;
+      setTrendsData(cachedTrends);
       setLastRefresh(trendsRes.last_refresh || {});
-      setResearchProvider(trendsRes.research_provider || "none");
-      setFreshness(trendsRes.freshness || "unavailable");
-      setResearchSources(trendsRes.research_sources || []);
+      setResearchProvider("cache");
+      setFreshness(Object.keys(cachedTrends).length > 0 ? "cached" : "unavailable");
+      setResearchSources([]);
       setTotalItems(trendsRes.total_items || 0);
       setEmptyMessage(trendsRes.message ?? null);
       setEvents(eventsRes.events || []);
+      setCreativeSignals(signalsRes.signals || []);
+      setSignalMessage(signalsRes.message ?? null);
     } catch {
-      setError("Failed to load trends. Data may be outdated or unavailable.");
+      setError("Failed to load saved trend research. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -342,6 +386,32 @@ export default function DashboardTrends() {
     }
   }, [ownerEmail, eventMarket, loadData]);
 
+  const handleResearchCreativeSignals = useCallback(async () => {
+    setIsSignalResearching(true);
+    setError(null);
+    try {
+      const response = await researchCreativeSignals(ownerEmail, eventMarket, platform || undefined);
+      setCreativeSignals(response.signals || []);
+      setSignalMessage(response.message ?? null);
+    } catch {
+      setError("Creative signal research could not verify any evidence-backed ideas right now.");
+    } finally {
+      setIsSignalResearching(false);
+    }
+  }, [ownerEmail, eventMarket, platform]);
+
+  const handleUseSignalInCampaign = useCallback((signal: CreativeTrendSignal) => {
+    const trendBrief: TrendBrief = {
+      signalId: signal.id,
+      title: signal.title,
+      signalType: signal.signal_type,
+      suggestedAdaptation: signal.suggested_adaptation,
+      doNotDo: signal.do_not_do,
+      evidenceUrls: signal.evidence_urls,
+    };
+    navigate("/dashboard/new", { state: { trendBrief } });
+  }, [navigate]);
+
   useEffect(() => { loadData(); }, [loadData]);
 
   useGSAP(() => {
@@ -360,47 +430,34 @@ export default function DashboardTrends() {
   }, { scope: containerRef, dependencies: [isLoading, filteredItems.length, events.length] });
 
   return (
-    <div ref={containerRef} className="min-h-screen bg-background p-8 font-hanken">
-      <div className="max-w-[1200px] mx-auto space-y-8">
+    <div ref={containerRef} className="min-h-screen bg-gradient-to-b from-surface-inset/30 via-background to-background p-6 font-hanken">
+      <div className="max-w-[1200px] mx-auto space-y-6">
 
         {/* ── Hero Header ────────────────────────────────────────────────── */}
         <section className="hero-section">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-2">
             <span className="bg-text-primary text-white dark:bg-white dark:text-text-primary px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase">
-              Live Feed
+              {freshness === "fresh" ? "Updated" : "Saved"}
             </span>
             <span className="text-text-caption text-[12px]">
               {freshness === "fresh"
-                ? `Research fresh • ${researchProvider.replace("_", " ")}`
+                ? `${totalItems} ideas found with ${researchProvider.replace("_", " ")}`
                 : freshness === "cached"
-                  ? `Showing cached research • ${researchProvider.replace("_", " ")}`
-                  : "Research temporarily unavailable"}
+                  ? `${totalItems} saved ideas`
+                  : "No saved ideas"}
             </span>
             {researchSources.length > 0 && (
               <span className="text-text-caption text-[11px]">{researchSources.length} sources</span>
             )}
           </div>
 
-          <h2 className="text-xl font-bold tracking-tight text-text-heading mb-2">
-            {synergyEvent
-              ? `Trend Synergy: ${synergyEvent.name} × Social Content`
-              : "Trend Intelligence Dashboard"}
-          </h2>
+          <h1 className="mb-1 text-[24px] font-semibold tracking-tight text-text-heading">Content ideas</h1>
 
-          {synergyEvent ? (
-            <p className="text-label-ui text-text-caption max-w-2xl mb-5">
-              Our engine detected {synergyItems.length} trending content piece
-              {synergyItems.length !== 1 ? "s" : ""} overlapping with{" "}
-              <strong className="text-text-heading">{synergyEvent.name}</strong>.
-              Ads blending this theme show higher engagement in the Malaysian market.
-            </p>
-          ) : (
-            <p className="text-label-ui text-text-caption max-w-2xl mb-5">
-              {totalItems > 0
-                ? `${totalItems} trending pieces scraped across TikTok, Instagram, YouTube and Facebook Ads.`
-                : "Trend research is unavailable. Cached data may be shown when available."}
-            </p>
-          )}
+          <p className="mb-4 max-w-2xl text-sm text-text-caption">
+            {totalItems > 0
+              ? "Find timely inspiration and review the original source before using it."
+              : "Find timely inspiration for your next ad."}
+          </p>
 
           <div className="flex gap-3">
             <button
@@ -409,7 +466,7 @@ export default function DashboardTrends() {
               className="bg-text-primary text-white dark:bg-white dark:text-text-primary px-5 py-2 rounded-lg font-semibold text-[14px] hover:opacity-90 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Sparkles size={16} className={isResearching ? "animate-spin" : ""} />
-              {isResearching ? "Researching…" : "Research Trends"}
+              {isResearching ? "Finding ideas..." : "Find ideas"}
             </button>
             <button
               onClick={handleRefresh}
@@ -417,7 +474,7 @@ export default function DashboardTrends() {
               className="border border-border-default bg-surface-elevated text-text-body px-5 py-2 rounded-lg font-semibold text-[14px] hover:bg-surface-inset transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
-              {isRefreshing ? "Refreshing…" : "Refresh Cache"}
+              {isRefreshing ? "Refreshing..." : "Refresh"}
             </button>
           </div>
         </section>
@@ -431,18 +488,16 @@ export default function DashboardTrends() {
         )}
 
         {/* ── Event Calendar (full width) ─────────────────────────────────── */}
-        <div className="bg-surface-elevated border border-border-default rounded-xl p-6 retina-border shadow-xs">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+        <section className="bg-surface-elevated border border-border-default rounded-2xl p-5 retina-border shadow-xs">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-5">
             <div>
               <h3 className="font-bold text-base text-text-heading flex items-center gap-2">
                 <Calendar size={18} className="text-accent-blue" />
-                Contextual Event Calendar
+                Upcoming moments
               </h3>
               <p className="text-[12px] text-text-caption mt-1 flex items-center gap-1">
                 <MapPin size={11} />
-                Next 60 days • {MARKET_OPTIONS.find(m => m.value === eventMarket)?.flag}{" "}
-                {MARKET_OPTIONS.find(m => m.value === eventMarket)?.label ?? eventMarket}
-                {eventMarket !== "all" && " + Global"}
+                Next 60 days in {MARKET_OPTIONS.find(m => m.value === eventMarket)?.label ?? eventMarket}
               </p>
             </div>
             <select
@@ -452,7 +507,7 @@ export default function DashboardTrends() {
             >
               {MARKET_OPTIONS.map((m) => (
                 <option key={m.value} value={m.value}>
-                  {m.flag} {m.label}
+                  {m.label}
                 </option>
               ))}
             </select>
@@ -473,52 +528,49 @@ export default function DashboardTrends() {
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* ── Synergy Insight ─────────────────────────────────────────────── */}
-        {synergyEvent && synergyItems.length > 0 && (
-          <div className="synergy-card relative bg-surface-elevated border-2 border-accent-blue/20 rounded-xl p-6 overflow-hidden retina-border shadow-xs">
-            <div className="absolute top-0 left-0 w-1 h-full bg-accent-blue" />
-            <div className="flex items-start gap-6 pl-2">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <Sparkles size={16} className="text-accent-blue" />
-                  <h4 className="font-bold text-sm text-accent-blue">
-                    Detected Synergy: "{synergyEvent.name} × Content"
-                  </h4>
-                </div>
-                <p className="text-label-ui text-text-caption mb-5">
-                  {synergyItems.length} trending piece{synergyItems.length !== 1 ? "s" : ""} overlap
-                  with this cultural event. High probability of engagement for ads blending these themes.
-                </p>
-                <div className="flex gap-3">
-                  <a
-                    href="/dashboard/generate"
-                    className="bg-text-primary text-white dark:bg-white dark:text-text-primary px-4 py-2 rounded-lg text-[13px] font-semibold hover:opacity-90 transition-all flex items-center gap-2 active:scale-95"
-                  >
-                    Generate Idea <span aria-hidden>→</span>
-                  </a>
-                  <button className="text-text-caption hover:text-text-heading text-[13px] font-semibold flex items-center gap-1 transition-colors">
-                    Save Insight
-                  </button>
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="font-mono text-[28px] font-extrabold text-accent-blue">
-                  +{synergyItems.length * 8}%
-                </div>
-                <div className="text-[10px] uppercase font-bold text-text-caption">Velocity</div>
-              </div>
+        {/* ── Creative Trend Signals ─────────────────────────────────────── */}
+        <section>
+          <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <h3 className="flex items-center gap-2 text-base font-bold text-text-heading">
+                <Sparkles size={18} className="text-accent-blue" />
+                Ad ideas
+              </h3>
+              <p className="mt-1 text-xs text-text-caption">
+                Current hooks and formats with sources you can review.
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={handleResearchCreativeSignals}
+              disabled={isSignalResearching || isLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-text-primary px-4 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-text-primary"
+            >
+              <Sparkles size={14} className={isSignalResearching ? "animate-spin" : ""} />
+              {isSignalResearching ? "Finding ideas..." : "Find ad ideas"}
+            </button>
           </div>
-        )}
+          {creativeSignals.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border-default bg-surface-elevated p-5 text-sm text-text-caption">
+              {signalMessage ?? "No saved ad ideas yet. Select Find ad ideas to get started."}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {creativeSignals.map((signal) => (
+                <CreativeSignalCard key={signal.id} signal={signal} onUseInCampaign={handleUseSignalInCampaign} />
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* ── Industry Intel ───────────────────────────────────────────────── */}
         <section>
           <div className="flex justify-between items-center mb-5">
             <h3 className="font-bold text-base text-text-heading flex items-center gap-2">
               <TrendingUp size={18} className="text-accent-blue" />
-              Industry Intel
+              Sources
               {totalItems > 0 && (
                 <span className="text-[13px] font-normal text-text-caption ml-1">
                   ({totalItems} items)

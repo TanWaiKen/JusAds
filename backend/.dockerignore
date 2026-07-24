@@ -1,27 +1,42 @@
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Secrets and local environment
+.env
+.env.*
+!.env.example
 
-# Virtual environment
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
 .venv/
 env/
 venv/
 ENV/
 
-# Testing and coverage
+# Tests, coverage, and local tooling
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
+tests/
 
-# Editor and system files
+# Runtime data (mounted as a volume in production)
+assets/
+data/
+*.log
+
+# Editor, VCS, and system files
+.git/
+.gitignore
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
 *.swp
 *.swo
 
-# Docker files
+# Docker metadata is supplied from cloud/
 Dockerfile
 .dockerignore

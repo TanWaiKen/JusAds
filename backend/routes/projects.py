@@ -267,18 +267,3 @@ async def delete_task(project_id: str, task_id: str) -> JSONResponse:
     except Exception as e:
         logger.error("Failed to delete task %s: %s", task_id, e)
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-# -- Health --------------------------------------------------------------------
-
-
-@router.get("/health")
-async def health() -> JSONResponse:
-    """Health check."""
-    store = _get_store()
-    return JSONResponse(content={
-        "status": "ok",
-        "services": {
-            "supabase": store is not None,
-        },
-    })

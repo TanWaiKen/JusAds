@@ -214,6 +214,42 @@ def delete_brand_voice(project_id: str) -> bool:
 # -----------------------------------------------------------------------------
 
 
+def isolate_vocals_from_audio(input_audio_path: str, output_audio_path: str) -> bool:
+    """Isolate spoken vocal track from input audio/video file using ffmpeg filters.
+
+    Applies bandpass filtering (80Hz-8000Hz speech range), noise reduction, and
+    loudness normalization to isolate clear vocals for voice cloning.
+    """
+    import subprocess
+    from pathlib import Path
+
+    try:
+        out_p = Path(output_audio_path)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", input_audio_path,
+            "-af", "highpass=f=80,lowpass=f=8000,afftdn=nr=12,loudnorm",
+            "-ar", "44100",
+            "-ac", "1",
+            output_audio_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0 and os.path.exists(output_audio_path):
+            logger.info("[VoiceCloneManager] Vocals isolated successfully: %s", output_audio_path)
+            return True
+        else:
+            logger.warning("[VoiceCloneManager] ffmpeg vocal isolation warning: %s. Using original audio.", result.stderr[:200])
+            import shutil
+            shutil.copy(input_audio_path, output_audio_path)
+            return True
+    except Exception as e:
+        logger.error("[VoiceCloneManager] Vocal isolation failed: %s", e)
+        return False
+
+
 def dub_segment(
     text: str,
     voice_id: Optional[str] = None,
@@ -221,54 +257,37 @@ def dub_segment(
     market: str = "malaysia",
     ethnicity: str = "malay",
     gender: str = "female",
+    emotion: Optional[str] = None,
+    speed: float = 1.0,
 ) -> Optional[str]:
-    """Generate TTS audio for a specific text segment.
+    """Generate TTS audio for a specific text segment using ElevenLabs v3 with emotion & pitch controls.
 
     Voice priority:
       1. Explicit voice_id (if provided)
       2. Project's cloned brand voice (if exists)
       3. VOICE_CONFIG lookup by (market, ethnicity, gender)
       4. DEFAULT_VOICE fallback
-
-    Args:
-        text: The text to convert to speech.
-        voice_id: Optional explicit voice ID to use.
-        project_id: Optional project ID to look up brand voice.
-        market: Market for voice selection.
-        ethnicity: Ethnicity for voice selection.
-        gender: Gender for voice selection.
-
-    Returns:
-        Path to generated audio file, or None on failure.
     """
-    if not elevenlabs:
-        logger.error("[VoiceCloneManager] ElevenLabs unavailable for dubbing")
-        return None
+    from shared.elevenlabs_utils import generate_tts
 
-    # Resolve voice_id
     resolved_voice_id = _resolve_voice_id(voice_id, project_id, market, ethnicity, gender)
+    output_path = os.path.join(
+        tempfile.gettempdir(),
+        f"dub_segment_{hash(text) % 100000}.mp3",
+    )
 
-    try:
-        audio_generator = elevenlabs.text_to_speech.convert(
-            voice_id=resolved_voice_id,
-            text=text,
-            model_id="eleven_multilingual_v2",
-        )
-
-        output_path = os.path.join(
-            tempfile.gettempdir(),
-            f"dub_segment_{hash(text) % 100000}.mp3",
-        )
-        with open(output_path, "wb") as f:
-            for chunk in audio_generator:
-                f.write(chunk)
-
-        logger.info("[VoiceCloneManager] Dubbed segment (%d chars) → %s", len(text), output_path)
+    ok = generate_tts(
+        text=text,
+        output_path=output_path,
+        voice_id=resolved_voice_id,
+        model_id="eleven_v3",
+        emotion=emotion,
+        speed=speed,
+    )
+    if ok:
+        logger.info("[VoiceCloneManager] Dubbed segment (%d chars, emotion=%s) → %s", len(text), emotion or "default", output_path)
         return output_path
-
-    except Exception as e:
-        logger.error("[VoiceCloneManager] Dub segment failed: %s", e)
-        return None
+    return None
 
 
 def full_reread(
@@ -278,50 +297,30 @@ def full_reread(
     market: str = "malaysia",
     ethnicity: str = "malay",
     gender: str = "female",
+    emotion: Optional[str] = None,
+    speed: float = 1.0,
 ) -> Optional[str]:
-    """Generate full TTS audio for an entire script (voice clone re-read).
-
-    Uses the cloned brand voice if available, otherwise falls back to
-    configured voices.
-
-    Args:
-        script: Full script text to convert.
-        voice_id: Optional explicit voice ID.
-        project_id: Optional project for brand voice lookup.
-        market: Market context.
-        ethnicity: Ethnicity context.
-        gender: Gender context.
-
-    Returns:
-        Path to generated audio file, or None on failure.
-    """
-    if not elevenlabs:
-        logger.error("[VoiceCloneManager] ElevenLabs unavailable for full re-read")
-        return None
+    """Generate full TTS audio for an entire script (voice clone re-read) via ElevenLabs v3 with emotion control."""
+    from shared.elevenlabs_utils import generate_tts
 
     resolved_voice_id = _resolve_voice_id(voice_id, project_id, market, ethnicity, gender)
+    output_path = os.path.join(
+        tempfile.gettempdir(),
+        f"full_reread_{hash(script) % 100000}.mp3",
+    )
 
-    try:
-        audio_generator = elevenlabs.text_to_speech.convert(
-            voice_id=resolved_voice_id,
-            text=script,
-            model_id="eleven_multilingual_v2",
-        )
-
-        output_path = os.path.join(
-            tempfile.gettempdir(),
-            f"full_reread_{hash(script) % 100000}.mp3",
-        )
-        with open(output_path, "wb") as f:
-            for chunk in audio_generator:
-                f.write(chunk)
-
-        logger.info("[VoiceCloneManager] Full re-read (%d chars) → %s", len(script), output_path)
+    ok = generate_tts(
+        text=script,
+        output_path=output_path,
+        voice_id=resolved_voice_id,
+        model_id="eleven_v3",
+        emotion=emotion,
+        speed=speed,
+    )
+    if ok:
+        logger.info("[VoiceCloneManager] Full re-read (%d chars, emotion=%s) → %s", len(script), emotion or "default", output_path)
         return output_path
-
-    except Exception as e:
-        logger.error("[VoiceCloneManager] Full re-read failed: %s", e)
-        return None
+    return None
 
 
 # -----------------------------------------------------------------------------

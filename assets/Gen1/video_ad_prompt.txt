@@ -1,0 +1,60 @@
+JUSADS VIDEO GENERATION PROMPT — TIGER SUGAR OUTLET OPENING
+
+GOAL
+Create a 15-second 9:16 TikTok / Instagram Reels ad for the Tiger Sugar Brown
+Sugar Fresh Milk outlet-opening campaign described in Prompt.txt.
+
+REFERENCE ASSETS
+- Tiger_Sugar_logo.jpeg = LOGO REFERENCE. Preserve the supplied logo exactly.
+- Boba Infographic.jpg = PRODUCT / STYLE REFERENCE. Preserve the cup, brown-sugar
+  streaks, pearls, branding, and warm editorial colour direction.
+
+AUDIENCE AND STYLE
+Chinese Malaysian Gen Z students. Trendy, photographic, energetic, and
+ASMR-inspired. Use Malaysian Mandarin copy with concise Simplified Chinese
+subtitles. Do not imitate a named creator, song, or copyrighted trend.
+
+DIRECTOR GRID
+Use exactly one complete 2×2 grid with four scenes. Script and generated video
+must follow the grid one-to-one. Total duration: 15 seconds.
+
+SCENE 1 — 0:00–0:05 — ASMR HOOK
+- Extreme macro of brown sugar streaking down the inside of the referenced cup.
+- Fast first-frame movement; clean liquid and pearl Foley.
+- Voice: [excited] “这个周末，喝一杯还不够？”
+- Subtitle: “这个周末，喝一杯还不够？”
+
+SCENE 2 — 0:05–0:10 — PRODUCT + SOCIAL MOMENT
+- Match-cut to the full drink, then young adult friends photographing their cups.
+- Preserve the exact drink identity and supplied logo.
+- Voice: [playfully] “Tiger Sugar 来到 Sunway Pyramid！”
+- Subtitle: “Tiger Sugar 来到 Sunway Pyramid！”
+
+SCENE 3 — 0:10–0:13 — OFFER
+- Clear product hero frame with readable draft offer:
+  “开幕优惠：买一送一”
+  “仅限本周末”
+- Voice: [energetic] “开幕买一送一，只限这个周末！”
+- Subtitle must match exactly.
+
+SCENE 4 — 0:13–0:15 — CTA
+- Logo, product, and CTA: “约朋友一起来”
+- Voice: [confident] “约朋友一起来！”
+- Hold CTA and logo until the final frame.
+
+AUDIO
+Original copyright-safe upbeat instrumental. Use close ASMR sugar, ice, cup,
+and straw sounds. Music must remain below speech. Preserve ElevenLabs V3 emotion
+tags in the voice script.
+
+NEGATIVE PROMPT
+No invented prices, dates, outlet unit number, opening hours, drink ingredients,
+health claims, “best” claims, fake crowd size, altered logo, warped cup, duplicate
+pearls, unreadable text, mismatched subtitles, three-scene storyboard, or
+incomplete grid.
+
+REQUIRED CHECK BEFORE GENERATION
+Confirm the advertiser has approved the Sunway Pyramid location, Buy 1 Free 1
+terms, eligible drinks, exact promotional dates, and redemption conditions.
+Until confirmed, this remains a draft and must not be published.
+

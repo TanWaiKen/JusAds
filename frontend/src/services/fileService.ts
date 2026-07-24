@@ -7,7 +7,7 @@
  *   3. Return the S3 key for reference in other API calls
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+import { API_BASE, getApiError } from "@/lib/apiConfig";
 
 interface UploadUrlResponse {
   upload_url: string;
@@ -57,8 +57,7 @@ export async function uploadFileToS3(
   });
 
   if (!urlRes.ok) {
-    const err = await urlRes.json().catch(() => ({ error: "Failed to get upload URL" }));
-    throw new Error(err.error ?? `Upload URL request failed (${urlRes.status})`);
+    throw new Error(await getApiError(urlRes, "Failed to get upload URL"));
   }
 
   const data: UploadUrlResponse = await urlRes.json();

@@ -1,11 +1,11 @@
 """
 search_tools.py
 ───────────────
-Lightweight Google Search integration for generation agents.
+Creative-search integration for generation agents.
 
-Uses Gemini's built-in GoogleSearch tool (free, fast) for creative research.
-This is the standard search tool for all generation agents — Tavily is reserved
-for compliance-only deep research.
+Uses Gemini's built-in GoogleSearch tool as the primary provider, with Tavily
+basic search as a guarded fallback when Google Search fails or returns no
+context.
 
 Requirements: 4.1–4.7, 5.1–5.4, 11.1–11.5
 """
@@ -17,6 +17,7 @@ from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
 
 from shared.clients import gemini
 from shared.config import MODEL_TEXT
+from shared.tavily_guard import tavily_creative_search
 
 logger = logging.getLogger(__name__)
 
@@ -154,20 +155,23 @@ async def search_creative_context(
     query: str,
     market: str = "malaysia",
     language: str = "en",
+    task_id: str = "",
 ) -> str:
-    """Execute a GoogleSearch query and return summarized context.
+    """Search for current creative context with provider fallback.
 
-    Uses Gemini's built-in GoogleSearch tool to find current trends,
-    competitive context, and creative inspiration for ad generation.
+    Uses Gemini's built-in GoogleSearch tool first. If it raises (including
+    ``429 RESOURCE_EXHAUSTED``) or returns no text, Tavily basic search is used
+    when a task ID is available.
 
     Args:
         query: Search query derived from ad brief.
         market: Target market for localized results.
         language: Target language for query localization.
+        task_id: Generation task ID used to audit Tavily fallback usage.
 
     Returns:
         Summarized search findings as a string for prompt injection.
-        Empty string on failure (graceful degradation).
+        Empty string only when both providers fail (graceful degradation).
     """
     if not query or not query.strip():
         return ""
@@ -205,9 +209,26 @@ async def search_creative_context(
             )
             return result_text
 
-        logger.info("[SearchTools] GoogleSearch returned empty result")
-        return ""
+        logger.info("[SearchTools] GoogleSearch returned empty result; trying Tavily")
 
     except Exception as e:
-        logger.warning("[SearchTools] GoogleSearch failed (graceful degradation): %s", e)
+        logger.warning("[SearchTools] GoogleSearch failed; trying Tavily fallback: %s", e)
+
+    if not task_id:
+        logger.warning(
+            "[SearchTools] Tavily fallback skipped because no task_id was provided"
+        )
         return ""
+
+    fallback_text = tavily_creative_search(
+        query=localized_query,
+        task_id=task_id,
+        market=market,
+        language=language,
+    )
+    if fallback_text:
+        logger.info(
+            "[SearchTools] Tavily fallback returned %d chars of context",
+            len(fallback_text),
+        )
+    return fallback_text

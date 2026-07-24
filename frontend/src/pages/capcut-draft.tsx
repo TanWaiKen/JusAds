@@ -3,9 +3,9 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { Download, FileVideo, Image, Loader2, CheckCircle2, Info, FolderOpen } from "lucide-react";
 
-gsap.registerPlugin(useGSAP);
+import { API_BASE } from "@/lib/apiConfig";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+gsap.registerPlugin(useGSAP);
 
 interface DraftResult {
   success: boolean;

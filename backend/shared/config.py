@@ -13,8 +13,17 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-# Load .env from backend/ directory
-load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+# Load local development defaults without overriding deployment-provided values.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+
+# -- Runtime environment -------------------------------------------------------
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
+_default_origins = "http://localhost:5173,http://127.0.0.1:5173" if ENVIRONMENT != "production" else ""
+CORS_ORIGINS: tuple[str, ...] = tuple(
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("CORS_ORIGINS", _default_origins).split(",")
+    if origin.strip()
+)
 
 # -- Google Vertex AI / Gemini -------------------------------------------------
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")

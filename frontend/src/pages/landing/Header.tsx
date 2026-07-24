@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, Menu, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/components/theme-provider";
@@ -15,7 +16,7 @@ export interface AuthAction {
 // ─── Navigation Items ─────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { href: "#about", label: "About Us" },
+  { href: "#sample-result", label: "Sample result" },
   { href: "#how-it-works", label: "How it works" },
   { href: "#features", label: "Features" },
   { href: "#pricing", label: "Pricing" },
@@ -28,6 +29,7 @@ export default function Header({ onAuthAction }: { onAuthAction: AuthAction }) {
   const navigate = useNavigate();
   const { user, picture, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const { status, isAuthenticated } = onAuthAction;
   const name = user?.profile?.name ?? "";
@@ -44,7 +46,7 @@ export default function Header({ onAuthAction }: { onAuthAction: AuthAction }) {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border-subtle bg-background/85 backdrop-blur-md">
-      <nav className="mx-auto flex max-w-[1200px] items-center justify-between px-6 py-4 md:px-10">
+      <nav className="relative mx-auto flex max-w-[1200px] items-center justify-between px-5 py-3 md:px-10 md:py-4">
         <Link to="/" className="flex items-center gap-2 group">
           <img src="/logo-black.png" alt="JusAds Logo" className="h-8 w-auto block dark:hidden group-hover:scale-105 transition-transform duration-200" />
           <img src="/logo-white.png" alt="JusAds Logo" className="h-8 w-auto hidden dark:block group-hover:scale-105 transition-transform duration-200" />
@@ -59,7 +61,7 @@ export default function Header({ onAuthAction }: { onAuthAction: AuthAction }) {
           ))}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="hidden items-center gap-3 md:flex">
           <button
             onClick={toggleTheme}
             className="rounded-md p-2 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] hover:bg-surface-inset transition-colors cursor-pointer"
@@ -80,7 +82,7 @@ export default function Header({ onAuthAction }: { onAuthAction: AuthAction }) {
                 Log In
               </button>
               <button onClick={handleAuthAction} className="inline-flex items-center bg-[#171717] hover:bg-[#333] active:scale-[0.98] text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 px-4 py-2 rounded-md text-sm font-medium transition-premium brutalist-shadow-subtle dark:shadow-none cursor-pointer">
-                Try for free
+                Create free ad
               </button>
             </>
           )}
@@ -101,6 +103,41 @@ export default function Header({ onAuthAction }: { onAuthAction: AuthAction }) {
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsMenuOpen((open) => !open)}
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border-default text-text-heading md:hidden"
+          aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={isMenuOpen}
+        >
+          {isMenuOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
+        </button>
+
+        {isMenuOpen && (
+          <div className="absolute left-4 right-4 top-[calc(100%+8px)] rounded-xl border border-border-default bg-surface-card p-3 shadow-xl md:hidden">
+            <div className="flex flex-col">
+              {NAV_ITEMS.map(({ href, label }) => (
+                <a key={href} href={href} onClick={() => setIsMenuOpen(false)} className="flex min-h-11 items-center rounded-lg px-3 text-base font-medium text-text-heading hover:bg-surface-inset">
+                  {label}
+                </a>
+              ))}
+              <div className="my-2 border-t border-border-subtle" />
+              <button type="button" onClick={toggleTheme} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-base font-medium text-text-heading hover:bg-surface-inset">
+                {theme === "dark" ? <Sun className="h-5 w-5" aria-hidden="true" /> : <Moon className="h-5 w-5" aria-hidden="true" />}
+                {theme === "dark" ? "Use light mode" : "Use dark mode"}
+              </button>
+              <button type="button" onClick={handleAuthAction} className="mt-2 min-h-12 rounded-lg bg-[#171717] px-4 text-base font-semibold text-white dark:bg-white dark:text-black">
+                {isAuthenticated ? "Open my workspace" : "Create my first free ad"}
+              </button>
+              {!isAuthenticated && (
+                <button type="button" onClick={handleAuthAction} className="min-h-11 text-sm font-semibold text-text-body">
+                  Already have an account? Log in
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </nav>
     </header>
   );

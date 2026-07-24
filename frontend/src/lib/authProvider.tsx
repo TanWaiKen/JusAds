@@ -28,6 +28,31 @@ export interface AuthContextValue {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
+const DEVELOPMENT_BYPASS_EMAIL = "developer@jusads.com";
+const DEVELOPMENT_SESSION_KEY = "jusads-development-user";
+
+function createDevelopmentUser(email: string): User {
+  return {
+    profile: {
+      sub: "local-development-user",
+      email,
+      email_verified: true,
+      name: "JusAds Developer",
+    },
+    expired: false,
+  } as User;
+}
+
+function getDevelopmentSessionUser(): User | null {
+  if (!import.meta.env.DEV) return null;
+  try {
+    const email = window.sessionStorage.getItem(DEVELOPMENT_SESSION_KEY);
+    return email === DEVELOPMENT_BYPASS_EMAIL ? createDevelopmentUser(email) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // Cognito maps Google's `picture` claim to the `profile` field in the ID token.
@@ -44,23 +69,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // Rehydrate session on mount and subscribe to UserManager events
+  // Rehydrate the real OIDC session and subscribe to UserManager events.
   useEffect(() => {
-    // Check if there is a mock user in localStorage first
-    const mockUserStr = localStorage.getItem("mock_user");
-    if (mockUserStr) {
-      try {
-        const mockUser = JSON.parse(mockUserStr);
-        if (mockUser && mockUser.expires_at > Math.floor(Date.now() / 1000)) {
-          setUser(mockUser);
-          setStatus("authenticated");
-          return;
-        } else {
-          localStorage.removeItem("mock_user");
-        }
-      } catch {
-        localStorage.removeItem("mock_user");
-      }
+    const developmentUser = getDevelopmentSessionUser();
+    if (developmentUser) {
+      setUser(developmentUser);
+      setStatus("authenticated");
+      return;
     }
 
     userManager.getUser().then((existingUser) => {
@@ -123,45 +138,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginWithEmail = useCallback(async (email: string) => {
-    setStatus("loading");
-    await new Promise(resolve => setTimeout(resolve, 300));
-    const mockUser = {
-      id_token: "mock-id-token",
-      access_token: "mock-access-token",
-      token_type: "Bearer",
-      scope: "openid profile email",
-      profile: {
-        sub: "mock-sub-" + Math.random().toString(36).substring(7),
-        iss: "mock-issuer",
-        aud: "mock-client-id",
-        exp: Math.floor(Date.now() / 1000) + 86400,
-        iat: Math.floor(Date.now() / 1000),
-        name: email.split("@")[0].toUpperCase(),
-        email: email,
-        profile: "",
-      },
-      expires_at: Math.floor(Date.now() / 1000) + 86400,
-      state: null,
-    } as unknown as User;
-
-    setUser(mockUser);
-    setStatus("authenticated");
-    localStorage.setItem("mock_user", JSON.stringify(mockUser));
-    toast.success("Bypassed securely using " + email);
+    const normalizedEmail = email.trim().toLowerCase();
+    if (import.meta.env.DEV && normalizedEmail === DEVELOPMENT_BYPASS_EMAIL) {
+      window.sessionStorage.setItem(DEVELOPMENT_SESSION_KEY, normalizedEmail);
+      setUser(createDevelopmentUser(normalizedEmail));
+      setStatus("authenticated");
+      return;
+    }
+    await userManager.signinRedirect({
+      extraQueryParams: { login_hint: normalizedEmail },
+    });
   }, []);
 
   const logout = useCallback(async () => {
     setIsLoggingOut(true);
     await new Promise(resolve => setTimeout(resolve, 600));
+    if (import.meta.env.DEV) {
+      window.sessionStorage.removeItem(DEVELOPMENT_SESSION_KEY);
+    }
     setUser(null);
     setStatus("unauthenticated");
-    localStorage.removeItem("mock_user");
     await userManager.removeUser();
-    try {
-      await signOutRedirect();
-    } catch {
-      // Ignore Cognito redirect errors on mock bypass
-    }
+    await signOutRedirect();
   }, []);
 
   const handleCallback = useCallback(async () => {

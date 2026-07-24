@@ -11,6 +11,16 @@ const PREFILL_KEY = "jusads_prefill";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export interface TrendBrief {
+  /** The persisted creative trend signal selected by the user. */
+  signalId: string;
+  title: string;
+  signalType: string;
+  suggestedAdaptation: string;
+  doNotDo: string;
+  evidenceUrls: string[];
+}
+
 export interface PrefillData {
   /** The prompt text to populate in the chatbot input */
   prompt: string;
@@ -18,6 +28,8 @@ export interface PrefillData {
   referenceImageUrl?: string;
   /** Optional human-readable label for the reference image */
   referenceImageLabel?: string;
+  /** Optional source-backed creative signal that informed the prompt. */
+  trendBrief?: TrendBrief;
 }
 
 // ─── Write ───────────────────────────────────────────────────────────────────

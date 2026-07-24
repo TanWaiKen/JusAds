@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import type { PipelineState, NodeType } from "@/components/workspace/canvas/graphModel";
 import { useCanvasGraph } from "@/components/workspace/canvas/useCanvasGraph";
 import { usePipelineRunner } from "@/components/workspace/canvas/usePipelineRunner";
-import { savePipeline } from "@/services/taskApi";
+import { getTask, savePipeline } from "@/services/taskApi";
 import { CanvasViewport } from "@/components/workspace/canvas/CanvasViewport";
 import { InspectorPanel } from "@/components/workspace/canvas/InspectorPanel";
 import { CanvasToolbar } from "@/components/workspace/canvas/CanvasToolbar";
@@ -34,9 +34,14 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
 
   // Auto-switch to Inspector tab when a node is selected
   useEffect(() => {
-    if (state.selectedNodeId) {
-      setActiveTab("inspector");
-    }
+    if (!state.selectedNodeId) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setActiveTab("inspector");
+    });
+    return () => {
+      active = false;
+    };
   }, [state.selectedNodeId]);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -56,7 +61,13 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   // Guided generation can update a node before the chat panel emits its local
   // output callback; deriving the gallery here prevents stale counts/previews.
   useEffect(() => {
-    setOutputs(mapGeneratedAds(state.pipeline));
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setOutputs(mapGeneratedAds(state.pipeline));
+    });
+    return () => {
+      active = false;
+    };
   }, [state.pipeline]);
 
   // A render can finish while a previous server version still has a pending
@@ -145,16 +156,32 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
         }
       }
 
+      const [persistedAds, persistedTask] = await Promise.all([
+        getGeneratedAds(projectId, taskId),
+        getTask(projectId, taskId),
+      ]);
+      const persistedPipeline = persistedTask.type === "generation"
+        ? persistedTask.pipeline_state
+        : null;
+      const hasFinalVideo = persistedAds.some(
+        (ad) => ad.mediaType === "video" && /\/final_video\.mp4(?:\?|$)/.test(ad.publicUrl ?? "")
+      );
+
+      if (persistedPipeline) {
+        dispatch({ type: "SET_PIPELINE", pipeline: persistedPipeline });
+      }
+
       if (renderError) {
         toast.error(`Video render error: ${renderError}`);
-      } else if (completedPipeline) {
+      } else if (hasFinalVideo) {
         // The completed state removes video_plan and adds the final video. Keep
         // the local view in sync with persistence before releasing the gate.
         setVideoPlan(null);
         setActiveTab("outputs");
-        const persistedAds = await getGeneratedAds(projectId, taskId);
-        if (persistedAds.length > 0) setOutputs(persistedAds);
+        setOutputs(persistedAds);
         toast.success("Video rendered successfully!");
+      } else if (completedPipeline) {
+        toast.error("Video render completed without a persisted final video.");
       } else {
         toast.error("Video render ended before the final video was confirmed.");
       }
@@ -248,7 +275,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   );
 
   const handleConnect = useCallback(
-    (_nodeId: string) => {
+    () => {
       // Connect-to mode placeholder
     },
     []
@@ -307,7 +334,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              Agent Chatbot
+              Ad helper
             </button>
             <button
               onClick={() => setActiveTab("outputs")}
@@ -317,7 +344,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              Outputs{outputs.length > 0 ? ` (${outputs.length})` : ""}
+              My results{outputs.length > 0 ? ` (${outputs.length})` : ""}
             </button>
             <button
               onClick={() => setActiveTab("inspector")}
@@ -327,12 +354,13 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              Inspector
+              Details
             </button>
             <button
               onClick={() => setIsPanelMaximized((prev) => !prev)}
               className="px-3 py-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer border-b-2 border-transparent"
               title={isPanelMaximized ? "Restore panel" : "Expand panel"}
+              aria-label={isPanelMaximized ? "Restore panel size" : "Expand panel"}
             >
               {isPanelMaximized ? "⇥" : "⇤"}
             </button>

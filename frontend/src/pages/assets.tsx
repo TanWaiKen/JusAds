@@ -125,10 +125,10 @@ export default function DashboardAssets() {
         <div className="mx-auto flex w-full max-w-6xl items-start justify-between gap-6">
           <div>
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Creative library</p>
-            <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
+            <h1 className="flex items-center gap-2 font-semibold tracking-tight text-foreground">
               <FolderOpen size={23} className="text-primary" />
               Assets
-            </h2>
+            </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
               Generated creatives and reference files, in one place.
             </p>

@@ -55,7 +55,7 @@ interface ChatbotPanelProps {
 
 const WELCOME_MESSAGE: Message = {
   sender: "agent",
-  text: "Hello! I am your AI Ad Generation Agent chatbot. 🤖\n\nI can generate text copy, image banners, voiceover audio, or video ads for you! Just tell me what you want to create (e.g. *'Generate a TikTok video and text caption ad for a sports watch'*), and I will build the node pipeline on the canvas and run the local generator tools for you.\n\nYou can also upload reference assets below for me to read!",
+  text: "Hey! I'm your AI Ad Creator. 🎬\n\nTell me what you'd like to promote and I'll design the ad for you. Here are some ways to start:\n\n• *\"Create a TikTok video ad for my boba shop called Tiger Sugar\"*\n• *\"I need an Instagram post for a Hari Raya sale — 30% off\"*\n• *\"Make a Shopee product video for baby diapers, RM25.90\"*\n\nJust describe your product or paste your idea — even one sentence works! I'll ask if I need more details.\n\n💡 **Tip:** Upload a product photo or brand logo below for better results.",
   timestamp: new Date(),
 };
 
@@ -402,7 +402,10 @@ export function ChatbotPanel({
     setReferences([]);
     setStreamError(false);
     setGenStatus(null);
-    setVideoPlan(null);
+    // Don't clear videoPlan here — it will be cleared by the server when
+    // the final pipeline_state arrives without video_plan (after rendering),
+    // or replaced by a new plan event. This keeps the storyboard visible
+    // during continuation commands like "continue" or "render it".
     setMessages((prev) => [
       ...prev,
       {
@@ -450,6 +453,13 @@ export function ChatbotPanel({
           receivedFinalState = true;
           onStateUpdate(event.pipeline_state);
           setOutputs(mapGeneratedAds(event.pipeline_state));
+
+          // If the returned pipeline_state no longer contains a video_plan,
+          // clear the local storyboard (e.g. after successful video render).
+          const returnedPlan = (event.pipeline_state as unknown as Record<string, unknown>).video_plan;
+          if (!returnedPlan) {
+            setVideoPlan(null);
+          }
         }
 
         if (event.video_plan) {
@@ -568,6 +578,29 @@ export function ChatbotPanel({
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
+        {/* Starter suggestion chips — shown only when no user messages exist */}
+        {messages.length <= 1 && !loading && (
+          <div className="flex flex-wrap gap-1.5 mb-1">
+            {[
+              "Create a TikTok video ad for my product",
+              "I need an Instagram post for a sale",
+              "Make a Shopee product showcase video",
+              "Help me — what info do you need?",
+            ].map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => {
+                  setInput(suggestion);
+                  inputRef.current?.focus();
+                }}
+                className="rounded-full border border-border bg-muted/50 px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors cursor-pointer"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Uploaded reference thumbnails */}
         {references.length > 0 && (
           <div className="flex flex-wrap gap-2">
@@ -597,6 +630,7 @@ export function ChatbotPanel({
                     onClick={() => setReferences((prev) => prev.filter((_, i) => i !== idx))}
                     className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                     title={`Remove ${ref.filename}`}
+                    aria-label={`Remove ${ref.filename}`}
                   >
                     <span className="text-xs font-bold">×</span>
                   </button>
@@ -678,8 +712,9 @@ export function ChatbotPanel({
             type="button"
             disabled={loading || uploading}
             onClick={() => setShowPromptSearch((v) => !v)}
-            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50 transition-colors cursor-pointer ${showPromptSearch ? "text-primary border-primary" : ""}`}
+            className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50 transition-colors cursor-pointer ${showPromptSearch ? "text-primary border-primary" : ""}`}
             title="Search prompt templates"
+            aria-label="Find an ad idea"
           >
             <Sparkles size={16} className={showPromptSearch ? "text-primary" : "text-muted-foreground"} />
           </button>
@@ -688,8 +723,9 @@ export function ChatbotPanel({
             type="button"
             disabled={loading || uploading}
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50 transition-colors cursor-pointer"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50 transition-colors cursor-pointer"
             title="Upload reference files (images/video)"
+            aria-label="Upload a product photo or reference file"
           >
             {uploading ? (
               <Loader2 size={16} className="animate-spin text-muted-foreground" />
@@ -720,7 +756,8 @@ export function ChatbotPanel({
                 }
               }
             }}
-            placeholder={uploading ? "Uploading file..." : "Ask Anything...."}
+            placeholder={uploading ? "Uploading file..." : "Describe the ad you want..."}
+            aria-label="Describe the ad you want"
             disabled={loading || uploading}
             rows={1}
             className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 max-h-32 overflow-y-auto"
@@ -729,14 +766,15 @@ export function ChatbotPanel({
           <button
             type="submit"
             disabled={loading || uploading || !input.trim()}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/95 disabled:opacity-50 transition-colors cursor-pointer"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/95 disabled:opacity-50 transition-colors cursor-pointer"
+            aria-label="Send message"
           >
             <Send size={16} />
           </button>
         </form>
 
         <p className="text-[10px] text-muted-foreground text-center">
-          Drop files here, paste images (Ctrl+V), or type @ to reference uploaded files
+          Add a product photo for a more accurate result.
         </p>
       </div>
     </div>

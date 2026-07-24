@@ -9,13 +9,14 @@
  */
 
 import type { PipelineState } from "@/components/workspace/canvas/graphModel";
+import { API_BASE } from "@/lib/apiConfig";
 
-export const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+export { API_BASE };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /** The three supported launch platforms (Req 9.1). */
-export type TargetPlatform = "tiktok" | "instagram" | "youtube" | "shopee";
+export type TargetPlatform = "tiktok" | "instagram" | "shopee";
 
 /** Target audience for conditional cultural localization. */
 export type TargetEthnicity = "malay" | "chinese" | "indian" | "all";
@@ -102,7 +103,10 @@ export interface VideoPlan {
   brief: string;
   platform: string;
   aspectRatio: string;
-  voiceoverType?: "elevenlabs" | "omni";
+  voiceoverType?: "elevenlabs" | "music_only" | "native_omni" | "silent";
+  creativeMode?: "speaker_led" | "voiceover" | "music_first";
+  emotion?: string;
+  speed?: number;
   pipelineVersion?: string;
   sceneGridUrl?: string;
   frameUrls?: string[];
@@ -618,6 +622,7 @@ export async function submitGuidedGeneration(
         reference_urls: referenceUrls,
         target_platform: guidedInputs.platform || undefined,
         product_name: guidedInputs.product_name || undefined,
+        language: guidedInputs.language || undefined,
       }),
     }
   );
@@ -712,7 +717,22 @@ export function normalizeVideoPlan(raw: unknown): VideoPlan | undefined {
     brief: typeof record.brief === "string" ? record.brief : "",
     platform: typeof record.platform === "string" ? record.platform : "",
     aspectRatio: typeof record.aspect_ratio === "string" ? record.aspect_ratio : "9:16",
-    voiceoverType: record.voiceover_type === "omni" ? "omni" : "elevenlabs",
+    voiceoverType: record.voiceover_type === "music_only"
+      ? "music_only"
+      : record.voiceover_type === "silent"
+        ? "silent"
+        : record.voiceover_type === "native_omni" || record.voiceover_type === "omni"
+          ? "native_omni"
+          : "elevenlabs",
+    creativeMode: record.creative_mode === "speaker_led"
+      ? "speaker_led"
+      : record.creative_mode === "music_first"
+        ? "music_first"
+        : record.creative_mode === "voiceover"
+          ? "voiceover"
+          : record.voiceover_type === "music_only" || record.voiceover_type === "silent"
+            ? "music_first"
+            : "voiceover",
     pipelineVersion: typeof record.pipeline_version === "string" ? record.pipeline_version : undefined,
     sceneGridUrl,
     frameUrls,
@@ -735,6 +755,7 @@ function serializeVideoPlan(plan: VideoPlan): Record<string, unknown> {
     platform: plan.platform,
     aspect_ratio: plan.aspectRatio,
     voiceover_type: plan.voiceoverType || "elevenlabs",
+    creative_mode: plan.creativeMode || "voiceover",
     pipeline_version: plan.pipelineVersion,
     grid_url: plan.sceneGridUrl,
     frame_urls: plan.frameUrls,

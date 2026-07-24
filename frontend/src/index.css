@@ -164,23 +164,27 @@ h2 {
 }
 
 h1 {
-  font-size: 56px;
+  font-size: 36px;
   letter-spacing: -1.68px;
   margin: 32px 0;
+
   @media (max-width: 1024px) {
-    font-size: 36px;
+    font-size: 24px;
     margin: 20px 0;
   }
 }
+
 h2 {
-  font-size: 35px;
+  font-size: 24px;
   line-height: 118%;
   letter-spacing: -0.24px;
   margin: 0 0 8px;
+
   @media (max-width: 1024px) {
-    font-size: 20px;
+    font-size: 16px;
   }
 }
+
 p {
   margin: 0;
 }
@@ -207,10 +211,19 @@ code {
 
 /* Aurora gradient animation for progress bars */
 @keyframes aurora-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
 }
+
 .animate-aurora-shift {
   background-size: 200% 200%;
   animation: aurora-shift 3s ease infinite;
@@ -390,34 +403,49 @@ code {
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;}
+    @apply border-border outline-ring/50;
+  }
+
   body {
-    @apply bg-background text-foreground font-sans;}
+    @apply bg-background text-foreground font-sans;
+  }
+
   html {
-    @apply font-sans;}}
+    @apply font-sans;
+  }
+}
 
 /* Premium design classes */
-.retina-border, .shadow-retina, .shadow-as-border {
-  box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+.retina-border,
+.shadow-retina,
+.shadow-as-border {
+  box-shadow: 0px 0px 0px 1px rgba(0, 0, 0, 0.08);
 }
+
 .card-shadow {
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 10px 20px rgba(0, 0, 0, 0.04);
 }
+
 .btn-shadow {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.08);
 }
+
 .brutalist-shadow-black {
   box-shadow: 3px 3px 0px 0px rgba(0, 0, 0, 1);
 }
+
 .brutalist-shadow-subtle {
   box-shadow: 3px 3px 0px 0px rgba(0, 0, 0, 0.25);
 }
+
 .transition-premium {
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 .font-hanken {
   font-family: var(--font-hanken);
 }
+
 .font-jetbrains {
   font-family: var(--font-jetbrains);
 }
@@ -426,6 +454,7 @@ code {
 .noise-overlay {
   position: relative;
 }
+
 .noise-overlay::before {
   content: "";
   position: absolute;

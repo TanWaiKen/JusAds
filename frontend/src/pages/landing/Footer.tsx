@@ -9,7 +9,7 @@ const PRODUCT_LINKS = [
 ] as const;
 
 const COMPANY_LINKS = [
-  { href: "#about", label: "About Us" },
+  { href: "#sample-result", label: "Sample result" },
   { href: "https://www.linkedin.com/company/95728322", label: "LinkedIn", external: true },
   { href: "mailto:hello@jusads.com", label: "Contact" },
 ] as const;
@@ -27,17 +27,17 @@ export default function Footer() {
               <img src="/logo-white.png" alt="JusAds Logo" className="h-8 w-auto hidden dark:block" />
               <span className="font-semibold text-body-md tracking-tight text-foreground">JusAds</span>
             </Link>
-            <p className="text-label-ui text-text-caption">© {new Date().getFullYear()} JusAds. Built for the nuances of SEA.</p>
+            <p className="text-label-ui text-text-caption">© {new Date().getFullYear()} JusAds. Local ads made simple.</p>
           </div>
           <div className="flex gap-8">
             <div className="flex flex-col gap-3">
-              <h4 className="text-label-ui font-semibold text-foreground">Product</h4>
+              <p className="text-label-ui font-semibold text-foreground">Product</p>
               {PRODUCT_LINKS.map(({ href, label }) => (
                 <a key={href} href={href} className="text-label-ui text-text-caption hover:text-foreground transition-colors">{label}</a>
               ))}
             </div>
             <div className="flex flex-col gap-3">
-              <h4 className="text-label-ui font-semibold text-foreground">Company</h4>
+              <p className="text-label-ui font-semibold text-foreground">Company</p>
               {COMPANY_LINKS.map(({ href, label, ...rest }) => (
                 <a
                   key={href}

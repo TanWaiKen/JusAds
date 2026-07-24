@@ -10,6 +10,7 @@ endpoint contract (Req 2) and delegates generation to the LangGraph orchestrator
 stored Chat_History (Req 11.5).
 """
 
+import asyncio
 import uuid
 import json
 import logging
@@ -25,6 +26,7 @@ from pydantic import BaseModel, Field
 from shared.supabase_client import SupabaseComplianceStore
 from shared.s3_client import generate_presigned_upload_url, get_public_url, upload_file_public
 from jusads_generation import run_generation, run_video_plan_execution
+from jusads_generation.video_plan_validation import is_usable_v3_plan
 from jusads_generation.chat_store import (
     ChatPersistenceError,
     create_chat_message,
@@ -52,6 +54,51 @@ logger = logging.getLogger(__name__)
 
 from shared.clients import gemini
 from shared.config import MODEL_TEXT
+
+
+# ─── Video-plan continuation detection ────────────────────────────────────────
+
+import re as _re
+
+_CONTINUATION_PHRASES: set[str] = {
+    "continue",
+    "proceed",
+    "go ahead",
+    "render it",
+    "render video",
+    "render the video",
+    "generate the video",
+    "generate video",
+    "create the video",
+    "create video",
+    "continue video",
+    "start rendering",
+    "yes generate it",
+    "yes, generate it",
+    "yes generate",
+    "yes",
+    "ok",
+    "okay",
+    "do it",
+    "lets go",
+    "let's go",
+}
+
+
+def _is_video_plan_continuation(message: str) -> bool:
+    """Return True when the message is a narrow, deterministic continuation command.
+
+    Only matches messages whose entire meaningful content is one of a fixed set
+    of confirmation/continuation phrases.  General chat that merely contains the
+    word *continue* is NOT matched.
+    """
+    normalised = _re.sub(r"[^\w\s']", "", message.lower()).strip()
+    return normalised in _CONTINUATION_PHRASES
+
+
+def _is_usable_v3_plan(plan: object) -> bool:
+    """Return True when ``plan`` is a dict representing a ready V3 storyboard."""
+    return is_usable_v3_plan(plan)
 
 router = APIRouter(prefix="/api", tags=["generation"])
 
@@ -129,6 +176,146 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
         "edges": [],
         "viewport": {"panX": 0, "panY": 0, "zoom": 1}
     }
+
+    # ── Video-plan continuation shortcut ──────────────────────────────────
+    # When the user sends a short confirmation/continuation phrase AND the
+    # persisted pipeline_state already contains a usable V3 storyboard, skip
+    # normal generation and execute the existing plan directly.
+    saved_plan = current_pipeline_state.get("video_plan")
+    if _is_video_plan_continuation(body.message) and _is_usable_v3_plan(saved_plan):
+        logger.info(
+            "[Generation] Continuation command detected — executing saved V3 plan (task=%s)",
+            task_id,
+        )
+
+        # Persist the user continuation turn.
+        try:
+            create_chat_message(project_id, task_id, "user", body.message)
+        except ChatPersistenceError as pe:
+            logger.error("[SSE] User continuation turn persistence failed: %s", pe)
+
+        # Persist an assistant acknowledgement turn.
+        ack_message = (
+            "Got it — I'm using the approved storyboard and starting video rendering now. "
+            "This may take a minute while Gemini Omni generates each scene."
+        )
+        try:
+            create_chat_message(project_id, task_id, "assistant", ack_message)
+        except ChatPersistenceError as pe:
+            logger.error("[SSE] Assistant acknowledgement persistence failed: %s", pe)
+
+        # Run the plan execution in a background task (same pattern as /execute-video-plan).
+        run_id = f"cont_{project_id}_{task_id}_{uuid.uuid4().hex[:6]}"
+        queue: asyncio.Queue = asyncio.Queue()
+        _active_runs[run_id] = queue
+        _run_complete[run_id] = False
+
+        async def _run_continuation_background():
+            """Execute the saved V3 plan triggered by a chat continuation command."""
+            final_state = None
+            try:
+                # Emit the assistant acknowledgement as a text event first
+                await queue.put(f"data: {json.dumps({'text': ack_message})}\n\n")
+
+                async for chunk in run_video_plan_execution(
+                    project_id=project_id,
+                    task_id=task_id,
+                    plan=saved_plan,
+                    current_state=current_pipeline_state,
+                    skip_compliance=body.skip_compliance,
+                ):
+                    await queue.put(chunk)
+
+                    if "pipeline_state" in chunk:
+                        try:
+                            data = json.loads(chunk.replace("data: ", "").strip())
+                            if "pipeline_state" in data:
+                                final_state = data["pipeline_state"]
+                                _store.update_task_pipeline(
+                                    project_id=project_id,
+                                    task_id=task_id,
+                                    status="in_progress",
+                                    pipeline_state=final_state,
+                                )
+                        except Exception as pe:
+                            logger.warning("[BG-Cont] Error parsing/persisting state: %s", pe)
+            except Exception as err:
+                logger.error("[BG-Cont] Video plan continuation error: %s", err)
+                await queue.put(f"data: {json.dumps({'error': 'Video rendering failed. Please try again.'})}\n\n")
+
+            if final_state:
+                try:
+                    _store.update_task_pipeline(
+                        project_id=project_id,
+                        task_id=task_id,
+                        status="completed",
+                        pipeline_state=final_state,
+                    )
+                    logger.info("[BG-Cont] Persisted final continuation pipeline state.")
+                except Exception as se:
+                    logger.error("[BG-Cont] Failed to persist final state: %s", se)
+
+            _run_complete[run_id] = True
+            await queue.put(None)
+            await asyncio.sleep(30)
+            _active_runs.pop(run_id, None)
+            _run_complete.pop(run_id, None)
+
+        asyncio.create_task(_run_continuation_background())
+
+        async def _continuation_event_generator():
+            try:
+                while True:
+                    try:
+                        chunk = await asyncio.wait_for(queue.get(), timeout=120)
+                    except asyncio.TimeoutError:
+                        yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                        continue
+                    if chunk is None:
+                        break
+                    yield chunk
+            except asyncio.CancelledError:
+                logger.info("[SSE-Cont] Client disconnected — background task continues")
+
+        return StreamingResponse(
+            _continuation_event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Encoding": "none",
+            },
+        )
+
+    # When the message looks like a continuation but NO usable plan exists,
+    # give a helpful response instead of silently generating something new.
+    if _is_video_plan_continuation(body.message) and not _is_usable_v3_plan(saved_plan):
+        logger.info("[Generation] Continuation command received but no saved plan (task=%s)", task_id)
+        no_plan_message = (
+            "I'd love to continue, but there's no approved storyboard waiting to be rendered. "
+            "Please describe what you'd like to create, and I'll plan a new video for you!"
+        )
+        try:
+            create_chat_message(project_id, task_id, "user", body.message)
+        except ChatPersistenceError:
+            pass
+        try:
+            create_chat_message(project_id, task_id, "assistant", no_plan_message)
+        except ChatPersistenceError:
+            pass
+
+        async def _no_plan_generator():
+            yield f"data: {json.dumps({'text': no_plan_message})}\n\n"
+
+        return StreamingResponse(
+            _no_plan_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Encoding": "none",
+            },
+        )
 
     # A revision must be tied to a persisted asset in this task. The server
     # owns this lookup so a client cannot create cross-project parent links.
@@ -413,6 +600,19 @@ async def execute_video_plan_endpoint(
     current_pipeline_state = task.get("pipeline_state") or {
         "nodes": [], "edges": [], "viewport": {"panX": 0, "panY": 0, "zoom": 1}
     }
+    if (
+        body.plan.get("pipeline_version") == "v3_grid"
+        and not _is_usable_v3_plan(body.plan)
+    ):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": (
+                    "Video storyboard assets are incomplete. Regenerate the scene grid "
+                    "and sliced frames before starting paid rendering."
+                )
+            },
+        )
 
     run_id = f"v2_{project_id}_{task_id}_{uuid.uuid4().hex[:6]}"
     queue: asyncio.Queue = asyncio.Queue()
@@ -788,20 +988,21 @@ async def distribute_generated_ad(
 async def get_ad_performance_analytics(
     project_id: str, task_id: str, ad_id: str
 ) -> JSONResponse:
-    """Retrieve social post analytics from Zernio for a distributed ad.
-
-    If Zernio is not configured or the post is not distributed, returns fallback
-    mock engagement data so the UI can render analytics graphs beautifully.
-    """
+    """Retrieve live social post analytics for a distributed ad."""
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
 
     try:
-        analytics = get_ad_analytics(ad_id, project_id)
+        analytics = await asyncio.to_thread(get_ad_analytics, ad_id, project_id)
         return JSONResponse(content=analytics)
-    except Exception as e:
-        logger.error("[Routes] Failed to get ad analytics: %s", e)
-        return JSONResponse(status_code=500, content={"error": f"Failed to load analytics: {e}"})
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "Ad not found"})
+    except DistributionError as exc:
+        logger.warning("[Routes] Ad analytics unavailable: %s", exc)
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+    except Exception:
+        logger.exception("[Routes] Failed to get ad analytics")
+        return JSONResponse(status_code=500, content={"error": "Failed to load analytics"})
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/upload-url")
@@ -1096,39 +1297,211 @@ async def get_user_assets(user_email: str = "", limit: int = 50) -> JSONResponse
 
 class AutofillRequest(BaseModel):
     user_prompt: str
+    current_design_type: Optional[str] = None
+    current_values: dict[str, str] = Field(default_factory=dict)
+
+
+_AUTOFILL_DESIGN_TYPES = {
+    "image_poster",
+    "carousel",
+    "video_ad",
+    "text_copy",
+    "audio_ad",
+}
+_AUTOFILL_FIELDS = {
+    "product_name",
+    "key_message",
+    "target_audience",
+    "platform",
+    "brand_tone",
+    "visual_style",
+    "color_palette",
+    "slide_count",
+    "copy_length",
+    "call_to_action",
+    "language",
+    "video_duration",
+    "creative_mode",
+    "opening_hook",
+    "code_switching",
+    "audio_duration",
+    "voice_tone",
+    "background_music_style",
+    "forbidden_claims",
+    "brand_rules",
+    "compliance_constraints",
+}
+
+
+def _fallback_autofill(body: AutofillRequest) -> dict:
+    """Keep Easy Mode usable when the language model is rate-limited."""
+    text = body.user_prompt.strip()
+    lowered = text.lower()
+    selected = body.current_design_type if body.current_design_type in _AUTOFILL_DESIGN_TYPES else ""
+    if any(token in lowered for token in ("video", "tiktok", "reel", "shorts")):
+        selected = "video_ad"
+    elif any(token in lowered for token in ("audio ad", "radio", "podcast", "voice spot")):
+        selected = "audio_ad"
+    elif any(token in lowered for token in ("carousel", "slides", "swipe")):
+        selected = "carousel"
+    elif any(token in lowered for token in ("caption", "ad copy", "text only", "copywriting")):
+        selected = "text_copy"
+    elif not selected:
+        selected = "image_poster"
+
+    values = {
+        key: str(value)
+        for key, value in body.current_values.items()
+        if key in _AUTOFILL_FIELDS and value is not None
+    }
+    if text:
+        values["key_message"] = text
+    if "tiktok" in lowered:
+        values["platform"] = "tiktok"
+    elif "instagram" in lowered or "reel" in lowered:
+        values["platform"] = "instagram"
+    elif "shopee" in lowered:
+        values["platform"] = "shopee"
+    if _re.search(r"[\u3400-\u9fff]", text) or any(
+        token in lowered for token in ("chinese", "mandarin", "中文", "华语")
+    ):
+        values["language"] = "Chinese"
+    elif any(token in lowered for token in ("bahasa", "malay", "melayu")):
+        values["language"] = "Bahasa Melayu"
+    if selected == "video_ad":
+        values.setdefault("creative_mode", "voiceover")
+        values.setdefault("opening_hook", "Sudden action → product reveal")
+        values.setdefault("video_duration", "15s")
+        values.setdefault("call_to_action", "Learn More")
+
+    return {
+        "selected_design_type": selected,
+        "selectedTemplate": selected,
+        "form_values": values,
+        "formValues": values,
+        "assistant_message": (
+            "I selected the closest format and filled what I could from your request. "
+            "Please review the highlighted form, especially the product name, claims, CTA, and safety rules."
+        ),
+        "missing_fields": [
+            field for field in ("product_name", "key_message")
+            if not values.get(field, "").strip()
+        ],
+        "reference_recommendations": (
+            ["Product photo", "Character or logo", "Shop / location"]
+            if selected == "video_ad"
+            else ["Product photo", "Brand logo"]
+        ),
+        "used_fallback": True,
+    }
+
+
+def _normalize_autofill_payload(data: dict, body: AutofillRequest) -> dict:
+    raw_type = str(
+        data.get("selected_design_type")
+        or data.get("selectedTemplate")
+        or body.current_design_type
+        or "image_poster"
+    )
+    aliases = {
+        "poster": "image_poster",
+        "story": "image_poster",
+        "video": "video_ad",
+        "audio": "audio_ad",
+    }
+    selected = aliases.get(raw_type, raw_type)
+    if selected not in _AUTOFILL_DESIGN_TYPES:
+        selected = "image_poster"
+
+    raw_values = data.get("form_values") or data.get("formValues") or {}
+    values = {
+        key: str(value).strip()
+        for key, value in raw_values.items()
+        if key in _AUTOFILL_FIELDS and value is not None and str(value).strip()
+    }
+    merged_values = {
+        key: str(value)
+        for key, value in body.current_values.items()
+        if key in _AUTOFILL_FIELDS and value is not None
+    }
+    merged_values.update(values)
+    # The user's own request is an approved brief source. Using it as the key
+    # message is safer than inventing a slogan and keeps the required field
+    # editable when the model extracts only the product name.
+    if not merged_values.get("key_message", "").strip():
+        merged_values["key_message"] = body.user_prompt.strip()
+    required_fields = {"product_name", "key_message"}
+    if selected == "video_ad":
+        required_fields.update({"call_to_action", "language", "creative_mode", "opening_hook"})
+    missing_fields = [
+        str(field) for field in data.get("missing_fields", [])
+        if isinstance(field, str)
+        and field in required_fields
+        and not merged_values.get(field, "").strip()
+    ]
+    assistant_message = str(data.get("assistant_message") or "")
+    if not assistant_message or (
+        not missing_fields
+        and _re.search(r"\b(missing|still needed|provide|required)\b", assistant_message, _re.I)
+    ):
+        assistant_message = (
+            f"I selected {selected.replace('_', ' ')} and prefilled the campaign details. "
+            "Review the form and confirm the brief when it is accurate."
+        )
+    return {
+        "selected_design_type": selected,
+        "selectedTemplate": selected,
+        "form_values": merged_values,
+        "formValues": merged_values,
+        "assistant_message": assistant_message,
+        "missing_fields": missing_fields,
+        "reference_recommendations": [
+            str(item) for item in data.get("reference_recommendations", [])
+            if isinstance(item, str)
+        ][:4],
+        "used_fallback": False,
+    }
 
 
 @router.post("/generation/autofill")
 async def autofill_easy_form(body: AutofillRequest) -> JSONResponse:
-    """Uses Gemini to parse user's natural language requirement into easy generation form fields."""
+    """Turn conversational instructions into a reviewable Easy Mode draft."""
+    if not body.user_prompt.strip():
+        return JSONResponse(status_code=400, content={"error": "Please describe the ad you want to create."})
     if not gemini:
-        return JSONResponse(status_code=503, content={"error": "AI service unavailable"})
+        return JSONResponse(content=_fallback_autofill(body))
 
     prompt = f"""
-    You are an AI assistant that extracts advertising campaign parameters from a natural language user request.
-    Analyze the user prompt and populate the following form fields. Return ONLY a valid JSON object. Do not include any explanation or markdown formatting like ```json.
+    You are the Easy Mode campaign setup assistant for an advertising application.
+    Convert the user's latest message into a draft form. If current values are supplied,
+    treat the message as a revision and preserve values the user did not ask to change.
+    Never invent prices, awards, certifications, addresses, opening hours, health claims,
+    discounts, or product facts. Leave unsupported fields absent.
+    Return ONLY a valid JSON object without markdown.
     
     The JSON schema is:
     {{
-      "selectedTemplate": "poster" | "story" | "carousel" | "text_copy",  // poster is square image, story is vertical image, carousel is multi-slide, text_copy is text only. Default to "poster".
-      "formValues": {{
-        "product_name": "...", // The brand or product name (required, default to "Product")
-        "key_message": "...",  // The core marketing message or promotion (required, default to "New Launch")
-        "target_audience": "...", // Who is this ad for? (optional)
-        "brand_tone": "...", // The style or voice (e.g., professional, warm, Gen Z) (optional)
-        "visual_style": "...", // E.g., minimalist, bright, high-contrast (optional)
-        "color_palette": "...", // E.g., blue and white (optional)
-        "slide_count": "...", // Number of slides for carousel (optional)
-        "copy_length": "...", // Short, Medium, Long (optional)
-        "call_to_action": "...", // E.g., Shop Now, Learn More (optional)
-        "language": "...", // E.g., English, Bahasa Melayu (optional)
-        "market": "malaysia" | "singapore", // Choose one. Default to "malaysia".
-        "target_ethnicity": "malay" | "chinese" | "indian" | "all", // Choose one. Default to "all".
-        "age_group": "gen_z" | "millennial" | "gen_x" | "baby_boomer" | "all" // Choose one. Default to "all".
-      }}
+      "selected_design_type": "image_poster" | "carousel" | "video_ad" | "text_copy" | "audio_ad",
+      "form_values": {{
+        "product_name": "...", "key_message": "...", "target_audience": "...",
+        "platform": "instagram | tiktok | shopee", "brand_tone": "...",
+        "visual_style": "...", "color_palette": "...", "slide_count": "...",
+        "copy_length": "...", "call_to_action": "...", "language": "...",
+        "video_duration": "15s | 30s | 60s",
+        "creative_mode": "speaker_led | voiceover | music_first",
+        "opening_hook": "Sudden action → product reveal | Shock impact → instant product snap | Unexpected visual transformation | Problem first → product solution | Immediate product demonstration",
+        "code_switching": "Yes | No", "audio_duration": "15s | 30s | 60s",
+        "voice_tone": "...", "background_music_style": "...",
+        "forbidden_claims": "...", "brand_rules": "...", "compliance_constraints": "..."
+      }},
+      "assistant_message": "One short sentence explaining what was selected and what needs review.",
+      "missing_fields": ["field_name"],
+      "reference_recommendations": ["Product photo", "Shop / location"]
     }}
-    
-    User prompt: "{body.user_prompt}"
+
+    Current design type: {json.dumps(body.current_design_type)}
+    Current form values: {json.dumps(body.current_values, ensure_ascii=False)}
+    Latest user message: {json.dumps(body.user_prompt, ensure_ascii=False)}
     """
 
     try:
@@ -1147,7 +1520,7 @@ async def autofill_easy_form(body: AutofillRequest) -> JSONResponse:
             raw_text = "\n".join(lines).strip()
 
         data = json.loads(raw_text)
-        return JSONResponse(content=data)
+        return JSONResponse(content=_normalize_autofill_payload(data, body))
     except Exception as e:
-        logger.error("[Autofill] Failed: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        logger.warning("[Autofill] AI extraction failed; using deterministic fallback: %s", e)
+        return JSONResponse(content=_fallback_autofill(body))

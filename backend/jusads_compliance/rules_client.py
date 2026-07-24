@@ -95,10 +95,37 @@ def get_persona(
         rows = response.data or []
 
         if not rows:
-            logger.warning(
-                "[RulesClient] No persona found for market=%s, ethnicity=%s", market, ethnicity
-            )
-            return {}
+            # 'all' ethnicity has no dedicated persona — fall back to the
+            # majority baseline ('malay' for Malaysia) so generation still gets
+            # useful cultural context rather than nothing.
+            if ethnicity.lower() == "all":
+                _MARKET_BASELINE_ETHNICITY = {
+                    "malaysia": "malay",
+                    "singapore": "chinese",
+                }
+                baseline = _MARKET_BASELINE_ETHNICITY.get(market.lower())
+                if baseline:
+                    logger.info(
+                        "[RulesClient] ethnicity='all' has no persona; "
+                        "falling back to baseline '%s' for market=%s",
+                        baseline, market,
+                    )
+                    try:
+                        fallback_response = (
+                            supabase.table("personas")
+                            .select("persona_data, age_group")
+                            .eq("market", market.lower())
+                            .eq("ethnicity", baseline)
+                            .execute()
+                        )
+                        rows = fallback_response.data or []
+                    except Exception:
+                        pass
+            if not rows:
+                logger.warning(
+                    "[RulesClient] No persona found for market=%s, ethnicity=%s", market, ethnicity
+                )
+                return {}
 
         # Build a lookup map: age_group -> persona_data
         by_age: dict[str, dict] = {

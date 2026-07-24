@@ -10,8 +10,7 @@ import gsap from "gsap";
 import { Building2, Package, Globe, MonitorPlay, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+import { API_BASE } from "@/lib/apiConfig";
 
 gsap.registerPlugin(useGSAP);
 
@@ -143,9 +142,9 @@ export default function OnboardingPage() {
           
           {/* Header */}
           <div className="text-center mb-8 mt-2">
-            <h2 className="text-3xl font-bold tracking-tight text-text-heading mb-2">
+            <h1 className="font-bold tracking-tight text-text-heading mb-2">
               Set up your business profile
-            </h2>
+            </h1>
             <p className="text-sm font-medium text-text-caption">
               This helps our AI understand your product context for smarter compliance checking and ad generation.
             </p>

@@ -11,16 +11,16 @@ gsap.registerPlugin(useGSAP, ScrollTrigger);
 // ─── Static Data ──────────────────────────────────────────────────────────────
 
 const HOBBY_FEATURES = [
-  "5 AI transcreations per month",
-  "Standard 720p export",
-  "Community support",
+  "Create up to 5 local ads each month",
+  "Download in standard HD quality",
+  "Help from the JusAds community",
 ] as const;
 
 const PRO_FEATURES = [
-  "Unlimited AI transcreations",
-  "4K raw export quality",
-  "Priority 24/7 support",
-  "Custom brand voice guidelines",
+  "Create unlimited local ads",
+  "Download in high 4K quality",
+  "Priority support at any time",
+  "Save your brand tone and wording",
 ] as const;
 
 // ─── Pricing Component ────────────────────────────────────────────────────────
@@ -56,22 +56,22 @@ export default function Pricing({ onAuthAction }: { onAuthAction: AuthAction }) 
   return (
     <section ref={containerRef} id="pricing" className="max-w-max-content-width mx-auto px-6 lg:px-12 mt-[120px] mb-[120px]">
       <div className="text-center mb-16">
-        <h2 className="font-semibold tracking-tight text-foreground mb-4 leading-tight">Simple, transparent pricing</h2>
-        <p className="text-[20px] text-text-body mx-auto leading-relaxed">Start for free, upgrade when you need to localize at scale.</p>
+        <p className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-4 leading-tight">Simple, transparent pricing</p>
+        <p className="text-[20px] text-text-body mx-auto leading-relaxed">Try the complete workflow for free. Upgrade only when you need more ads.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-[900px] mx-auto">
         {/* Hobby */}
         <div className="pricing-card bg-surface-card rounded-[12px] p-8 flex flex-col shadow-[rgba(0,0,0,0.08)_0px_0px_0px_1px] border border-border-default">
           <div className="mb-8">
-            <h3 className="text-[20px] font-semibold text-foreground mb-2">Hobby</h3>
-            <p className="text-label-ui text-text-body h-10">Perfect for experimenting with AI localization.</p>
+            <p className="text-[20px] font-semibold text-foreground mb-2">Free</p>
+            <p className="text-label-ui text-text-body min-h-10">For trying JusAds with your own product.</p>
             <div className="mt-6 flex items-baseline gap-1">
               <span className="text-headline-lg font-bold text-foreground tracking-tight">$0</span>
               <span className="text-body-md text-text-caption font-medium">/month</span>
             </div>
           </div>
           <button onClick={handleCTA} disabled={isLoading} className="w-full inline-flex items-center justify-center bg-white hover:bg-[#f6f6f5] active:scale-[0.98] text-black border-[1.5px] border-black dark:border-white dark:bg-white/10 dark:text-white dark:hover:bg-white/15 px-4 md:px-5 py-3 rounded-[6px] text-xs font-bold uppercase tracking-wider transition-premium brutalist-shadow-black dark:shadow-none mb-8 disabled:opacity-50 cursor-pointer">
-            Start Deploying
+            Create my first free ad
           </button>
           <div className="flex flex-col gap-4 mt-auto">
             {HOBBY_FEATURES.map(f => (
@@ -87,8 +87,8 @@ export default function Pricing({ onAuthAction }: { onAuthAction: AuthAction }) 
         <div className="pricing-card bg-surface-card rounded-[12px] p-8 flex flex-col border-2 border-[#0a72ef] relative">
           <div className="absolute top-[-14px] left-1/2 -translate-x-1/2 bg-[#0a72ef] text-white px-3 py-1 rounded-full text-[12px] font-bold tracking-widest uppercase">Most Popular</div>
           <div className="mb-8 mt-2">
-            <h3 className="text-[20px] font-semibold text-foreground mb-2">Pro</h3>
-            <p className="text-label-ui text-text-body h-10">For marketers who need to localize at scale.</p>
+            <p className="text-[20px] font-semibold text-foreground mb-2">Pro</p>
+            <p className="text-label-ui text-text-body min-h-10">For businesses that create content regularly.</p>
             <div className="mt-6 flex items-baseline gap-1">
               <span className="text-headline-lg font-bold text-foreground tracking-tight">$29</span>
               <span className="text-body-md text-text-caption font-medium">/month</span>

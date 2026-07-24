@@ -165,9 +165,9 @@ export default function DashboardHome() {
       {/* ── Welcome Header ───────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="space-y-1">
-          <h2 className="dash-header text-[24px] font-bold tracking-[-0.04em] text-text-heading">
+          <h1 className="dash-header font-bold tracking-[-0.04em] text-text-heading">
             Welcome, {displayName}
-          </h2>
+          </h1>
           <p className="dash-header-sub text-body-md text-text-caption font-medium tracking-tight">
             Your global advertising engine is ready. Localize your campaigns across SEA with precision AI.
           </p>

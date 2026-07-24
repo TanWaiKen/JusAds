@@ -26,18 +26,18 @@ export default function AboutUs() {
   }, { scope: containerRef });
 
   return (
-    <section ref={containerRef} id="about" className="max-w-max-content-width mx-auto px-6 md:px-10 mt-[120px] mb-[80px]">
+    <section ref={containerRef} id="sample-result" className="max-w-max-content-width mx-auto scroll-mt-24 px-6 md:px-10 mt-[100px] mb-[80px]">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center text-left">
         <div className="flex flex-col">
-          <h2 className="font-bold tracking-tight text-foreground mb-6 leading-[1.1]">
-            Built for the <br />
-            <span className="text-blue-600 dark:text-blue-400">nuances of SEA.</span>
-          </h2>
+          <p className="text-3xl md:text-4xl lg:text-[40px] font-bold tracking-tight text-foreground mb-6 leading-[1.1]">
+            One poster. <br />
+            <span className="text-blue-600 dark:text-blue-400">Five local posts.</span>
+          </p>
           <p className="text-body-md md:text-body-lg text-text-body leading-relaxed mb-4">
-            Global tools don't understand the complex cultural tapestry of Southeast Asia. A direct translation often misses the mark—or causes brand damage.
+            Direct translation can sound awkward or miss what matters to local customers. JusAds helps your message feel natural and familiar.
           </p>
           <p className="text-body-md md:text-body-lg text-text-body leading-relaxed">
-            JusAds empowers brands to scale seamlessly. We combine generative AI with deep, localized cultural models to ensure your message is not just heard, but felt.
+            JusAds adapts the words, tone, and design for local customers. You review every result before anything is published.
           </p>
         </div>
 
@@ -46,7 +46,7 @@ export default function AboutUs() {
           <div className="ad-compare-card bg-surface-card rounded-xl p-4 border border-border-default shadow-sm flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
             <div className="flex justify-between items-start mb-3">
               <div>
-                <h3 className="text-sm font-bold text-foreground">Original Poster</h3>
+                <p className="text-sm font-bold text-foreground">Original Poster</p>
                 <p className="text-[10px] text-text-caption mt-1">Your uploaded ad</p>
               </div>
               <span className="bg-surface-inset text-text-caption px-2 py-1 rounded-full text-[10px] font-semibold">Original</span>
@@ -73,8 +73,8 @@ export default function AboutUs() {
           <div className="ad-compare-card bg-surface-card rounded-xl p-4 border border-[#0a72ef]/30 shadow-[0_8px_30px_rgba(10,114,239,0.1)] flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
             <div className="flex justify-between items-start mb-3">
               <div>
-                <h3 className="text-sm font-bold text-[#0a72ef]">Adapted Poster</h3>
-                <p className="text-[10px] text-text-caption mt-1">MY Culture optimized</p>
+                <p className="text-sm font-bold text-[#0a72ef]">Adapted Poster</p>
+                <p className="text-[10px] text-text-caption mt-1">Adapted for Malaysia</p>
               </div>
               <span className="bg-[#0a72ef] text-white px-2 py-1 rounded-full text-[10px] font-semibold">New</span>
             </div>

@@ -3,7 +3,9 @@
  * Connects to the LangGraph backend at /api/compliance
  */
 
-export const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+import { API_BASE } from "@/lib/apiConfig";
+
+export { API_BASE };
 
 export interface Violation {
   index: number;

@@ -48,7 +48,7 @@ export default function LandingPage() {
         <Header onAuthAction={onAuthAction} />
         <Hero onAuthAction={onAuthAction} />
         <AboutUs />
-        <Features />
+        <Features onAuthAction={onAuthAction} />
         <Pricing onAuthAction={onAuthAction} />
         <Faq />
         <div className="mt-auto">

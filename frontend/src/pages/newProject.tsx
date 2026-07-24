@@ -96,9 +96,9 @@ export default function NewProject() {
       {step === 1 && (
         <div className="step-content w-full max-w-md space-y-6 text-center">
           <div>
-            <h2 className="text-xl font-semibold text-text-heading mb-1">
+            <h1 className="font-semibold text-text-heading mb-1">
               Create new project
-            </h2>
+            </h1>
             <p className="text-label-ui text-text-caption">
               Give your project a name to get started.
             </p>
@@ -131,9 +131,9 @@ export default function NewProject() {
       {step === 2 && (
         <div className="step-content w-full max-w-xl space-y-6 text-center">
           <div>
-            <h2 className="text-xl font-semibold text-text-heading mb-1">
+            <h1 className="font-semibold text-text-heading mb-1">
               {projectName.trim()}
-            </h2>
+            </h1>
             <p className="text-label-ui text-text-caption">
               Choose how you'd like to start
             </p>

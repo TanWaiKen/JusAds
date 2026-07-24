@@ -38,8 +38,11 @@ def test_brazil_audio_non_compliant():
         "remix_iteration": 0,
     }
     
-    # Run the compiled compliance pipeline
-    res = compliance_pipeline.invoke(state)
+    # Run the compiled compliance pipeline with the LangGraph checkpoint key.
+    res = compliance_pipeline.invoke(
+        state,
+        config={"configurable": {"thread_id": task_id}},
+    )
     result_dict = res.get("result", {})
     decision = res.get("status", "")
     
@@ -77,7 +80,10 @@ def test_malaysia_video_no_subtitles():
         "remix_iteration": 0,
     }
     
-    res = compliance_pipeline.invoke(state)
+    res = compliance_pipeline.invoke(
+        state,
+        config={"configurable": {"thread_id": task_id}},
+    )
     result_dict = res.get("result", {})
     decision = res.get("status", "")
     
@@ -112,7 +118,10 @@ def test_malaysia_image_halal_violation():
         "remix_iteration": 0,
     }
     
-    res = compliance_pipeline.invoke(state)
+    res = compliance_pipeline.invoke(
+        state,
+        config={"configurable": {"thread_id": task_id}},
+    )
     result_dict = res.get("result", {})
     decision = res.get("status", "")
     
@@ -144,7 +153,10 @@ def test_brazil_text_gambling_violation():
         "remix_iteration": 0,
     }
     
-    res = compliance_pipeline.invoke(state)
+    res = compliance_pipeline.invoke(
+        state,
+        config={"configurable": {"thread_id": task_id}},
+    )
     result_dict = res.get("result", {})
     decision = res.get("status", "")
     

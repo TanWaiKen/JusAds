@@ -1,5 +1,4 @@
 import { useRef } from "react";
-import { ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
@@ -12,7 +11,7 @@ export default function Hero({ onAuthAction }: { onAuthAction: AuthAction }) {
   const navigate = useNavigate();
   const isLoading = onAuthAction.status === "loading";
 
-  function handleStartDeploying() {
+  function handleCreateAd() {
     if (onAuthAction.isAuthenticated) navigate("/dashboard");
     else onAuthAction.onOpenLogin();
   }
@@ -59,11 +58,11 @@ export default function Hero({ onAuthAction }: { onAuthAction: AuthAction }) {
   }, { scope: containerRef });
 
   return (
-    <section ref={containerRef} className="relative flex min-h-[calc(100svh-68px)] flex-col items-center justify-center overflow-hidden px-6 py-28 text-center md:px-10 md:py-36">
+    <section ref={containerRef} className="relative flex min-h-[calc(100svh-68px)] flex-col items-center justify-center overflow-hidden px-5 py-20 text-center sm:px-6 md:px-10 md:py-28">
 
       <div className="max-w-[800px] flex flex-col items-center z-10">
 
-        <h1 className="hero-title mb-0 font-semibold text-text-heading tracking-[-0.06em] leading-[1.05] text-[clamp(3rem,8vw,5rem)]">
+        <p className="hero-title mb-0 font-semibold text-text-heading tracking-[-0.05em] leading-[1.05] text-[clamp(2.65rem,8vw,5rem)]">
           Launch{" "}
           <span className="relative inline-block">
             <span className="text-text-heading">AI Ads.</span>
@@ -74,28 +73,27 @@ export default function Hero({ onAuthAction }: { onAuthAction: AuthAction }) {
           </span>
           <br />
           In Minutes.
-        </h1>
-
-        <p className="hero-subheading mt-6 text-xl font-medium text-text-heading md:text-[28px] leading-[1.4]">
-          Built for Southeast Asia's nuances.
         </p>
 
-        <p className="hero-desc mt-8 max-w-[600px] text-lg text-text-body leading-[1.56] md:text-xl font-normal">
-          Create scroll-stopping, culturally tuned campaigns for SEA instantly. No editing skills required.
+        <p className="hero-desc mt-7 max-w-[700px] text-lg text-text-body leading-[1.56] md:text-xl font-normal">
+          Turn your product photos and English ads into ready-to-use Malaysian content—without design or marketing experience.
         </p>
 
-        <div className="hero-ctas mt-8 flex flex-col items-center gap-3 sm:flex-row">
+        <p className="hero-desc mt-4 max-w-[720px] text-base font-medium text-text-heading md:text-lg">
+          Upload your poster. Choose your customers. Review your local ad.
+        </p>
+
+        <div className="hero-ctas mt-8 flex w-full max-w-[460px] flex-col items-stretch gap-3 sm:w-auto sm:max-w-none sm:flex-row">
           <button
-            onClick={handleStartDeploying}
+            data-testid="hero-create-ad"
+            onClick={handleCreateAd}
             disabled={isLoading}
-            className="inline-flex items-center rounded-md bg-[#171717] px-4 py-2.5 text-sm font-medium text-white transition-premium hover:bg-[#333] active:scale-[0.98] dark:bg-white dark:text-black dark:hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[#171717] px-5 py-3 text-base font-semibold text-white transition-premium hover:bg-[#333] active:scale-[0.98] dark:bg-white dark:text-black dark:hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
-            Start Deploying
+            Create my first free ad
           </button>
-          <a href="#how-it-works">
-            <button className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-2.5 text-sm font-medium text-text-heading shadow-[0_0_0_1px_rgb(235,235,235)] transition-premium hover:bg-surface-inset active:scale-[0.98] dark:bg-white/10 dark:text-white dark:hover:bg-white/15 cursor-pointer">
-              View Templates <ArrowRight className="w-4 h-4" />
-            </button>
+          <a href="#sample-result" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-white px-5 py-3 text-base font-semibold text-text-heading shadow-[0_0_0_1px_rgb(220,220,220)] transition-premium hover:bg-surface-inset active:scale-[0.98] dark:bg-white/10 dark:text-white dark:hover:bg-white/15">
+            See a sample result
           </a>
         </div>
       </div>

@@ -6,16 +6,17 @@ import { Menu, Loader2 } from "lucide-react";
 import { Sidebar, SIDEBAR_WIDTH } from "@/components/layout/Sidebar";
 import type { SidebarHandle } from "@/components/layout/Sidebar";
 import { useAuth } from "@/hooks/useAuth";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+import { API_BASE } from "@/lib/apiConfig";
 
 gsap.registerPlugin(useGSAP);
+
+const DEVELOPMENT_BYPASS_EMAIL = "developer@jusads.com";
 
 // ─── DashboardShell ───────────────────────────────────────────────────────────
 
 export default function DashboardShell() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024);
   const sidebarHandleRef = useRef<SidebarHandle>(null);
   const headerRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLElement>(null);
@@ -31,9 +32,9 @@ export default function DashboardShell() {
     if (projectId) {
       setSidebarOpen(false);
     } else {
-      setSidebarOpen(true);
+      setSidebarOpen(isDesktop);
     }
-  }, [projectId]);
+  }, [projectId, isDesktop]);
 
   // Track desktop vs mobile
   useEffect(() => {
@@ -52,6 +53,10 @@ export default function DashboardShell() {
 
     const email = user?.profile?.email;
     if (!email) {
+      setCheckingOnboarding(false);
+      return;
+    }
+    if (import.meta.env.DEV && email.toLowerCase() === DEVELOPMENT_BYPASS_EMAIL) {
       setCheckingOnboarding(false);
       return;
     }

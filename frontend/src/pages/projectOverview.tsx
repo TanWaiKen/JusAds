@@ -128,10 +128,14 @@ export default function ProjectOverviewPage() {
     setLoading(true);
     setError(null);
 
-    try {
-      const email = user?.profile?.email ?? "demo_user";
+    const email = user?.profile?.email;
+    if (!email) {
+      setError("Your authenticated email is required to load this project.");
+      setLoading(false);
+      return;
+    }
 
-      // Fetch project metadata
+    try {
       const projectRes = await fetch(
         `${API_BASE}/api/projects?username=${encodeURIComponent(email)}`
       );
@@ -308,9 +312,9 @@ export default function ProjectOverviewPage() {
                     className="group flex items-center gap-2"
                     onClick={() => setIsEditing(true)}
                   >
-                    <h2 className="text-2xl font-semibold tracking-tight text-text-heading">
+                    <h1 className="font-semibold tracking-tight text-text-heading">
                       {project.name}
-                    </h2>
+                    </h1>
                     <Pencil size={14} className="text-text-caption opacity-0 group-hover:opacity-100 transition-opacity" />
                   </button>
                 )}

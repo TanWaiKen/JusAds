@@ -636,13 +636,13 @@ async def smart_remediate(task_id: str):
             logger.error("[SmartRemediate] Error for %s: %s", task_id, e, exc_info=True)
             yield emit({
                 "type": "error",
-                "message": f"Smart remediation failed: {str(e)[:200]}",
+                "message": "Smart remediation could not be completed. Please try again.",
             })
 
     return StreamingResponse(
         generate_events(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache"},
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -753,11 +753,12 @@ async def routing_preview(task_id: str):
 
 @router.get("/api/compliance/history")
 async def get_compliance_history(
+    username: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    """Paginated compliance check history."""
-    user_id = "demo_user"
+    """Return paginated compliance history for the explicitly requested user."""
+    user_id = username.strip()
     if not _supabase_store:
         return JSONResponse(status_code=503, content={"error": "Database unavailable"})
     try:
