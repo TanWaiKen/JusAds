@@ -1,16 +1,13 @@
 """
 routes/compliance.py
 ────────────────────
-Compliance check endpoints: WebSocket streaming, check trigger, history,
-results, media URLs, remediation.
+Compliance check endpoints.
 
 Endpoints:
-  - POST /api/compliance/check       → Invoke Compliance Pipeline
-  - POST /api/compliance/{task_id}/remediate → Invoke Remediation Pipeline
-  - GET  /api/compliance/history      → Paginated check history
-  - GET  /api/compliance/{task_id}   → Single check result
-  - GET  /api/media/{task_id}/{type} → Presigned media URL
-  - WS   /ws/{task_id}              → Legacy WebSocket (retained for compat)
+  - POST /api/compliance/check              → Invoke Compliance Pipeline (SSE)
+  - GET  /api/compliance/{task_id}          → Single check result
+  - POST /api/compliance/{task_id}/clone-voice → Clone brand voice (kept for future remix integration)
+  - WS   /ws/{task_id}                     → Legacy WebSocket (retained for compat)
 """
 
 import asyncio
@@ -23,13 +20,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
 
-from fastapi import APIRouter, File, Form, Query, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi import APIRouter, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from jusads_compliance.utils import detect_media_type_from_filename
 from shared.supabase_client import SupabaseComplianceStore
 from shared.s3_client import S3MediaClient, build_s3_key
-from shared.models import CheckRecord, ComplianceOutput, Compliance_State, Remediation_State
+from shared.models import CheckRecord, ComplianceOutput, Compliance_State
 from jusads_compliance.pipeline_runner import PipelineRunner
 from jusads_compliance.progress_tracker import ProgressTracker
 
@@ -443,207 +440,10 @@ async def check_compliance(
     )
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# POST /api/compliance/{task_id}/remediate
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-@router.post("/api/compliance/{task_id}/remediate")
-async def remediate_compliance(task_id: str):
-    """Invoke the Remediation Pipeline for a completed compliance check.
-
-    The Remediation Pipeline retrieves the compliance result by task_id,
-    confirms aspect ratio (for image/video), performs media-specific
-    remediation, and uploads the result to S3.
-
-    Progress can be polled via GET /api/compliance/{task_id}/progress.
-    """
-    if not _remediation_runner:
-        return JSONResponse(status_code=503, content={"error": "Remediation pipeline unavailable"})
-
-    # Verify task_id exists in compliance_checks
-    if _supabase_store:
-        try:
-            response = _supabase_store.client.table("compliance_checks").select(
-                "task_id, status, media_type"
-            ).eq("task_id", task_id).execute()
-            rows = response.data or []
-            if not rows:
-                return JSONResponse(status_code=404, content={"error": f"Check not found: {task_id}"})
-        except Exception as e:
-            logger.error("[Remediate] DB lookup failed for %s: %s", task_id, e)
-            return JSONResponse(status_code=500, content={"error": "Failed to verify task_id"})
-
-    # Build Remediation_State TypedDict
-    state: Remediation_State = {
-        "task_id": task_id,
-        "project_id": "",
-        "media_type": "",
-        "source_media_url": "",
-        "compliance_result": {},
-        "remediation_plan": {},
-        "platform_target": "",
-        "aspect_ratio": "",
-        "strategy": "",
-        "remediated_paths": [],
-        "remix_url": "",
-        "status": "pending",
-    }
-
-    async def run_remediation():
-        try:
-            result = await _remediation_runner.run_with_human_loop(task_id, state)
-            if result and isinstance(result, dict):
-                status = result.get("status", "remix_failed")
-                logger.info(
-                    "[Remediate] Pipeline complete for task_id=%s, status=%s",
-                    task_id, status,
-                )
-            else:
-                logger.warning("[Remediate] Pipeline returned None for task_id=%s", task_id)
-        except Exception as e:
-            logger.error("[Remediate] Error for %s: %s", task_id, e)
-
-    asyncio.create_task(run_remediation())
-
-    return JSONResponse(content={
-        "task_id": task_id,
-        "status": "remediating",
-        "message": "Remediation pipeline started. Poll progress via GET /api/compliance/{task_id}/progress.",
-    })
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# POST /api/compliance/{task_id}/smart-remediate
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-@router.post("/api/compliance/{task_id}/smart-remediate")
-async def smart_remediate(task_id: str):
-    """Intelligent Remediation — AI decides the tool and severity.
-
-    Unlike /remediate (which runs a fixed pipeline), this endpoint uses
-    the AI Tool Router to classify violation severity and pick the
-    cheapest/fastest tool(s) that can fix the issues.
-
-    Flow:
-      1. Fetch compliance result
-      2. AI Tool Router classifies severity + selects tools
-      3. Execute selected tools sequentially
-      4. Upload result, create new version
-
-    Returns:
-      SSE stream with routing decision + execution progress + final result.
-    """
-    if not _supabase_store:
-        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
-
-    # Fetch the compliance check record
-    try:
-        response = _supabase_store.client.table("compliance_checks").select(
-            "task_id, media_type, market, ethnicity, age_group, platform, "
-            "result_json, s3_upload_key, project_id, status"
-        ).eq("task_id", task_id).execute()
-        rows = response.data or []
-        if not rows:
-            return JSONResponse(status_code=404, content={"error": f"Check not found: {task_id}"})
-    except Exception as e:
-        logger.error("[SmartRemediate] DB lookup failed: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-    check = rows[0]
-    media_type = check["media_type"]
-    result_json = check.get("result_json") or {}
-    market = check.get("market", "malaysia")
-    ethnicity = check.get("ethnicity", "malay")
-    project_id = str(check.get("project_id", ""))
-    source_url = check.get("s3_upload_key", "")
-
-    violations = result_json.get("high_risk_indicator", [])
-    risk_level = result_json.get("risk_level", "Moderate")
-    risk_percentage = result_json.get("risk_percentage", 50)
-    suggestion = result_json.get("suggestion", "")
-    localization_plan = result_json.get("localization_plan", "")
-    violations_timeline = result_json.get("violations_timeline")
-
-    async def generate_events():
-        """SSE event generator for smart remediation."""
-        def emit(event: dict) -> str:
-            return f"data: {json.dumps(event)}\n\n"
-
-        try:
-            # Step 1: AI Tool Router
-            yield emit({
-                "type": "status",
-                "step": "routing",
-                "message": "AI analyzing violations and selecting tools...",
-            })
-
-            from jusads_compliance.tool_router import route_remediation
-
-            routing_decision = await route_remediation(
-                media_type=media_type,
-                violations=violations,
-                risk_level=risk_level,
-                risk_percentage=risk_percentage,
-                suggestion=suggestion,
-                localization_plan=localization_plan,
-                violations_timeline=violations_timeline,
-            )
-
-            yield emit({
-                "type": "routing_decision",
-                "severity": routing_decision.overall_severity,
-                "tools": [t.model_dump() for t in routing_decision.tools],
-                "strategy": routing_decision.strategy_summary,
-                "confidence": routing_decision.confidence,
-            })
-
-            # Step 2: Execute remediation
-            yield emit({
-                "type": "status",
-                "step": "executing",
-                "message": f"Executing {len(routing_decision.tools)} tool(s)...",
-            })
-
-            from jusads_compliance.remediation_executor import execute_remediation
-
-            exec_result = await execute_remediation(
-                routing_decision=routing_decision,
-                check_id=task_id,
-                source_media_url=source_url,
-                project_id=project_id,
-                user_email=project_id,
-                compliance_result=result_json,
-                market=market,
-                ethnicity=ethnicity,
-                gender="female",  # Default; could be passed from frontend
-            )
-
-            # Step 3: Emit final result
-            yield emit({
-                "type": "result",
-                "status": exec_result.get("status"),
-                "output_url": exec_result.get("output_url"),
-                "tools_applied": exec_result.get("tools_applied", []),
-                "tools_failed": exec_result.get("tools_failed", []),
-                "strategy_summary": exec_result.get("strategy_summary", ""),
-                "overall_severity": exec_result.get("overall_severity", ""),
-                "confidence": exec_result.get("confidence", 0),
-            })
-
-        except Exception as e:
-            logger.error("[SmartRemediate] Error for %s: %s", task_id, e, exc_info=True)
-            yield emit({
-                "type": "error",
-                "message": "Smart remediation could not be completed. Please try again.",
-            })
-
-    return StreamingResponse(
-        generate_events(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -699,79 +499,10 @@ async def clone_voice_endpoint(task_id: str):
         return JSONResponse(status_code=500, content={"error": "Voice cloning failed"})
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# GET /api/compliance/{task_id}/routing-preview
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-@router.get("/api/compliance/{task_id}/routing-preview")
-async def routing_preview(task_id: str):
-    """Preview what the AI Tool Router would decide without executing anything.
-
-    Useful for showing the user what tools will be applied before they
-    confirm the remediation.
-    """
-    if not _supabase_store:
-        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
-
-    try:
-        response = _supabase_store.client.table("compliance_checks").select(
-            "task_id, media_type, result_json"
-        ).eq("task_id", task_id).execute()
-        rows = response.data or []
-        if not rows:
-            return JSONResponse(status_code=404, content={"error": "Check not found"})
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-    check = rows[0]
-    result_json = check.get("result_json") or {}
-
-    from jusads_compliance.tool_router import route_remediation
-
-    routing_decision = await route_remediation(
-        media_type=check["media_type"],
-        violations=result_json.get("high_risk_indicator", []),
-        risk_level=result_json.get("risk_level", "Moderate"),
-        risk_percentage=result_json.get("risk_percentage", 50),
-        suggestion=result_json.get("suggestion", ""),
-        localization_plan=result_json.get("localization_plan", ""),
-        violations_timeline=result_json.get("violations_timeline"),
-    )
-
-    return JSONResponse(content={
-        "task_id": task_id,
-        "media_type": check["media_type"],
-        "routing": routing_decision.model_dump(),
-    })
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# GET /api/compliance/history
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-@router.get("/api/compliance/history")
-async def get_compliance_history(
-    username: str = Query(..., min_length=1),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-):
-    """Return paginated compliance history for the explicitly requested user."""
-    user_id = username.strip()
-    if not _supabase_store:
-        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
-    try:
-        history = _supabase_store.get_history(user_id=user_id, page=page, page_size=page_size)
-        return JSONResponse(content={
-            "records": [r.model_dump(mode="json") for r in history.records],
-            "total": history.total,
-            "page": history.page,
-            "page_size": history.page_size,
-        })
-    except Exception as e:
-        logger.error("History fetch failed: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -816,49 +547,7 @@ async def get_results(task_id: str):
     return JSONResponse(content=result)
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# GET /api/media/{task_id}/{asset_type}
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-
-@router.get("/api/media/{task_id}/{asset_type}")
-async def get_media_url(task_id: str, asset_type: str):
-    """Presigned URL for a compliance check media asset (original/segmented/remixed)."""
-    if asset_type not in ("original", "remixed", "segmented"):
-        return JSONResponse(status_code=400, content={"error": "asset_type must be original, remixed, or segmented"})
-
-    if not _supabase_store:
-        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
-
-    try:
-        response = (
-            _supabase_store.client.table("compliance_checks")
-            .select("s3_upload_key, s3_segmented_key, s3_remix_key")
-            .eq("task_id", task_id)
-            .execute()
-        )
-        if not response.data:
-            return JSONResponse(status_code=404, content={"error": f"Check not found: {task_id}"})
-
-        record = response.data[0]
-        key_map = {"original": "s3_upload_key", "segmented": "s3_segmented_key", "remixed": "s3_remix_key"}
-        s3_key = record.get(key_map[asset_type])
-
-        if not s3_key:
-            return JSONResponse(status_code=404, content={"error": f"No {asset_type} media for {task_id}"})
-
-        # The DB might store full public URLs instead of just the object key
-        if "amazonaws.com/" in s3_key:
-            import urllib.parse
-            s3_key = s3_key.split("amazonaws.com/")[1]
-            s3_key = urllib.parse.unquote(s3_key)
-
-        client = S3MediaClient()
-        url = client.generate_presigned_url(s3_key, expiry_seconds=3600)
-        return RedirectResponse(url=url)
-    except Exception as e:
-        logger.error("Media URL failed for %s/%s: %s", task_id, asset_type, e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 

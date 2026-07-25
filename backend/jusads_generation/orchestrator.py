@@ -1111,6 +1111,7 @@ async def run_video_plan_execution(
         return
 
     final_video_url = ""
+    final_video_s3_key = ""
     final_video_ad_id = ""
     render_error = ""
     async for event in video_v3_agent.execute_production(
@@ -1129,6 +1130,7 @@ async def run_video_plan_execution(
             if event_data.get("status") == "completed":
                 data = event_data.get("data") or {}
                 final_video_url = str(data.get("mp4_url") or "")
+                final_video_s3_key = str(data.get("s3_key") or "")
                 final_video_ad_id = str(data.get("final_ad_id") or "")
             elif event_data.get("status") == "failed":
                 data = event_data.get("data") or {}
@@ -1136,8 +1138,8 @@ async def run_video_plan_execution(
         elif isinstance(event_data.get("error"), str):
             render_error = event_data["error"]
 
-    if render_error or not final_video_url:
-        yield _sse({"error": render_error or "V3 video render ended without a final MP4."})
+    if render_error or not final_video_url or not final_video_s3_key or not final_video_ad_id:
+        yield _sse({"error": render_error or "V3 video render ended without a saved final MP4."})
         return
 
     # Production supersedes the approval gate: retain the V3 plan for rerenders
@@ -1173,7 +1175,7 @@ async def run_video_plan_execution(
             "ad_id": final_video_ad_id or output_node_id,
             "media_type": "video",
             "platform": plan.get("platform", "tiktok"),
-            "s3_media_key": final_video_url,
+            "s3_media_key": final_video_s3_key,
             "public_url": final_video_url,
             "caption": None,
             "gen_status": "completed",
@@ -1186,6 +1188,7 @@ async def run_video_plan_execution(
         "edges": edges,
         "viewport": final_state.get("viewport") or {"panX": 0, "panY": 0, "zoom": 1},
         "generated_ads": generated_ads,
+        "v3_rendered_plan_id": plan.get("plan_id"),
     })
     yield _sse({"pipeline_state": final_state})
     yield _status_event(

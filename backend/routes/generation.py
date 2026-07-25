@@ -14,17 +14,16 @@ import asyncio
 import uuid
 import json
 import logging
-import tempfile
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from shared.supabase_client import SupabaseComplianceStore
-from shared.s3_client import generate_presigned_upload_url, get_public_url, upload_file_public
+from shared.s3_client import get_public_url, normalize_s3_key
 from jusads_generation import run_generation, run_video_plan_execution
 from jusads_generation.video_plan_validation import is_usable_v3_plan
 from jusads_generation.chat_store import (
@@ -42,7 +41,6 @@ from jusads_generation.distribution import (
     distribute_ad,
     DistributionError,
     AccountNotConfiguredError,
-    get_ad_analytics,
     configured_distribution_accounts,
 )
 from jusads_generation.caption_agent import (
@@ -136,9 +134,6 @@ class ChatRequest(BaseModel):
     parent_asset_url: Optional[str] = None
 
 
-class UploadUrlRequest(BaseModel):
-    filename: str
-    content_type: str = "application/octet-stream"
 
 
 class ExecuteVideoPlanRequest(BaseModel):
@@ -998,117 +993,7 @@ async def distribute_generated_ad(
     return JSONResponse(content={"status": "distributed", "results": results, "caption": successes[-1].get("caption", "")})
 
 
-@router.get("/projects/{project_id}/tasks/{task_id}/ads/{ad_id}/analytics")
-async def get_ad_performance_analytics(
-    project_id: str, task_id: str, ad_id: str
-) -> JSONResponse:
-    """Retrieve live social post analytics for a distributed ad."""
-    if not _store:
-        return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
 
-    try:
-        analytics = await asyncio.to_thread(get_ad_analytics, ad_id, project_id)
-        return JSONResponse(content=analytics)
-    except ValueError:
-        return JSONResponse(status_code=404, content={"error": "Ad not found"})
-    except DistributionError as exc:
-        logger.warning("[Routes] Ad analytics unavailable: %s", exc)
-        return JSONResponse(status_code=503, content={"error": str(exc)})
-    except Exception:
-        logger.exception("[Routes] Failed to get ad analytics")
-        return JSONResponse(status_code=500, content={"error": "Failed to load analytics"})
-
-
-@router.post("/projects/{project_id}/tasks/{task_id}/upload-url")
-async def get_upload_url(project_id: str, task_id: str, body: UploadUrlRequest) -> JSONResponse:
-    """Generate a pre-signed PUT URL for direct-to-S3 upload."""
-    unique_id = uuid.uuid4().hex[:8]
-    s3_key = f"generated_ads/{project_id}/{task_id}/references/{unique_id}_{body.filename}"
-
-    try:
-        upload_url = generate_presigned_upload_url(s3_key, body.content_type)
-        public_url = get_public_url(s3_key)
-        logger.info("[UploadURL] Generated presigned PUT for %s", s3_key)
-        return JSONResponse(content={
-            "upload_url": upload_url,
-            "s3_key": s3_key,
-            "public_url": public_url,
-        })
-    except Exception as e:
-        logger.error("[UploadURL] Failed to generate presigned URL: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-@router.post("/projects/{project_id}/tasks/{task_id}/upload")
-async def upload_reference_asset(project_id: str, task_id: str, file: UploadFile = File(...)) -> JSONResponse:
-    """Server-side upload fallback for when S3 CORS is not configured.
-
-    Accepts multipart file upload, writes to temp disk, uploads to S3.
-    Frontend should prefer the presigned URL path when S3 CORS is enabled.
-    """
-    suffix = Path(file.filename or "file").suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    s3_key = f"generated_ads/{project_id}/{task_id}/references/{uuid.uuid4().hex[:6]}_{file.filename}"
-    try:
-        s3_url = upload_file_public(tmp_path, s3_key)
-        logger.info("[Upload] Uploaded reference: %s -> S3 key: %s", file.filename, s3_key)
-
-        try:
-            from shared.supabase_client import supabase as sb
-            media_type = "image"
-            if file.content_type and "video" in file.content_type:
-                media_type = "video"
-            elif file.content_type and "audio" in file.content_type:
-                media_type = "audio"
-
-            sb.table("generated_ads").insert({
-                "project_id": project_id,
-                "task_id": task_id,
-                "media_type": media_type,
-                "platform": "general",
-                "s3_media_key": s3_key,
-                "status": "completed",
-                "asset_role": "reference",
-                "prompt_used": f"Uploaded reference: {file.filename}",
-                "metadata": {
-                    "is_reference": True,
-                    "filename": file.filename,
-                    "s3_url": s3_url
-                }
-            }).execute()
-            logger.info("[Upload] Recorded chatbot reference asset %s in generated_ads", file.filename)
-        except Exception as dberr:
-            logger.error("[Upload] Failed to record reference asset in DB: %s", dberr)
-
-        return JSONResponse(content={
-            "s3_url": s3_url,
-            "s3_key": s3_key,
-            "public_url": s3_url,
-            "filename": file.filename,
-        })
-    except Exception as e:
-        logger.error("[Upload] Failed reference upload: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
-
-
-# --- Guided Form Schema -------------------------------------------------------
-
-
-@router.get("/guided-form-schema")
-async def get_guided_form_schema() -> JSONResponse:
-    """Return form field definitions for guided generation mode."""
-    from jusads_generation.guided_prompts import get_form_schema
-
-    return JSONResponse(content=get_form_schema())
 
 
 # --- Prompt Search (Phase F) --------------------------------------------------
@@ -1213,33 +1098,6 @@ async def get_prompt_recommendations(
 
     query = " ".join(parts)
 
-    # Enhance query via Gemini using full user background
-    if gemini:
-        try:
-            enhancement_prompt = f"""
-            You are an expert marketing strategist and prompt engineer.
-            Given the following user business profile:
-            - Company/Product Name: {product_name}
-            - Product Category: {product_category}
-            - Product Description: {product_description}
-            - Target Platforms: {', '.join(target_platforms) if isinstance(target_platforms, list) else platform}
-            - Target Markets/Ethnicities: {', '.join(target_markets) if isinstance(target_markets, list) else target_ethnicity}
-            - Audience Age Group: {age_group}
-            
-            Synthesize this user background and write a concise, highly effective 1-2 sentence search query for finding relevant ad prompt templates in a vector database. Focus on target style, core theme, and advertising visual concept. Return ONLY the enhanced query. Do not add quotes, explanation, or markdown.
-            """
-            
-            response = gemini.models.generate_content(
-                model=MODEL_TEXT,
-                contents=enhancement_prompt,
-            )
-            enhanced_query = (response.text or "").strip()
-            if enhanced_query:
-                query = enhanced_query
-                logger.info("[PromptRecommendations] Enhanced query: %s", query)
-        except Exception as e:
-            logger.error("[PromptRecommendations] Gemini enhancement failed, falling back to rule-based: %s", e)
-
     top_k = max(1, min(12, top_k))
 
     try:
@@ -1274,9 +1132,10 @@ async def get_user_assets(user_email: str = "", limit: int = 50) -> JSONResponse
         # Fetch generated ads across all user projects.
         ads_resp = (
             sb.table("generated_ads")
-            .select("id, media_type, platform, s3_media_key, status, metadata, prompt_used, created_at, project_id, task_id")
+            .select("id, media_type, platform, s3_media_key, status, asset_role, metadata, prompt_used, caption, created_at, project_id, task_id")
             .in_("project_id", project_ids)
             .eq("status", "completed")
+            .in_("asset_role", ["output", "reference"])
             .order("created_at", desc=True)
             .limit(limit)
             .execute()
@@ -1285,22 +1144,27 @@ async def get_user_assets(user_email: str = "", limit: int = 50) -> JSONResponse
         assets = []
         for row in (ads_resp.data or []):
             metadata = row.get("metadata") or {}
-            # Public URL: prefer metadata.s3_url, fall back to constructing from s3_media_key.
+            s3_key = normalize_s3_key(str(row.get("s3_media_key") or ""))
             public_url = metadata.get("s3_url") or ""
-            if not public_url and row.get("s3_media_key"):
-                from shared.s3_client import get_public_url
-                public_url = get_public_url(row["s3_media_key"])
+            if not public_url and s3_key:
+                public_url = get_public_url(s3_key)
+            asset_role = str(row.get("asset_role") or "output")
+            is_reference = asset_role == "reference" or bool(metadata.get("is_reference", False))
+            filename = str(metadata.get("filename") or (s3_key.rsplit("/", 1)[-1] if s3_key else ""))
             assets.append({
                 "id": str(row.get("id", "")),
                 "media_type": row.get("media_type", ""),
                 "platform": row.get("platform", ""),
                 "public_url": public_url,
-                "prompt_used": row.get("prompt_used", ""),
+                "s3_key": s3_key,
+                "filename": filename,
+                "asset_role": asset_role,
+                "prompt_used": row.get("prompt_used", "") or row.get("caption", ""),
                 "status": row.get("status", ""),
                 "created_at": row.get("created_at", ""),
                 "project_id": str(row.get("project_id", "")),
                 "task_id": str(row.get("task_id", "")),
-                "is_reference": bool(metadata.get("is_reference", False)),
+                "is_reference": is_reference,
             })
 
         return JSONResponse(content={"assets": assets})

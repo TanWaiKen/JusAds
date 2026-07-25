@@ -188,6 +188,15 @@ export function VideoPlanStoryboard({
   const readyToRender = structurallyReady
     && factsConfirmed
     && localizationConfirmed;
+  const renderBlockers = [
+    missingScripts ? "add spoken scripts" : "",
+    missingCaptions ? "add captions" : "",
+    missingKeyframes ? "regenerate missing scene frames" : "",
+    durationMismatch ? "align the scene timing" : "",
+    overBudget ? "reduce the Omni render budget" : "",
+    !factsConfirmed ? "confirm approved facts" : "",
+    !localizationConfirmed ? "confirm localization" : "",
+  ].filter(Boolean);
 
   useGSAP(
     () => {
@@ -445,6 +454,12 @@ export function VideoPlanStoryboard({
           </label>
         </div>
       </section>
+
+      {!isRendering && !readyToRender && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
+          Before rendering: {renderBlockers.join(", ")}.
+        </p>
+      )}
 
       <button
         type="button"

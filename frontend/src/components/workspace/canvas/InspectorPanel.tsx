@@ -5,7 +5,7 @@
  * instead of a raw text field.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Upload, X, ImageIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE } from "@/services/taskApi";
@@ -39,13 +39,14 @@ interface ReferenceUrlsEditorProps {
  * Renders each reference URL as a thumbnail card with a remove button.
  * An upload button uploads to S3 via the task upload endpoint and appends the URL.
  */
-function ReferenceUrlsEditor({ nodeId, projectId, taskId, value, onChange }: ReferenceUrlsEditorProps) {
+function ReferenceUrlsEditor({ projectId, taskId, value, onChange }: ReferenceUrlsEditorProps) {
   // value may be a comma-string or an actual array coming from the backend prop
   const urls = Array.isArray(value)
     ? (value as unknown as string[]).filter(Boolean)
     : String(value).split(",").map((u) => u.trim()).filter(Boolean);
 
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleRemove = (urlToRemove: string) => {
     const next = urls.filter((u) => u !== urlToRemove).join(",");
@@ -126,6 +127,7 @@ function ReferenceUrlsEditor({ nodeId, projectId, taskId, value, onChange }: Ref
             </>
           )}
           <input
+            ref={fileInputRef}
             type="file"
             accept="image/*,video/*"
             className="hidden"

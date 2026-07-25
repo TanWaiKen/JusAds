@@ -478,13 +478,14 @@ def _persist_ad(
     project_id: str,
     task_id: str,
     media_type: str,
-    s3_url: str,
+    s3_key: str,
+    public_url: str,
     prompt_used: str,
     label: str = "",
     asset_role: str = "output",
 ) -> Optional[str]:
-    """Persist a V3 artifact while separating user-facing outputs from internal media."""
-    if not supabase or not s3_url:
+    """Persist a V3 artifact with its canonical S3 key and display URL."""
+    if not supabase or not s3_key or not public_url:
         return None
     try:
         ad_id = str(uuid.uuid4())
@@ -496,8 +497,13 @@ def _persist_ad(
             "platform": "tiktok",
             "status": "completed",
             "asset_role": asset_role,
-            "s3_media_key": s3_url,
-            "metadata": {"s3_url": s3_url, "label": label, "pipeline": "v3_grid"},
+            "s3_media_key": s3_key,
+            "metadata": {
+                "s3_url": public_url,
+                "filename": Path(s3_key).name,
+                "label": label,
+                "pipeline": "v3_grid",
+            },
             "prompt_used": prompt_used[:500],
             "created_at": datetime.now(timezone.utc).isoformat(),
         }).execute()
@@ -749,6 +755,7 @@ async def generate_assets(
                     project_id,
                     task_id,
                     "image",
+                    s3_key,
                     char_sheet_url,
                     f"Character Sheet: {char_summary[:80]}",
                     "Character Sheet",
@@ -815,6 +822,7 @@ async def generate_assets(
                 project_id,
                 task_id,
                 "image",
+                s3_key,
                 grid_url,
                 f"Scene Grid ({rows}x{cols})",
                 "Scene Grid",
@@ -1068,6 +1076,7 @@ async def execute_production(
             project_id,
             task_id,
             "video",
+            f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/clip_{segment_index:02d}.mp4",
             render_result["url"],
             prompt,
             f"Omni segment {segment_index + 1} ({segment_duration}s)",
@@ -1242,27 +1251,35 @@ async def execute_production(
 
             mp4_path = result.get("mp4_path")
             final_url = None
+            final_s3_key = None
             final_ad_id = None
             if mp4_path and os.path.exists(mp4_path):
-                s3_key = f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/final_video.mp4"
-                final_url = upload_file_public(mp4_path, s3_key)
+                final_s3_key = f"generated_ads/{project_id}/{task_id}/v3/{plan_id}/final_video.mp4"
+                final_url = upload_file_public(mp4_path, final_s3_key)
                 final_ad_id = _persist_ad(
                     project_id,
                     task_id,
                     "video",
+                    final_s3_key,
                     final_url,
                     f"Final V3 Video Ad: {brief[:80]}",
                     "Final Video",
                 )
 
-            if not final_url:
+            if not final_url or not final_s3_key:
                 yield _sse({"node": "assembler", "status": "failed", "data": {
                     "error": "The V3 assembler did not produce a final MP4.",
+                }})
+                return
+            if not final_ad_id:
+                yield _sse({"node": "assembler", "status": "failed", "data": {
+                    "error": "The final video could not be saved to your asset library. Please retry production.",
                 }})
                 return
 
             yield _sse({"node": "assembler", "status": "completed", "data": {
                 "mp4_url": final_url,
+                "s3_key": final_s3_key,
                 "final_ad_id": final_ad_id,
                 "capcut_draft": result.get("capcut_draft"),
                 "clips_produced": len(scene_clips),

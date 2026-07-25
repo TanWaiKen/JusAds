@@ -127,21 +127,6 @@ async def delete_project(project_id: str) -> JSONResponse:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-@router.get("/projects/{project_id}/checks")
-async def get_project_checks(project_id: str) -> JSONResponse:
-    """Fetch compliance checks for a project."""
-    store = _get_store()
-    if not store:
-        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
-
-    try:
-        checks = store.get_project_checks(project_id=project_id)
-        return JSONResponse(content=checks)
-    except Exception as e:
-        logger.error("Failed to get project checks: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
 # -- Task Endpoints ------------------------------------------------------------
 
 

@@ -30,10 +30,8 @@ from routes.remix import router as remix_router, init_remix
 from routes.projects import router as projects_router, init_store as init_projects_store
 from routes.health import router as health_router, init_health
 from routes.profile import router as profile_router
-from routes.progress import router as progress_router
 from routes.generation import router as generation_router, init_generation
 from routes.files import router as files_router
-from routes.capcut_draft import router as capcut_draft_router
 from routes.trends import router as trends_router
 from routes.statistics import router as statistics_router
 
@@ -106,10 +104,8 @@ app.include_router(remix_router)
 app.include_router(projects_router)
 app.include_router(generation_router)
 app.include_router(health_router)
-app.include_router(progress_router)
 app.include_router(profile_router)
 app.include_router(files_router)
-app.include_router(capcut_draft_router)
 app.include_router(trends_router)
 app.include_router(statistics_router)
 

@@ -5,7 +5,8 @@ Backward-compatibility shim. Use agent.s3_utils instead.
 """
 
 import logging
-from urllib.parse import quote
+from pathlib import PurePosixPath
+from urllib.parse import quote, unquote, urlparse
 
 from botocore.exceptions import ClientError
 
@@ -34,8 +35,8 @@ class S3MediaClient:
     def upload_file_public(self, file_path, s3_key):
         return upload_file_public(file_path, s3_key)
 
-    def generate_presigned_url(self, s3_key, expiry_seconds=3600):
-        return generate_presigned_url(s3_key, expiry_seconds)
+    def generate_presigned_url(self, s3_key, expiry_seconds=3600, attachment_filename=None):
+        return generate_presigned_url(s3_key, expiry_seconds, attachment_filename)
 
     def get_user_storage_usage(self, username):
         return get_user_storage_usage(username)
@@ -194,15 +195,42 @@ def delete_project_media(project_id: str, owner_email: str | None = None) -> int
 # --- Presigned URL ------------------------------------------------------------
 
 
-def generate_presigned_url(s3_key: str, expiry_seconds: int = 3600) -> str:
-    """Generate a time-limited presigned GET URL for an S3 object.
+def normalize_s3_key(value: str) -> str | None:
+    """Return a canonical key, accepting only this bucket's legacy public URLs."""
+    candidate = (value or "").strip()
+    if not candidate:
+        return None
 
-    S3 honours Range headers on presigned GETs for byte-range streaming.
-    """
+    parsed = urlparse(candidate)
+    if parsed.scheme or parsed.netloc:
+        allowed_hosts = {
+            f"{BUCKET}.s3.{REGION}.amazonaws.com",
+            f"{BUCKET}.s3.amazonaws.com",
+        }
+        if parsed.scheme != "https" or parsed.netloc not in allowed_hosts:
+            return None
+        candidate = unquote(parsed.path.lstrip("/"))
+
+    key = candidate.lstrip("/")
+    if not key or ".." in PurePosixPath(key).parts:
+        return None
+    return key
+
+
+def generate_presigned_url(
+    s3_key: str,
+    expiry_seconds: int = 3600,
+    attachment_filename: str | None = None,
+) -> str:
+    """Generate a time-limited GET URL, optionally forcing an attachment download."""
     try:
+        params = {"Bucket": BUCKET, "Key": s3_key}
+        if attachment_filename:
+            filename = PurePosixPath(attachment_filename).name.replace('"', "")
+            params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
         url = s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": BUCKET, "Key": s3_key},
+            Params=params,
             ExpiresIn=expiry_seconds,
         )
         return url

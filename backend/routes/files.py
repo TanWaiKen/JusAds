@@ -18,10 +18,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from shared.s3_client import (
+    check_quota,
     generate_presigned_upload_url,
     generate_presigned_url,
     get_public_url,
-    check_quota,
+    normalize_s3_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,21 @@ class UploadUrlRequest(BaseModel):
 class DownloadUrlRequest(BaseModel):
     """Request body for generating a pre-signed download URL."""
     s3_key: str
+
+
+class CompleteUploadRequest(BaseModel):
+    """Confirm a completed direct upload so a reference becomes a library asset."""
+    s3_key: str
+    filename: str
+    content_type: str = "application/octet-stream"
+    project_id: str
+    asset_type: str = "upload"
+
+
+class AssetDownloadRequest(BaseModel):
+    """Request an asset download after validating the requesting project owner."""
+    asset_id: str
+    user_email: str
 
 
 # --- Upload URL ---------------------------------------------------------------
@@ -97,33 +113,6 @@ async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
             safe_filename, body.content_type, body.file_size,
         )
 
-        if body.asset_type == "reference":
-            try:
-                from shared.supabase_client import supabase as sb
-                media_type = "image"
-                if body.content_type and "video" in body.content_type:
-                    media_type = "video"
-                elif body.content_type and "audio" in body.content_type:
-                    media_type = "audio"
-
-                sb.table("generated_ads").insert({
-                    "project_id": body.project_id,
-                    "media_type": media_type,
-                    "platform": "general",
-                    "s3_media_key": s3_key,
-                    "status": "completed",
-                    "asset_role": "reference",
-                    "prompt_used": f"Uploaded reference: {body.filename}",
-                    "metadata": {
-                        "is_reference": True,
-                        "filename": body.filename,
-                        "s3_url": public_url
-                    }
-                }).execute()
-                logger.info("[Files] Recorded reference asset %s in generated_ads", body.filename)
-            except Exception as dberr:
-                logger.error("[Files] Failed to record reference asset in DB: %s", dberr)
-
         return JSONResponse(content={
             "upload_url": upload_url,
             "s3_key": s3_key,
@@ -138,7 +127,106 @@ async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
         )
 
 
-# --- Download URL -------------------------------------------------------------
+@router.post("/upload-complete")
+async def complete_upload(body: CompleteUploadRequest) -> JSONResponse:
+    """Record a completed direct reference upload in the user's asset library."""
+    if body.asset_type != "reference":
+        return JSONResponse(content={"recorded": False})
+
+    s3_key = normalize_s3_key(body.s3_key)
+    if not s3_key:
+        return JSONResponse(status_code=400, content={"error": "Invalid S3 object key"})
+
+    try:
+        from shared.supabase_client import supabase as sb
+
+        existing = (
+            sb.table("generated_ads")
+            .select("id")
+            .eq("project_id", body.project_id)
+            .eq("s3_media_key", s3_key)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            return JSONResponse(content={"recorded": True, "asset_id": str(existing.data[0]["id"])})
+
+        media_type = "image"
+        if "video" in body.content_type:
+            media_type = "video"
+        elif "audio" in body.content_type:
+            media_type = "audio"
+        elif "text" in body.content_type:
+            media_type = "text"
+
+        response = sb.table("generated_ads").insert({
+            "project_id": body.project_id,
+            "media_type": media_type,
+            "platform": "general",
+            "s3_media_key": s3_key,
+            "status": "completed",
+            "asset_role": "reference",
+            "prompt_used": f"Uploaded reference: {body.filename}",
+            "metadata": {
+                "is_reference": True,
+                "filename": body.filename,
+                "s3_url": get_public_url(s3_key),
+            },
+        }).execute()
+        row = (response.data or [{}])[0]
+        logger.info("[Files] Recorded completed reference upload %s", body.filename)
+        return JSONResponse(content={"recorded": True, "asset_id": str(row.get("id", ""))})
+    except Exception:
+        logger.exception("[Files] Failed to record completed reference upload")
+        return JSONResponse(status_code=500, content={"error": "Upload succeeded but could not be saved to your asset library."})
+
+
+@router.post("/asset-download-url")
+async def get_asset_download_url(body: AssetDownloadRequest) -> JSONResponse:
+    """Return a download URL for an asset owned by the requesting user's project."""
+    asset_id = body.asset_id.strip()
+    user_email = body.user_email.strip().lower()
+    if not asset_id or not user_email:
+        return JSONResponse(status_code=400, content={"error": "asset_id and user_email are required"})
+
+    try:
+        from shared.supabase_client import supabase as sb
+
+        response = (
+            sb.table("generated_ads")
+            .select("id, project_id, media_type, s3_media_key, metadata, projects!inner(owner_email)")
+            .eq("id", asset_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            return JSONResponse(status_code=404, content={"error": "Asset not found"})
+
+        asset = rows[0]
+        project = asset.get("projects") or {}
+        if project.get("owner_email", "").strip().lower() != user_email:
+            return JSONResponse(status_code=403, content={"error": "Access denied"})
+
+        s3_key = normalize_s3_key(str(asset.get("s3_media_key") or ""))
+        if not s3_key:
+            return JSONResponse(status_code=409, content={"error": "This asset has no downloadable file"})
+
+        metadata = asset.get("metadata") or {}
+        filename = str(metadata.get("filename") or s3_key.rsplit("/", 1)[-1])
+        download_url = generate_presigned_url(
+            s3_key,
+            expiry_seconds=3600,
+            attachment_filename=filename,
+        )
+        logger.info("[Files] Generated asset download URL for %s", asset_id)
+        return JSONResponse(content={"download_url": download_url, "filename": filename})
+    except Exception:
+        logger.exception("[Files] Failed to generate owned asset download URL")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Unable to prepare the download. Please try again."},
+        )
 
 
 @router.post("/download-url")

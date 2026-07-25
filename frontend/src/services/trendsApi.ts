@@ -100,6 +100,7 @@ export interface DailyCreativeIdea {
   expires_at: string;
   source_urls: string[];
   locked_for_day: boolean;
+  payload_version?: number;
 }
 
 // ─── API Functions ───────────────────────────────────────────────────────────

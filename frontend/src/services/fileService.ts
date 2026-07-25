@@ -30,6 +30,11 @@ interface UploadOptions {
   assetType?: "upload" | "reference" | "generated";
 }
 
+interface AssetDownloadUrlResponse {
+  download_url: string;
+  filename: string;
+}
+
 /**
  * Uploads a file directly to S3 using a pre-signed URL.
  *
@@ -73,12 +78,43 @@ export async function uploadFileToS3(
     throw new Error(`S3 upload failed (${uploadRes.status})`);
   }
 
+  if (options.assetType === "reference") {
+    const completeRes = await fetch(`${API_BASE}/api/files/upload-complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        s3_key: data.s3_key,
+        filename: data.filename,
+        content_type: options.contentType,
+        project_id: options.projectId,
+        asset_type: "reference",
+      }),
+    });
+    if (!completeRes.ok) {
+      throw new Error(await getApiError(completeRes, "Upload succeeded but could not be saved to Assets"));
+    }
+  }
+
   return data;
 }
 
+export async function getAssetDownloadUrl(assetId: string, userEmail: string): Promise<AssetDownloadUrlResponse> {
+  const res = await fetch(`${API_BASE}/api/files/asset-download-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ asset_id: assetId, user_email: userEmail }),
+  });
+
+  if (!res.ok) {
+    throw new Error(await getApiError(res, "Failed to prepare asset download"));
+  }
+
+  return res.json() as Promise<AssetDownloadUrlResponse>;
+}
 /**
- * Gets a temporary pre-signed download URL for an S3 object.
- * Use this to display or download files stored in S3.
+ * Gets a temporary pre-signed download URL for a known S3 object.
+ * Prefer getAssetDownloadUrl for asset-library downloads because it validates
+ * the asset record and project ownership before signing.
  */
 export async function getDownloadUrl(s3Key: string): Promise<string> {
   const res = await fetch(`${API_BASE}/api/files/download-url`, {

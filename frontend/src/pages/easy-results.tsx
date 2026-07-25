@@ -31,6 +31,18 @@ interface GuidedNavigationState {
 const MEDIA_FILTERS = ["all", "image", "video", "audio", "text"] as const;
 type MediaFilter = typeof MEDIA_FILTERS[number];
 
+function getRenderedPlanId(pipelineState: unknown): string | null {
+  if (typeof pipelineState !== "object" || pipelineState === null) return null;
+  const value = (pipelineState as Record<string, unknown>).v3_rendered_plan_id;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function getEventError(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) return null;
+  const error = (data as Record<string, unknown>).error;
+  return typeof error === "string" && error.length > 0 ? error : null;
+}
+
 export default function EasyResultsPage() {
   const { projectId, taskId } = useParams<{ projectId: string; taskId: string }>();
   const location = useLocation();
@@ -43,6 +55,7 @@ export default function EasyResultsPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [videoPlan, setVideoPlan] = useState<VideoPlan | null>(null);
+  const [renderedPlanId, setRenderedPlanId] = useState<string | null>(null);
   const [planRendering, setPlanRendering] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
@@ -67,11 +80,10 @@ export default function EasyResultsPage() {
   const refreshVideoPlan = useCallback(async () => {
     if (!projectId || !taskId) return null;
     const task = await getTask(projectId, taskId);
-    const rawPlan = task.type === "generation"
-      ? task.pipeline_state?.video_plan
-      : undefined;
-    const normalized = normalizeVideoPlan(rawPlan);
+    const pipelineState = task.type === "generation" ? task.pipeline_state : undefined;
+    const normalized = normalizeVideoPlan(pipelineState?.video_plan);
     setVideoPlan(normalized ?? null);
+    setRenderedPlanId(getRenderedPlanId(pipelineState));
     return normalized ?? null;
   }, [projectId, taskId]);
 
@@ -86,10 +98,9 @@ export default function EasyResultsPage() {
       if (!active) return;
       setAds(generated);
       setSelectedId(generated[0]?.adId ?? null);
-      const rawPlan = task?.type === "generation"
-        ? task.pipeline_state?.video_plan
-        : undefined;
-      setVideoPlan(normalizeVideoPlan(rawPlan) ?? null);
+      const pipelineState = task?.type === "generation" ? task.pipeline_state : undefined;
+      setVideoPlan(normalizeVideoPlan(pipelineState?.video_plan) ?? null);
+      setRenderedPlanId(getRenderedPlanId(pipelineState));
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -156,6 +167,7 @@ export default function EasyResultsPage() {
     void getDistributionAccounts(user?.profile?.email).then(setAccounts).catch(() => setAccounts([]));
   }, [user?.profile?.email]);
 
+  const showStoryboard = Boolean(videoPlan && videoPlan.planId !== renderedPlanId);
   const filteredAds = mediaFilter === "all"
     ? ads
     : ads.filter((ad) => ad.mediaType === mediaFilter);
@@ -223,8 +235,22 @@ export default function EasyResultsPage() {
     try {
       for await (const event of executeVideoPlan(projectId, taskId, approvedPlan)) {
         if (event.error) throw new Error(event.error);
+        if (event.status === "failed") {
+          throw new Error(getEventError(event.data) ?? "Video rendering failed.");
+        }
       }
-      await Promise.all([refreshOutputs(), refreshVideoPlan()]);
+      const [, persistedPlan] = await Promise.all([refreshOutputs(), refreshVideoPlan()]);
+      const renderedTask = await getTask(projectId, taskId);
+      const completedPlanId = renderedTask.type === "generation"
+        ? getRenderedPlanId(renderedTask.pipeline_state)
+        : null;
+      const completedAds = await getGeneratedAds(projectId, taskId);
+      const hasFinalVideo = completedAds.some((ad) => ad.mediaType === "video" && Boolean(ad.publicUrl));
+      if (completedPlanId !== approvedPlan.planId || !hasFinalVideo) {
+        setVideoPlan(persistedPlan);
+        throw new Error("The video did not finish saving. Please retry rendering from the storyboard.");
+      }
+      setRenderedPlanId(completedPlanId);
       toast.success("Video render completed.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not render the approved video");
@@ -283,10 +309,10 @@ export default function EasyResultsPage() {
             Generate new ad
           </button>
           <h1 className="text-2xl font-semibold tracking-tight text-text-heading">
-            {videoPlan ? "Review your video storyboard" : "Your generated ads"}
+            {showStoryboard ? "Review your video storyboard" : "Your generated ads"}
           </h1>
           <p className="mt-1 text-sm text-text-muted">
-            {videoPlan
+            {showStoryboard
               ? "Review the scenes, confirm the approved facts and localization, then start production."
               : "Choose a version, preview it, then describe what you would like to improve."}
           </p>
@@ -310,12 +336,12 @@ export default function EasyResultsPage() {
         <div aria-hidden="true" />
       </header>
 
-      {loading || generating && ads.length === 0 && !videoPlan ? (
+      {loading || generating && ads.length === 0 && !showStoryboard ? (
         <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-2xl border border-border-default bg-surface-card">
           <Loader2 className="h-7 w-7 animate-spin text-primary" />
           <p className="text-sm text-text-muted">{generating ? "Generating your ad…" : "Loading generated ads…"}</p>
         </div>
-      ) : videoPlan ? (
+      ) : showStoryboard && videoPlan ? (
         <section className="rounded-2xl border border-border-default bg-surface-card p-4 sm:p-6">
           <VideoPlanStoryboard
             key={videoPlan.planId}

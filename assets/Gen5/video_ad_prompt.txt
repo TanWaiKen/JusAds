@@ -1,0 +1,34 @@
+=== 探五金店 — TikTok Video Ad Prompt ===
+
+Platform: TikTok | Format: 9:16 vertical | Duration: 15 seconds | Scenes: 4
+Language: Cantonese/Mandarin mix | Market: Malaysia
+Concept: 探店 (store exploration) — hidden gem local hardware shop
+
+--- Generation Prompt ---
+Create a 15-second TikTok video ad with 4 scenes for a 五金店 (hardware store) in Malaysia.
+
+Concept: 探店 (store exploration) — use it as the hook. Show a first-person POV walking into
+a local Chinese hardware shop, discovering the packed shelves of tools, pipes, and hardware.
+The vibe is nostalgic, authentic kopitiam-era neighborhood shop.
+
+Duration: 15 seconds | 4 scenes | TikTok vertical 9:16 | Language: Cantonese/Mandarin mix
+
+Scene breakdown:
+Scene 1 (0-3s): Hook — "探五金店！" text overlay, creator walks up to shop entrance
+Scene 2 (4-7s): Wide shot of packed shelves — tools, screws, pipes everywhere
+Scene 3 (8-12s): Close-up product showcase — highlight a hero product (e.g. drill, padlock)
+Scene 4 (13-15s): CTA — shop name/location overlay, "来这里找！" voiceover
+
+--- References Used ---
+hardware_tools.jpg       — tools/hardware product shot (Unsplash)
+hardware_store_shelf.jpg — packed shelf in hardware shop (Unsplash)
+hardware_store_interior.jpg — shop interior wide shot (Unsplash)
+
+--- AI Storyboard Output (V1) ---
+Title: "Hidden Gem Hardware Tour"
+Subtitle Scene 1: 本地探店：隐藏宝藏五金店！
+Subtitle Scene 2: 工具、五金、配件，应有尽有。
+
+--- AI Storyboard Output (V2, regen with interior ref only) ---
+Title: "The Expert Help"
+Scene 3 updated: Staff helping customer choose the right tools

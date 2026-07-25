@@ -19,11 +19,22 @@ _MARKET_TIMEZONES = {
 }
 _CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "daily_creative_ideas.json"
 _LOCK = asyncio.Lock()
+_DAILY_IDEA_PAYLOAD_VERSION = 2
 _KNOWN_2026_MALAYSIA_WINDOWS = {
     # Official sources vary by one announced/observed day, so retain the
     # inclusive March 20-23 window and reject clearly unrelated dates.
     "aidilfitri": (date(2026, 3, 20), date(2026, 3, 23)),
     "hari raya puasa": (date(2026, 3, 20), date(2026, 3, 23)),
+}
+_FIXED_DATE_SALE_EVENTS = {
+    "double 11": (11, 11),
+    "singles' day": (11, 11),
+    "singles day": (11, 11),
+    "11.11": (11, 11),
+    "year-end sales (11.11)": (11, 11),
+    "double 12": (12, 12),
+    "12.12": (12, 12),
+    "year-end sales (12.12)": (12, 12),
 }
 
 
@@ -66,13 +77,20 @@ def _read_local_cache(cache_key: str) -> dict[str, Any] | None:
 
 
 def _event_date_is_plausible(event: dict[str, Any], market: str) -> bool:
-    if market != "malaysia":
-        return True
+    """Reject known seasonal events when their stored calendar date is impossible."""
     name = _plain_text(event.get("name"), 200).lower()
     try:
         start_date = date.fromisoformat(_plain_text(event.get("start_date"), 20))
     except ValueError:
         return False
+
+    for phrase, (month, day) in _FIXED_DATE_SALE_EVENTS.items():
+        if phrase in name and (start_date.month, start_date.day) != (month, day):
+            logger.warning("[DailyIdea] Ignoring misdated %s event on %s", phrase, start_date)
+            return False
+
+    if market != "malaysia":
+        return True
     for phrase, (window_start, window_end) in _KNOWN_2026_MALAYSIA_WINDOWS.items():
         if phrase in name and start_date.year == 2026:
             return window_start <= start_date <= window_end
@@ -84,8 +102,9 @@ def _cached_payload_is_plausible(
     idea_date: str,
     market: str,
 ) -> bool:
-    if market != "malaysia":
-        return True
+    """Reject cached seasonal ideas that cannot apply on the cached local day."""
+    if int(payload.get("payload_version", 1)) != _DAILY_IDEA_PAYLOAD_VERSION:
+        return False
     text = " ".join(
         [
             _plain_text(payload.get("title"), 200),
@@ -96,6 +115,15 @@ def _cached_payload_is_plausible(
         day = date.fromisoformat(idea_date)
     except ValueError:
         return False
+
+    for phrase, (month, event_day) in _FIXED_DATE_SALE_EVENTS.items():
+        if phrase in text:
+            event_date = date(day.year, month, event_day)
+            if not 0 <= (event_date - day).days <= 21:
+                return False
+
+    if market != "malaysia":
+        return True
     if day.year == 2026 and any(phrase in text for phrase in _KNOWN_2026_MALAYSIA_WINDOWS):
         # Daily preparation ideas may start up to three weeks before the event.
         return date(2026, 2, 27) <= day <= date(2026, 3, 23)
@@ -266,7 +294,10 @@ def _fallback_idea(
         return {
             "title": f"{event_name}: preparation moment",
             "why_today": (
-                f"{event_name} begins in {days_until} day{'s' if days_until != 1 else ''}. "
+                f"{event_name} is happening today. Use real-time participation and on-the-day relevance "
+                "rather than anticipation or unsupported festive claims."
+                if days_until == 0
+                else f"{event_name} begins in {days_until} day{'s' if days_until != 1 else ''}. "
                 "Use preparation and anticipation rather than unsupported festive claims."
             ),
             "idea": signal_adaptation or (
@@ -375,6 +406,7 @@ async def get_daily_creative_idea(market: str = "malaysia") -> dict[str, Any]:
         )
         payload = {
             **idea,
+            "payload_version": _DAILY_IDEA_PAYLOAD_VERSION,
             "idea_date": idea_date,
             "market": normalized_market,
             "timezone": timezone_name,

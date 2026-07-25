@@ -78,9 +78,12 @@ export interface StatsResponse {
 // ─── API Functions ───────────────────────────────────────────────────────────
 
 export class StatisticsError extends Error {
-  constructor(message: string, public code?: string) {
+  code?: string;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "StatisticsError";
+    this.code = code;
   }
 }
 

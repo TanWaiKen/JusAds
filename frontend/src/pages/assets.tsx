@@ -16,12 +16,14 @@ import {
   FileText,
   Loader2,
   ExternalLink,
+  Download,
   Sparkles,
   UploadCloud,
 } from "lucide-react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { API_BASE } from "@/services/generationApi";
+import { getAssetDownloadUrl } from "@/services/fileService";
 import { useAuth } from "@/hooks/useAuth";
 
 gsap.registerPlugin(useGSAP);
@@ -36,7 +38,29 @@ interface UserAsset {
   createdAt: string;
   projectId: string;
   taskId: string;
-  isReference?: boolean;
+  assetRole: "output" | "reference";
+  filename: string;
+  isReference: boolean;
+}
+
+function toUserAsset(value: unknown): UserAsset | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const assetRole = record.asset_role === "reference" ? "reference" : "output";
+  return {
+    id: typeof record.id === "string" ? record.id : "",
+    mediaType: typeof record.media_type === "string" ? record.media_type : "",
+    platform: typeof record.platform === "string" ? record.platform : "",
+    publicUrl: typeof record.public_url === "string" ? record.public_url : "",
+    promptUsed: typeof record.prompt_used === "string" ? record.prompt_used : "",
+    status: typeof record.status === "string" ? record.status : "",
+    createdAt: typeof record.created_at === "string" ? record.created_at : "",
+    projectId: typeof record.project_id === "string" ? record.project_id : "",
+    taskId: typeof record.task_id === "string" ? record.task_id : "",
+    assetRole,
+    filename: typeof record.filename === "string" ? record.filename : "",
+    isReference: record.is_reference === true || assetRole === "reference",
+  };
 }
 
 const MEDIA_ICONS: Record<string, typeof ImageIcon> = {
@@ -53,6 +77,8 @@ export default function DashboardAssets() {
   const [activeTab, setActiveTab] = useState<"generated" | "uploaded">("generated");
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
+  const [downloadingAssetId, setDownloadingAssetId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -64,22 +90,11 @@ export default function DashboardAssets() {
     setLoadingAssets(true);
     fetch(`${API_BASE}/api/user-assets?user_email=${encodeURIComponent(email)}&limit=100`)
       .then((res) => (res.ok ? res.json() : { assets: [] }))
-      .then((data) => {
-        const raw = data.assets || [];
-        setAssets(
-          raw.map((r: Record<string, any>) => ({
-            id: String(r.id || ""),
-            mediaType: String(r.media_type || ""),
-            platform: String(r.platform || ""),
-            publicUrl: String(r.public_url || ""),
-            promptUsed: String(r.prompt_used || ""),
-            status: String(r.status || ""),
-            createdAt: String(r.created_at || ""),
-            projectId: String(r.project_id || ""),
-            taskId: String(r.task_id || ""),
-            isReference: !!r.is_reference,
-          }))
-        );
+      .then((data: unknown) => {
+        if (typeof data !== "object" || data === null) return;
+        const raw = (data as Record<string, unknown>).assets;
+        if (!Array.isArray(raw)) return;
+        setAssets(raw.map(toUserAsset).filter((asset): asset is UserAsset => asset !== null));
       })
       .catch(() => setAssets([]))
       .finally(() => setLoadingAssets(false));
@@ -113,10 +128,38 @@ export default function DashboardAssets() {
 
     const matchesSearch =
       a.promptUsed.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.platform.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = typeFilter === "All" || a.mediaType === typeFilter.toLowerCase();
     return matchesSearch && matchesType;
   });
+
+  const handleDownload = async (asset: UserAsset): Promise<void> => {
+    const email = user?.profile?.email;
+    if (!email || !asset.id) return;
+
+    setDownloadingAssetId(asset.id);
+    setDownloadError(null);
+    try {
+      const isGeneratedText = asset.mediaType === "text" && !asset.isReference;
+      const filename = asset.filename || (isGeneratedText ? "generated-ad.txt" : "asset");
+      const downloadUrl = isGeneratedText
+        ? URL.createObjectURL(new Blob([asset.promptUsed], { type: "text/plain;charset=utf-8" }))
+        : (await getAssetDownloadUrl(asset.id, email)).download_url;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      if (isGeneratedText) URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Could not download this asset.");
+    } finally {
+      setDownloadingAssetId(null);
+    }
+  };
 
   return (
     <div ref={containerRef} className="flex h-[calc(100vh-68px)] flex-col overflow-hidden bg-background">
@@ -198,6 +241,12 @@ export default function DashboardAssets() {
             </select>
           </div>
 
+          {downloadError && (
+            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {downloadError}
+            </p>
+          )}
+
           {/* Loading */}
           {loadingAssets && (
             <div className="flex items-center justify-center py-12">
@@ -275,7 +324,9 @@ export default function DashboardAssets() {
                         </span>
                       </div>
                       <p className="text-[10px] text-foreground line-clamp-2">
-                        {asset.promptUsed || "Generated ad"}
+                        {asset.isReference && asset.filename
+                          ? asset.filename
+                          : asset.promptUsed || "Generated ad"}
                       </p>
                       <p className="text-[9px] text-muted-foreground">
                         {new Date(asset.createdAt).toLocaleDateString("en-MY", {
@@ -285,17 +336,30 @@ export default function DashboardAssets() {
                           minute: "2-digit",
                         })}
                       </p>
-                      {asset.publicUrl && (
-                        <a
-                          href={asset.publicUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[9px] text-primary hover:underline mt-1"
+                      <div className="mt-1 flex items-center gap-3">
+                        {asset.publicUrl && (
+                          <a
+                            href={asset.publicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[9px] text-primary hover:underline"
+                          >
+                            <ExternalLink size={9} />
+                            View
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void handleDownload(asset)}
+                          disabled={downloadingAssetId === asset.id}
+                          className="inline-flex items-center gap-1 text-[9px] font-medium text-primary hover:underline disabled:cursor-wait disabled:opacity-60"
                         >
-                          <ExternalLink size={9} />
-                          View full size
-                        </a>
-                      )}
+                          {downloadingAssetId === asset.id
+                            ? <Loader2 size={9} className="animate-spin" />
+                            : <Download size={9} />}
+                          Download
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

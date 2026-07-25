@@ -32,6 +32,10 @@ import {
   Send,
   Lightbulb,
   ArrowRight,
+  Clapperboard,
+  Link2,
+  ListChecks,
+  Target,
   ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -527,6 +531,7 @@ export default function EasyGenerationPage() {
   const [referenceRecommendations, setReferenceRecommendations] = useState<string[]>([]);
   const [dailyIdea, setDailyIdea] = useState<DailyCreativeIdea | null>(null);
   const [dailyIdeaLoading, setDailyIdeaLoading] = useState(true);
+  const [dailyIdeaExpanded, setDailyIdeaExpanded] = useState(false);
 
   // GSAP entrance animation for each step
   useGSAP(() => {
@@ -538,23 +543,10 @@ export default function EasyGenerationPage() {
     });
   }, { scope: containerRef, dependencies: [step] });
 
-  // Fetch schema when moving to step 2
+  // Load schema when moving to step 2
   useEffect(() => {
     if (step === 2 && schema.length === 0) {
-      setSchemaLoading(true);
-      fetch(`${API_BASE}/api/guided-form-schema`)
-        .then((res) => {
-          if (!res.ok) throw new Error("Failed to fetch form schema");
-          return res.json() as Promise<FormSchemaResponse>;
-        })
-        .then((data) => {
-          setSchema(data.design_types);
-        })
-        .catch(() => {
-          setSchema(FALLBACK_SCHEMA);
-          toast.error("Could not load form schema — using defaults");
-        })
-        .finally(() => setSchemaLoading(false));
+      setSchema(FALLBACK_SCHEMA);
     }
   }, [step, schema.length]);
 
@@ -941,24 +933,92 @@ export default function EasyGenerationPage() {
                   </p>
                 </div>
               </div>
-              <Button type="button" size="sm" onClick={handleUseDailyIdea} className="shrink-0">
-                Add to chat
-                <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDailyIdeaExpanded((expanded) => !expanded)}
+                  aria-expanded={dailyIdeaExpanded}
+                  aria-controls="daily-idea-details"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-300/80 bg-amber-50/70 px-3 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-900/40"
+                >
+                  {dailyIdeaExpanded ? "Hide brief" : "View brief"}
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${dailyIdeaExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+                </button>
+                <Button type="button" size="sm" onClick={handleUseDailyIdea}>
+                  Add to chat
+                  <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
             </div>
-            <details className="border-t border-amber-200/70 bg-surface-card/55 dark:border-amber-900/50">
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-5 py-2.5 text-xs font-semibold text-text-body marker:hidden">
-                Preview idea
-                <ChevronDown className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
-              </summary>
-              <div className="grid gap-3 border-t border-border-default/60 px-5 py-4 text-sm text-text-muted sm:grid-cols-[1fr_auto]">
-                <p className="leading-6">{dailyIdea.idea}</p>
-                <div className="flex flex-wrap items-start gap-2 sm:max-w-64">
-                  <span className="rounded-full bg-surface-inset px-2.5 py-1 text-xs">Hook: {dailyIdea.hook}</span>
-                  <span className="rounded-full bg-surface-inset px-2.5 py-1 text-xs">Format: {dailyIdea.format}</span>
+            {dailyIdeaExpanded && (
+              <div id="daily-idea-details" className="border-t border-amber-200/70 bg-surface-card/55 px-5 py-4 dark:border-amber-900/50">
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+                <div className="rounded-xl border border-border-default/70 bg-background/65 p-4">
+                  <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
+                    <Target className="h-3.5 w-3.5" aria-hidden="true" />
+                    Creative direction
+                  </div>
+                  <p className="text-sm leading-6 text-text-body">{dailyIdea.idea}</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  <div className="rounded-xl border border-border-default/70 bg-background/65 p-4">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700 dark:text-violet-300">
+                      <Lightbulb className="h-3.5 w-3.5" aria-hidden="true" />
+                      Opening hook
+                    </div>
+                    <p className="mt-2 text-sm leading-5 text-text-body">{dailyIdea.hook}</p>
+                  </div>
+                  <div className="rounded-xl border border-border-default/70 bg-background/65 p-4">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-300">
+                      <Clapperboard className="h-3.5 w-3.5" aria-hidden="true" />
+                      Recommended format
+                    </div>
+                    <p className="mt-2 text-sm font-medium text-text-heading">{dailyIdea.format}</p>
+                    {dailyIdea.event_name && (
+                      <p className="mt-1 text-xs text-text-muted">Event context: {dailyIdea.event_name}</p>
+                    )}
+                  </div>
                 </div>
               </div>
-            </details>
+
+              <div className="mt-4 rounded-xl border border-border-default/70 bg-background/65 p-4">
+                <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
+                  <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
+                  15-second execution plan
+                </div>
+                <ol className="grid gap-2 md:grid-cols-3">
+                  {dailyIdea.execution_steps.map((step, index) => (
+                    <li key={step} className="flex gap-2 rounded-lg bg-surface-inset/70 px-3 py-2.5 text-xs leading-5 text-text-body">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                        {index + 1}
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {dailyIdea.source_urls.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border-default/60 pt-3">
+                  <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+                    <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Trend sources
+                  </span>
+                  {dailyIdea.source_urls.slice(0, 3).map((sourceUrl, index) => (
+                    <a
+                      key={sourceUrl}
+                      href={sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Source {index + 1}
+                    </a>
+                  ))}
+                </div>
+              )}
+              </div>
+            )}
           </>
         ) : (
           <p className="px-5 py-4 text-sm text-text-muted">Today&apos;s idea is temporarily unavailable.</p>
