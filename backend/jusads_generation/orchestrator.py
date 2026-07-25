@@ -419,9 +419,9 @@ async def _generate_and_check(
         platform=platform,
         rules=rules,
         reference_parts=reference_parts,
+        generation_context=gen_context or {},
     )
 
-    # Compliance is now a SEPARATE step (run from the compliance page).
     # During generation, always mark as non-final to avoid slowing down ad creation.
     compliance = {
         "compliance_status": "non-final",
@@ -436,6 +436,7 @@ async def _generate_and_check(
         s3_media_key=result.get("s3_media_key"),
         public_url=result.get("public_url"),
         caption=result.get("caption"),
+        planned_script=result.get("planned_script"),
         gen_status=result.get("status", "failed"),
         compliance_status=compliance.get("compliance_status", "non-final"),
         compliance_persisted=bool(compliance.get("persisted", False)),
@@ -547,6 +548,7 @@ def _build_pipeline_state(
                 node["props"] = {
                     "compliance_status": ad["compliance_status"],
                     "prompt_used": user_message,
+                    "planned_script": ad.get("planned_script") or "",
                     "ad_id": ad.get("ad_id") or "",
                     "asset_url": ad.get("public_url") or "",
                 }
@@ -731,7 +733,6 @@ async def run_generation(
     target_platform: Optional[str],
     current_state: dict,
     skip_compliance: bool = False,
-    video_v3: bool = True,
     target_ethnicity: Optional[str] = None,
     age_group: Optional[str] = None,
     market: Optional[str] = None,
@@ -745,6 +746,7 @@ async def run_generation(
     parent_asset_url: Optional[str] = None,
     revision_feedback: Optional[str] = None,
     force_media_types: Optional[list[str]] = None,
+    creative_style: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Run the generation orchestration, streaming SSE lines.
 
@@ -778,9 +780,6 @@ async def run_generation(
         target_platform: The requested platform (defaults to Instagram).
         current_state: The task's prior canvas ``pipeline_state``.
         skip_compliance: When True, skip the compliance check (faster iteration).
-        video_v3: When True, video generation uses the V3 Character Grid Pipeline
-            (Director → Character Sheet → Scene Grid → Gemini Omni full-clip → Assemble)
-            instead of the single-clip V1 path.
         target_ethnicity: Target audience for conditional localization
             (``malay``/``chinese``/``indian``/``all``). Halal rules apply only
             for Malay/Muslim; Indian avoids beef; etc.
@@ -820,6 +819,9 @@ async def run_generation(
         "parent_asset_url": parent_asset_url or "",
         "revision_feedback": revision_feedback or "",
         "creative_mode": (guided_inputs or {}).get("creative_mode", ""),
+        "voice_tone": (guided_inputs or {}).get("voice_tone", ""),
+        "preferred_delivery": (guided_inputs or {}).get("audio_emotion", ""),
+        "brand_tone": (guided_inputs or {}).get("brand_tone", ""),
         "voiceover_type": (
             "music_only"
             if (guided_inputs or {}).get("creative_mode") == "music_first"
@@ -832,6 +834,7 @@ async def run_generation(
             if key in {"brand_tone", "visual_style", "color_palette", "brand_logo"}
             and value not in (None, "", [])
         },
+        "creative_style": creative_style or "meme_shock",
     }
 
     # Reuse the compliance research stack before generation.  There is no
@@ -919,11 +922,10 @@ async def run_generation(
                 media_type, "in-progress", {"message": f"{label}: Generating content...", "phase": "generating"}
             )
 
-            # Special path: Video V2 planning mode. Instead of running the whole
-            # V3 Grid Pipeline: Full character-consistent multi-scene video.
+            # Special path: V3 Grid Pipeline — full character-consistent multi-scene video.
             # Director -> Character Sheet -> Scene Grid -> Slice -> Gemini Omni -> Assemble.
             # Each step emits its own canvas nodes via SSE.
-            if media_type == "video" and video_v3:
+            if media_type == "video":
                 v3_ran = True
                 yield _status_event(
                     "video", "in-progress",
@@ -947,6 +949,7 @@ async def run_generation(
                         voiceover_type=gen_context.get("voiceover_type", "elevenlabs"),
                         language=gen_context.get("language", "auto"),
                         creative_mode=gen_context.get("creative_mode", ""),
+                        creative_style=gen_context.get("creative_style", "meme_shock"),
                     ):
                         yield sse_line
                 except Exception as exc:  # noqa: BLE001
@@ -997,6 +1000,7 @@ async def run_generation(
                 s3_media_key=result.get("s3_media_key"),
                 public_url=result.get("public_url"),
                 caption=result.get("caption"),
+                planned_script=result.get("planned_script"),
                 gen_status=result.get("status", "failed"),
                 compliance_status=compliance.get("compliance_status", "non-final"),
                 compliance_persisted=bool(compliance.get("persisted", False)),
@@ -1014,6 +1018,7 @@ async def run_generation(
                     "platform": ref["platform"],
                     "public_url": ref["public_url"],
                     "caption": ref["caption"],
+                    "planned_script": ref.get("planned_script"),
                     "compliance_status": ref["compliance_status"],
                     "compliance_persisted": ref["compliance_persisted"],
                     "compliance_reasons": ref["compliance_reasons"],
@@ -1042,7 +1047,7 @@ async def run_generation(
     )
 
 
-# --- Video V2: execute an approved plan (Continue button) --------------------
+# --- V3 Grid: execute an approved storyboard (Continue button) --------------
 
 
 async def run_video_plan_execution(
@@ -1052,162 +1057,139 @@ async def run_video_plan_execution(
     current_state: dict,
     skip_compliance: bool = False,
 ) -> AsyncGenerator[str, None]:
-    """Execute an approved video plan (V3 Grid or legacy V2).
-
-    Detects the plan version and routes accordingly:
-    - V3 (pipeline_version: "v3_grid"): calls video_v3_agent.execute_production()
-    - Legacy V2: calls video_v2_agent.execute_video_plan() [if still available]
+    """Execute an approved V3 Grid storyboard plan.
 
     Args:
         project_id: Owning project id.
         task_id: Owning task id.
-        plan: The approved plan dict (from the ``video_plan`` SSE event).
+        plan: The approved V3 plan from the ``video_plan`` SSE event.
         current_state: The task's prior canvas ``pipeline_state``.
-        skip_compliance: When True, skip the compliance check.
+        skip_compliance: Reserved for the post-generation compliance flow.
 
     Yields:
         SSE ``data:`` lines with progress and pipeline_state.
     """
-    pipeline_version = plan.get("pipeline_version", "v2")
-
-    if pipeline_version == "v3_grid":
-        # V3 Grid Pipeline — Stage 3: Execute Production
-        logger.info("[Orchestrator] Executing V3 Grid plan %s", plan.get("plan_id"))
-
-        yield _status_event(
-            "video", "in-progress",
-            {"message": "V3: Generating full video with Gemini Omni...", "phase": "v3_production"},
-        )
-
-        # Build the assets dict from the plan
-        assets = {
-            "plan_id": plan.get("plan_id"),
-            "frame_urls": plan.get("frame_urls", []),
-            "grid_url": plan.get("_grid_url") or plan.get("grid_url", ""),
-            "reference_image_urls": plan.get("reference_image_urls", []),
-            "target_ethnicity": plan.get("target_ethnicity", "all"),
-            "market": plan.get("market", "malaysia"),
-            "gender": plan.get("gender", "female"),
-            "language": plan.get("language", "auto"),
-            "voiceover_type": plan.get("voiceover_type") or plan.get("voiceoverType") or "elevenlabs",
-            "aspect_ratio": plan.get("aspect_ratio", "9:16"),
-            "duration_sec": plan.get("duration_sec"),
-            "scenes": plan.get("scenes", []),
-        }
-
-        # Reconstruct missing fields from the pipeline_state nodes
-        for node in (current_state.get("nodes") or []):
-            if not assets["frame_urls"] and node.get("props", {}).get("frame_urls"):
-                assets["frame_urls"] = node["props"]["frame_urls"]
-            if not assets["grid_url"] and node.get("type") == "image" and "Scene Grid" in node.get("label", ""):
-                assets["grid_url"] = node.get("output", "")
-            if not assets["reference_image_urls"] and node.get("type") == "input" and "References" in node.get("label", ""):
-                assets["reference_image_urls"] = node.get("props", {}).get("reference_urls", [])
-
-        if not assets["grid_url"] and not assets["frame_urls"]:
-            yield _sse({"error": "No grid URL or frame URLs found in plan — regenerate assets first"})
-            return
-
-        final_video_url = ""
-        final_video_ad_id = ""
-        render_error = ""
-        async for event in video_v3_agent.execute_production(
-            assets=assets,
-            project_id=project_id,
-            task_id=task_id,
-            brief=plan.get("product_integration", ""),
-        ):
-            yield event
-            try:
-                event_data = json.loads(event.removeprefix("data: ").strip())
-            except (TypeError, json.JSONDecodeError):
-                continue
-
-            if event_data.get("node") == "assembler":
-                if event_data.get("status") == "completed":
-                    data = event_data.get("data") or {}
-                    final_video_url = str(data.get("mp4_url") or "")
-                    final_video_ad_id = str(data.get("final_ad_id") or "")
-                elif event_data.get("status") == "failed":
-                    data = event_data.get("data") or {}
-                    render_error = str(data.get("error") or "V3 video assembly failed.")
-            elif isinstance(event_data.get("error"), str):
-                render_error = event_data["error"]
-
-        if render_error or not final_video_url:
-            yield _sse({"error": render_error or "V3 video render ended without a final MP4."})
-            return
-
-        # Production supersedes the approval gate: remove the persisted
-        # storyboard, retain the V3 graph, and expose the final video to the
-        # canvas and Output Gallery in the same terminal SSE event.
-        final_state = dict(current_state or {})
-        final_state.pop("video_plan", None)
-        nodes = list(final_state.get("nodes") or [])
-        edges = list(final_state.get("edges") or [])
-        output_node_id = f"node-v3-video-{plan.get('plan_id', task_id)}"
-        nodes = [node for node in nodes if node.get("id") != output_node_id]
-        nodes.append({
-            "id": output_node_id,
-            "type": "video",
-            "x": 1180,
-            "y": 200,
-            "label": "Final V3 Video",
-            "status": "done",
-            "output": final_video_url,
-            "error": None,
-            "props": {"ad_id": final_video_ad_id, "pipeline": "v3_grid"},
-        })
-        if not any(edge.get("to") == output_node_id for edge in edges):
-            source_node_id = f"node-slicer-{plan.get('plan_id', '')}"
-            if any(node.get("id") == source_node_id for node in nodes):
-                edges.append({
-                    "id": f"e-slicer-video-{plan.get('plan_id', task_id)}",
-                    "from": source_node_id,
-                    "to": output_node_id,
-                })
-
-        generated_ads = list(final_state.get("generated_ads") or [])
-        if not any(ad.get("ad_id") == final_video_ad_id for ad in generated_ads if isinstance(ad, dict)):
-            generated_ads.append({
-                "ad_id": final_video_ad_id or output_node_id,
-                "media_type": "video",
-                "platform": plan.get("platform", "tiktok"),
-                "s3_media_key": final_video_url,
-                "public_url": final_video_url,
-                "caption": None,
-                "gen_status": "completed",
-                "compliance_status": "non-final",
-                "compliance_persisted": False,
-                "compliance_reasons": {},
-            })
-        final_state.update({
-            "nodes": nodes,
-            "edges": edges,
-            "viewport": final_state.get("viewport") or {"panX": 0, "panY": 0, "zoom": 1},
-            "generated_ads": generated_ads,
-        })
-        yield _sse({"pipeline_state": final_state})
-        yield _status_event(
-            "video",
-            "completed",
-            {"message": "V3 video rendered and saved.", "url": final_video_url},
-        )
+    if plan.get("pipeline_version") != "v3_grid":
+        logger.error("[Orchestrator] Refused non-V3 video plan for task %s", task_id)
+        yield _sse({"error": "A complete V3 storyboard is required before rendering."})
         return
 
-    # -- Legacy V2 path (fallback) -----------------------------------------
-    logger.info(
-        "[Orchestrator] Executing Video plan %s (project=%s, task=%s)",
-        plan.get("plan_id"), project_id, task_id,
-    )
-    platform = normalize_platform(plan.get("platform"))
+    logger.info("[Orchestrator] Executing V3 Grid plan %s", plan.get("plan_id"))
 
     yield _status_event(
         "video", "in-progress",
-        {"message": "Rendering approved scenes with Gemini Omni...", "phase": "generating"},
+        {"message": "V3: Generating full video with Gemini Omni...", "phase": "v3_production"},
     )
 
-    # V2 is deprecated — if an old V2 plan somehow arrives, inform the user.
-    logger.warning("[Orchestrator] Legacy V2 plan received — V2 is deprecated, use V3")
-    yield _sse({"error": "Video V2 is deprecated. Please regenerate using V3 Grid Pipeline."})
-    return
+    # Build the assets dict from the plan
+    assets = {
+        "plan_id": plan.get("plan_id"),
+        "frame_urls": plan.get("frame_urls", []),
+        "grid_url": plan.get("_grid_url") or plan.get("grid_url", ""),
+        "reference_image_urls": plan.get("reference_image_urls", []),
+        "target_ethnicity": plan.get("target_ethnicity", "all"),
+        "market": plan.get("market", "malaysia"),
+        "gender": plan.get("gender", "female"),
+        "language": plan.get("language", "auto"),
+        "voiceover_type": plan.get("voiceover_type") or plan.get("voiceoverType") or "elevenlabs",
+        "aspect_ratio": plan.get("aspect_ratio", "9:16"),
+        "duration_sec": plan.get("duration_sec"),
+        "scenes": plan.get("scenes", []),
+    }
+
+    # Reconstruct missing fields from the pipeline_state nodes
+    for node in (current_state.get("nodes") or []):
+        if not assets["frame_urls"] and node.get("props", {}).get("frame_urls"):
+            assets["frame_urls"] = node["props"]["frame_urls"]
+        if not assets["grid_url"] and node.get("type") == "image" and "Scene Grid" in node.get("label", ""):
+            assets["grid_url"] = node.get("output", "")
+        if not assets["reference_image_urls"] and node.get("type") == "input" and "References" in node.get("label", ""):
+            assets["reference_image_urls"] = node.get("props", {}).get("reference_urls", [])
+
+    if not assets["grid_url"] and not assets["frame_urls"]:
+        yield _sse({"error": "No grid URL or frame URLs found in plan — regenerate assets first"})
+        return
+
+    final_video_url = ""
+    final_video_ad_id = ""
+    render_error = ""
+    async for event in video_v3_agent.execute_production(
+        assets=assets,
+        project_id=project_id,
+        task_id=task_id,
+        brief=plan.get("product_integration", ""),
+    ):
+        yield event
+        try:
+            event_data = json.loads(event.removeprefix("data: ").strip())
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        if event_data.get("node") == "assembler":
+            if event_data.get("status") == "completed":
+                data = event_data.get("data") or {}
+                final_video_url = str(data.get("mp4_url") or "")
+                final_video_ad_id = str(data.get("final_ad_id") or "")
+            elif event_data.get("status") == "failed":
+                data = event_data.get("data") or {}
+                render_error = str(data.get("error") or "V3 video assembly failed.")
+        elif isinstance(event_data.get("error"), str):
+            render_error = event_data["error"]
+
+    if render_error or not final_video_url:
+        yield _sse({"error": render_error or "V3 video render ended without a final MP4."})
+        return
+
+    # Production supersedes the approval gate: retain the V3 plan for rerenders
+    # and expose the final MP4 to the canvas and Output Gallery.
+    final_state = dict(current_state or {})
+    nodes = list(final_state.get("nodes") or [])
+    edges = list(final_state.get("edges") or [])
+    output_node_id = f"node-v3-video-{plan.get('plan_id', task_id)}"
+    nodes = [node for node in nodes if node.get("id") != output_node_id]
+    nodes.append({
+        "id": output_node_id,
+        "type": "video",
+        "x": 1180,
+        "y": 200,
+        "label": "Final V3 Video",
+        "status": "done",
+        "output": final_video_url,
+        "error": None,
+        "props": {"ad_id": final_video_ad_id, "pipeline": "v3_grid"},
+    })
+    if not any(edge.get("to") == output_node_id for edge in edges):
+        source_node_id = f"node-slicer-{plan.get('plan_id', '')}"
+        if any(node.get("id") == source_node_id for node in nodes):
+            edges.append({
+                "id": f"e-slicer-video-{plan.get('plan_id', task_id)}",
+                "from": source_node_id,
+                "to": output_node_id,
+            })
+
+    generated_ads = list(final_state.get("generated_ads") or [])
+    if not any(ad.get("ad_id") == final_video_ad_id for ad in generated_ads if isinstance(ad, dict)):
+        generated_ads.append({
+            "ad_id": final_video_ad_id or output_node_id,
+            "media_type": "video",
+            "platform": plan.get("platform", "tiktok"),
+            "s3_media_key": final_video_url,
+            "public_url": final_video_url,
+            "caption": None,
+            "gen_status": "completed",
+            "compliance_status": "non-final",
+            "compliance_persisted": False,
+            "compliance_reasons": {},
+        })
+    final_state.update({
+        "nodes": nodes,
+        "edges": edges,
+        "viewport": final_state.get("viewport") or {"panX": 0, "panY": 0, "zoom": 1},
+        "generated_ads": generated_ads,
+    })
+    yield _sse({"pipeline_state": final_state})
+    yield _status_event(
+        "video",
+        "completed",
+        {"message": "V3 video rendered and saved.", "url": final_video_url},
+    )

@@ -19,6 +19,7 @@ import {
   type VideoPlan,
 } from "@/services/generationApi";
 import { getTask } from "@/services/taskApi";
+import { useAuth } from "@/hooks/useAuth";
 
 interface GuidedNavigationState {
   guidedMode?: boolean;
@@ -34,6 +35,7 @@ export default function EasyResultsPage() {
   const { projectId, taskId } = useParams<{ projectId: string; taskId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const guidedState = location.state as GuidedNavigationState | null;
   const started = useRef(false);
   const [ads, setAds] = useState<GeneratedAdView[]>([]);
@@ -125,7 +127,7 @@ export default function EasyResultsPage() {
           if (event.error) throw new Error(event.error);
           const eventPlan = normalizeVideoPlan(
             event.video_plan
-              ?? (event.pipeline_state as Record<string, unknown> | undefined)?.video_plan,
+              ?? (event.pipeline_state as unknown as Record<string, unknown> | undefined)?.video_plan,
           );
           if (eventPlan) setVideoPlan(eventPlan);
         }
@@ -151,8 +153,8 @@ export default function EasyResultsPage() {
   ]);
 
   useEffect(() => {
-    void getDistributionAccounts().then(setAccounts).catch(() => setAccounts([]));
-  }, []);
+    void getDistributionAccounts(user?.profile?.email).then(setAccounts).catch(() => setAccounts([]));
+  }, [user?.profile?.email]);
 
   const filteredAds = mediaFilter === "all"
     ? ads
@@ -198,7 +200,6 @@ export default function EasyResultsPage() {
         taskId,
         instruction,
         selected.publicUrl ? [selected.publicUrl] : [],
-        undefined,
         undefined,
         undefined,
         undefined,
@@ -377,7 +378,7 @@ export default function EasyResultsPage() {
                         preload="metadata"
                       />
                     ) : ad.mediaType === "audio" ? (
-                      <div className="flex aspect-square flex-col items-center justify-center gap-3 bg-gradient-to-br from-primary/15 via-surface-card to-accent-blue/10 text-primary">
+                      <div className="relative flex aspect-square flex-col items-center justify-center gap-3 bg-linear-to-br from-indigo-50/50 via-white to-purple-50/50 dark:from-indigo-950/20 dark:via-zinc-900 dark:to-purple-950/20 text-primary">
                         <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-surface-card shadow-sm">
                           <AudioLines className="h-7 w-7" aria-hidden="true" />
                         </span>
@@ -487,7 +488,12 @@ export default function EasyResultsPage() {
                         <p className="text-xs text-text-muted">This vertical image will publish to Instagram as a Story to preserve its full composition.</p>
                       )}
                       {accounts.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-border-default p-3 text-xs text-text-muted">Connect a social account first to distribute this ad.</p>
+                        <div className="rounded-lg border border-dashed border-border-default p-4 text-center">
+                          <p className="text-xs text-text-muted mb-3">You need to connect your Zernio API key before you can distribute ads.</p>
+                          <Button variant="outline" size="sm" onClick={() => navigate("/dashboard/profile")} className="w-full text-xs">
+                            Connect Zernio API
+                          </Button>
+                        </div>
                       ) : accounts.map((account) => {
                         const active = selectedAccountIds.includes(account.id);
                         return (

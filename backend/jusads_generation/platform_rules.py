@@ -89,7 +89,7 @@ def normalize_platform(value: Optional[str]) -> str:
 
     Raises:
         UnsupportedPlatformError: When ``value`` is a non-empty string that is
-            not one of TikTok, Instagram, or Shopee.
+            not one of TikTok, Instagram, Shopee, or Reddit.
     """
     if value is None or not value.strip():
         logger.info(

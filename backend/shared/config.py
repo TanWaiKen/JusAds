@@ -67,6 +67,7 @@ S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "")
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 FLUXAI_API_KEY = os.environ.get("FLUXAI_API_KEY", "")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 
 # -- Supabase ------------------------------------------------------------------
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")

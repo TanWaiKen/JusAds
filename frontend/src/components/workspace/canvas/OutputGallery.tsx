@@ -10,6 +10,7 @@
  */
 
 import React, { useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ import {
   Info,
   Lightbulb,
   Send,
+  ShieldCheck,
 } from "lucide-react";
 import {
   groupAdsByMediaType,
@@ -424,6 +426,7 @@ interface OutputCardProps {
 /** Publish-gate button states for one output. */
 type PublishPhase = "idle" | "publishing" | "published" | "error";
 type DistributePhase = "idle" | "distributing" | "distributed" | "error";
+type ComplianceCheckPhase = "idle" | "checking" | "done" | "error";
 
 /**
  * A single generated output. Shows the media, a compliance badge, and — while
@@ -440,6 +443,7 @@ function OutputCard({
   projectId,
   taskId,
 }: OutputCardProps): React.ReactElement {
+  const navigate = useNavigate();
   const showPendingIndicator =
     ad.complianceStatus === "pending" && !pendingCleared;
 
@@ -447,6 +451,80 @@ function OutputCard({
   const [publishError, setPublishError] = useState<string | null>(null);
   const [distributePhase, setDistributePhase] = useState<DistributePhase>("idle");
   const [distributeError, setDistributeError] = useState<string | null>(null);
+
+  const [complianceCheckPhase, setComplianceCheckPhase] = useState<ComplianceCheckPhase>("idle");
+
+  /**
+   * Trigger a compliance check on this generated ad under the same project.
+   * Fetches the public media URL as a blob, posts it to /api/compliance/check
+   * (streaming), then navigates to the compliance result view once done.
+   */
+  const handleRunComplianceCheck = async (): Promise<void> => {
+    if (!projectId || !ad.publicUrl) return;
+    setComplianceCheckPhase("checking");
+    try {
+      // Fetch the media as a blob so we can POST it as multipart form data
+      const mediaRes = await fetch(ad.publicUrl);
+      if (!mediaRes.ok) throw new Error("Could not fetch media for compliance check");
+      const blob = await mediaRes.blob();
+
+      // Derive a filename from the URL
+      const filename = ad.publicUrl.split("/").pop()?.split("?")[0] ?? `ad_${ad.adId}`;
+      const file = new File([blob], filename, { type: blob.type });
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("market", "malaysia");
+      formData.append("ethnicity", "all");
+      formData.append("age_group", "all_ages");
+      formData.append("platform", ad.platform || "general");
+      formData.append("project_id", projectId);
+
+      const res = await fetch(`${API_BASE}/api/compliance/check`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error(`Compliance API error: ${res.status}`);
+
+      // Drain the SSE stream to get the final check_id
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let checkId: string | null = null;
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          try {
+            const parsed = JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
+            if (parsed.type === "result" && parsed.data) {
+              const data = parsed.data as Record<string, unknown>;
+              if (typeof data.check_id === "string") checkId = data.check_id;
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+
+      setComplianceCheckPhase("done");
+      toast.success("Compliance check complete — opening results");
+
+      if (checkId) {
+        navigate(`/dashboard/project/${projectId}/compliance?check=${checkId}`);
+      } else {
+        navigate(`/dashboard/project/${projectId}/compliance`);
+      }
+    } catch (err) {
+      console.error(err);
+      setComplianceCheckPhase("error");
+      toast.error("Compliance check failed — please try again");
+    }
+  };
 
   const canPublish =
     projectId !== undefined &&
@@ -653,6 +731,39 @@ function OutputCard({
           >
             <FileText size={12} />
             Open in CapCut
+          </button>
+        )}
+
+        {/* Run Compliance Check — sends this ad's media through the compliance pipeline */}
+        {projectId !== undefined && ad.publicUrl !== null && ad.mediaType !== "text" && (
+          <button
+            type="button"
+            onClick={handleRunComplianceCheck}
+            disabled={complianceCheckPhase === "checking" || complianceCheckPhase === "done"}
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white dark:bg-[#1f1f1f] px-3 py-2 text-xs font-medium text-[#171717] dark:text-white shadow-[0_0_0_1px_#ebebeb] dark:shadow-[0_0_0_1px_#2e2e2e] hover:bg-blue-50 dark:hover:bg-[#0a72ef]/10 hover:text-blue-700 dark:hover:text-blue-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            title="Run compliance check on this generated ad"
+          >
+            {complianceCheckPhase === "checking" ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                Checking compliance...
+              </>
+            ) : complianceCheckPhase === "done" ? (
+              <>
+                <ShieldCheck size={12} className="text-emerald-500" />
+                Compliance checked
+              </>
+            ) : complianceCheckPhase === "error" ? (
+              <>
+                <ShieldCheck size={12} className="text-red-500" />
+                Retry compliance check
+              </>
+            ) : (
+              <>
+                <ShieldCheck size={12} />
+                Run compliance check
+              </>
+            )}
           </button>
         )}
       </div>

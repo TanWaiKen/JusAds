@@ -7,7 +7,7 @@ All state is defined as ``TypedDict`` (never dataclasses), per project steering
 conventions for LangGraph pipelines (Req 1.3).
 """
 
-from typing import Literal, Optional, TypedDict
+from typing import Literal, NotRequired, Optional, TypedDict
 
 # Supported media output types (Req 4.1).
 MediaType = Literal["text", "image", "audio", "video"]
@@ -25,6 +25,7 @@ class GeneratedAdRef(TypedDict):
     s3_media_key: Optional[str]
     public_url: Optional[str]
     caption: Optional[str]
+    planned_script: NotRequired[Optional[str]]
     gen_status: str  # 'completed' | 'failed'
     compliance_status: str  # 'final-compliant' | 'final-non-compliant' | 'non-final'
     compliance_persisted: bool  # False when result returned but not saved (Req 8.4)

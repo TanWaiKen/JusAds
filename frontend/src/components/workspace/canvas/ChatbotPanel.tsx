@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { API_BASE } from "@/services/taskApi";
 import { consumePrefill } from "@/services/session";
@@ -27,6 +27,8 @@ import {
   Loader2,
   AlertTriangle,
   Sparkles,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 
 interface Message {
@@ -41,7 +43,6 @@ interface ChatbotPanelProps {
   onStateUpdate: (pipeline: PipelineState) => void;
   targetPlatform: TargetPlatform | null;
   complianceEnabled: boolean;
-  videoV3Enabled: boolean;
   targetEthnicity: TargetEthnicity;
   generationOptions: GenerationOptions;
   initialPipelineState?: PipelineState;
@@ -51,6 +52,10 @@ interface ChatbotPanelProps {
   onTriggerPromptUsed?: () => void;
   revisionContext?: Pick<GenerationOptions, "parentAdId" | "parentAssetUrl"> | null;
   onRevisionContextUsed?: () => void;
+  /** Active reference URLs from canvas reference nodes — overrides local upload state when provided. */
+  canvasReferenceUrls?: string[];
+  /** Called when the user uploads a new file — canvas should create a reference node. */
+  onReferenceUploaded?: (filename: string, url: string) => void;
 }
 
 const WELCOME_MESSAGE: Message = {
@@ -106,15 +111,94 @@ export function mapGeneratedAds(pipeline: PipelineState): GeneratedAdView[] {
   return views;
 }
 
-/** Lightweight Markdown-to-HTML renderer for agent messages. */
+/**
+ * Detects whether a block of lines looks like a Markdown pipe table.
+ * Returns true if at least two lines contain `|` and a separator row exists.
+ */
+function isPipeTable(lines: string[]): boolean {
+  const tableLines = lines.filter((l) => l.trim().startsWith("|") || l.includes("|"));
+  return tableLines.length >= 2 && lines.some((l) => /^\|?[\s\-:]+\|/.test(l.trim()));
+}
+
+/**
+ * Render a block of pipe-table lines into an HTML table string.
+ * Handles `| col | col |` rows and `| :--- | :--- |` separator rows.
+ */
+function renderPipeTable(lines: string[]): string {
+  const rows = lines
+    .filter((l) => l.trim().length > 0)
+    .map((l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
+
+  if (rows.length < 2) return lines.join("\n");
+
+  const [headerRow, , ...bodyRows] = rows; // row[1] is the separator — skip it
+
+  const th = (headerRow ?? [])
+    .map((cell) => `<th class="px-3 py-2 text-left text-[11px] font-semibold text-primary border-b border-border bg-muted/60">${cell}</th>`)
+    .join("");
+
+  const trs = bodyRows
+    .map((cells) => {
+      const tds = cells
+        .map((cell) => `<td class="px-3 py-2 text-xs text-foreground border-b border-border/50 align-top">${cell}</td>`)
+        .join("");
+      return `<tr class="hover:bg-muted/20 transition-colors">${tds}</tr>`;
+    })
+    .join("");
+
+  return `<div class="overflow-x-auto rounded-md border border-border my-2"><table class="w-full border-collapse text-left"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`;
+}
+
+/** Lightweight Markdown-to-HTML renderer for agent messages — supports headings, bold, italic, lists, links, and pipe tables. */
 function renderMarkdown(text: string) {
   if (!text) return "";
 
-  let html = text
+  // Split into blocks so we can detect and render pipe tables as a unit
+  const lines = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .split("\n");
 
+  const outputLines: string[] = [];
+  let tableBuffer: string[] = [];
+
+  const flushTable = () => {
+    if (tableBuffer.length > 0) {
+      outputLines.push(renderPipeTable(tableBuffer));
+      tableBuffer = [];
+    }
+  };
+
+  for (const line of lines) {
+    const isPipeRow = line.trim().startsWith("|") || (line.includes("|") && /^\|?[\s\-:]+\|/.test(line.trim()));
+
+    if (isPipeRow) {
+      tableBuffer.push(line);
+    } else {
+      if (tableBuffer.length > 0 && isPipeTable(tableBuffer)) {
+        flushTable();
+      } else {
+        // Not a real table — dump buffer as plain lines
+        outputLines.push(...tableBuffer);
+        tableBuffer = [];
+      }
+      outputLines.push(line);
+    }
+  }
+
+  // Flush any trailing table
+  if (tableBuffer.length > 0) {
+    if (isPipeTable(tableBuffer)) {
+      flushTable();
+    } else {
+      outputLines.push(...tableBuffer);
+    }
+  }
+
+  let html = outputLines.join("\n");
+
+  // Inline markdown (applied after table HTML is already in place)
   html = html.replace(/^### (.*?)$/gm, '<h3 class="text-xs font-bold text-primary mt-2 mb-0.5">$1</h3>');
   html = html.replace(/^## (.*?)$/gm, '<h2 class="text-sm font-bold text-primary mt-3 mb-1">$1</h2>');
   html = html.replace(/^# (.*?)$/gm, '<h1 class="text-base font-bold text-primary mt-4 mb-1.5">$1</h1>');
@@ -132,7 +216,6 @@ export function ChatbotPanel({
   onStateUpdate,
   targetPlatform,
   complianceEnabled,
-  videoV3Enabled,
   targetEthnicity,
   generationOptions,
   initialPipelineState,
@@ -142,6 +225,8 @@ export function ChatbotPanel({
   onTriggerPromptUsed,
   revisionContext,
   onRevisionContextUsed,
+  canvasReferenceUrls,
+  onReferenceUploaded,
 }: ChatbotPanelProps) {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   
@@ -169,6 +254,37 @@ export function ChatbotPanel({
     } catch { return []; }
   });
 
+  // Track which references are selected to be passed to AI on the next send.
+  // New uploads are auto-selected. Stored as a Set of URLs.
+  const [selectedRefUrls, setSelectedRefUrls] = useState<Set<string>>(() => {
+    try {
+      const savedRefs = localStorage.getItem(`${storageKey}_refs`);
+      const savedSel = localStorage.getItem(`${storageKey}_sel`);
+      if (savedSel) {
+        const parsed: unknown = JSON.parse(savedSel);
+        if (Array.isArray(parsed)) return new Set(parsed as string[]);
+      }
+      // Default: all saved references are selected
+      if (savedRefs) {
+        const refs: { filename: string; url: string }[] = JSON.parse(savedRefs);
+        return new Set(refs.map((r) => r.url));
+      }
+    } catch { /* ignore */ }
+    return new Set<string>();
+  });
+
+  const toggleRefSelection = useCallback((url: string) => {
+    setSelectedRefUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) {
+        next.delete(url);
+      } else {
+        next.add(url);
+      }
+      return next;
+    });
+  }, []);
+
   // On mount: check sessionStorage for prefill data (from "Try Now" flow)
   const prefillConsumed = useRef(false);
   useEffect(() => {
@@ -182,6 +298,7 @@ export function ChatbotPanel({
           ...prev,
           { filename: prefill.referenceImageLabel || "Reference Image", url: prefill.referenceImageUrl! },
         ]);
+        setSelectedRefUrls((prev) => new Set([...prev, prefill.referenceImageUrl!]));
       }
       setTimeout(() => inputRef.current?.focus(), 100);
     }
@@ -196,6 +313,11 @@ export function ChatbotPanel({
   useEffect(() => {
     try { localStorage.setItem(`${storageKey}_refs`, JSON.stringify(references)); } catch {}
   }, [references, storageKey]);
+
+  // Auto-save selected ref URLs to localStorage on change
+  useEffect(() => {
+    try { localStorage.setItem(`${storageKey}_sel`, JSON.stringify(Array.from(selectedRefUrls))); } catch {}
+  }, [selectedRefUrls, storageKey]);
   const [uploading, setUploading] = useState(false);
   const [genStatus, setGenStatus] = useState<string | null>(null);
   const [streamError, setStreamError] = useState(false);
@@ -235,7 +357,15 @@ export function ChatbotPanel({
       if (!res.ok) throw new Error("Upload failed");
 
       const data = await res.json();
-      setReferences((prev) => [...prev, { filename: file.name, url: data.public_url }]);
+      // If canvas is managing references, notify parent to create a reference node.
+      // Otherwise fall back to local reference state (Easy Mode / no canvas).
+      if (onReferenceUploaded) {
+        onReferenceUploaded(file.name, data.public_url as string);
+      } else {
+        setReferences((prev) => [...prev, { filename: file.name, url: data.public_url }]);
+        // Auto-select newly uploaded reference
+        setSelectedRefUrls((prev) => new Set([...prev, data.public_url as string]));
+      }
       toast.success(`Reference "${file.name}" uploaded`);
     } catch (err) {
       console.error(err);
@@ -392,14 +522,23 @@ export function ChatbotPanel({
     if (!input.trim() || loading) return;
 
     const userText = input;
+    // Canvas mode: use active reference node URLs from the canvas (persistent across sends).
+    // Local mode (Easy / no canvas): use selected local reference uploads.
+    const activeRefs = canvasReferenceUrls !== undefined
+      ? canvasReferenceUrls
+      : references.filter((r) => selectedRefUrls.has(r.url)).map((r) => r.url);
     const refUrls = Array.from(new Set([
-      ...references.map((r) => r.url),
+      ...activeRefs,
       ...(revisionContext?.parentAssetUrl ? [revisionContext.parentAssetUrl] : []),
     ]));
     const resolvedPlatform: TargetPlatform = targetPlatform ?? DEFAULT_PLATFORM;
 
     setInput("");
-    setReferences([]);
+    // In canvas mode, references live on the canvas — don't clear local state.
+    if (canvasReferenceUrls === undefined) {
+      setReferences([]);
+      setSelectedRefUrls(new Set());
+    }
     setStreamError(false);
     setGenStatus(null);
     // Don't clear videoPlan here — it will be cleared by the server when
@@ -410,7 +549,7 @@ export function ChatbotPanel({
       ...prev,
       {
         sender: "user",
-        text: userText + (refUrls.length > 0 ? `\n*(Uploaded references: ${refUrls.length} files)*` : ""),
+        text: userText + (refUrls.length > 0 ? `\n*(${refUrls.length} reference${refUrls.length > 1 ? "s" : ""} attached)*` : ""),
         timestamp: new Date(),
       },
     ]);
@@ -429,7 +568,6 @@ export function ChatbotPanel({
         refUrls,
         resolvedPlatform,
         !complianceEnabled,
-        videoV3Enabled,
         targetEthnicity,
         { ...generationOptions, ...revisionContext }
       )) {
@@ -601,43 +739,81 @@ export function ChatbotPanel({
             ))}
           </div>
         )}
-        {/* Uploaded reference thumbnails */}
-        {references.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {references.map((ref, idx) => {
-              const isImage = /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(ref.filename);
-              return (
-                <div
-                  key={idx}
-                  className="relative group rounded-lg border bg-muted/50 overflow-hidden"
-                >
-                  {isImage ? (
-                    <img
-                      src={ref.url}
-                      alt={ref.filename}
-                      className="h-20 w-20 object-cover rounded-lg"
-                    />
-                  ) : (
-                    <div className="flex h-20 w-20 flex-col items-center justify-center gap-1 p-2">
-                      <FileCheck size={20} className="text-muted-foreground" />
-                      <span className="text-[9px] text-muted-foreground truncate w-full text-center">
-                        {ref.filename}
-                      </span>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setReferences((prev) => prev.filter((_, i) => i !== idx))}
-                    className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                    title={`Remove ${ref.filename}`}
-                    aria-label={`Remove ${ref.filename}`}
+        {/* Reference indicator — canvas mode shows live node status, local mode shows thumbnails */}
+        {canvasReferenceUrls !== undefined ? (
+          /* Canvas mode: show how many reference nodes are active */
+          canvasReferenceUrls.length > 0 ? (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-sky-500/10 border border-sky-500/20">
+              <CheckCircle2 size={12} className="text-sky-500 shrink-0" />
+              <span className="text-[10px] text-sky-700 dark:text-sky-400 font-medium">
+                {canvasReferenceUrls.length} reference{canvasReferenceUrls.length > 1 ? "s" : ""} active
+              </span>
+              <span className="text-[10px] text-muted-foreground ml-auto">Click nodes on canvas to toggle</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-muted/40 border border-border/40">
+              <Circle size={12} className="text-muted-foreground shrink-0" />
+              <span className="text-[10px] text-muted-foreground">
+                No references active — upload or click nodes on canvas to include
+              </span>
+            </div>
+          )
+        ) : (
+          /* Local mode (Easy Mode): selectable thumbnail grid */
+          references.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {references.map((ref, idx) => {
+                const isImage = /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(ref.filename);
+                const isSelected = selectedRefUrls.has(ref.url);
+                return (
+                  <div
+                    key={idx}
+                    className={`relative group rounded-lg border-2 overflow-hidden cursor-pointer transition-all duration-150 ${
+                      isSelected
+                        ? "border-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.3)]"
+                        : "border-border opacity-50 hover:opacity-75"
+                    }`}
+                    onClick={() => toggleRefSelection(ref.url)}
+                    title={isSelected ? `${ref.filename} — click to exclude` : `${ref.filename} — click to include`}
+                    role="checkbox"
+                    aria-checked={isSelected}
+                    aria-label={`${ref.filename} reference ${isSelected ? "selected" : "deselected"}`}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleRefSelection(ref.url); }
+                    }}
                   >
-                    <span className="text-xs font-bold">×</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                    {isImage ? (
+                      <img src={ref.url} alt={ref.filename} className="h-20 w-20 object-cover" />
+                    ) : (
+                      <div className="flex h-20 w-20 flex-col items-center justify-center gap-1 p-2 bg-muted/50">
+                        <FileCheck size={20} className="text-muted-foreground" />
+                        <span className="text-[9px] text-muted-foreground truncate w-full text-center">{ref.filename}</span>
+                      </div>
+                    )}
+                    <div className="absolute top-1 left-1 pointer-events-none">
+                      {isSelected
+                        ? <CheckCircle2 size={15} className="text-primary drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                        : <Circle size={15} className="text-white/80 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedRefUrls((prev) => { const next = new Set(prev); next.delete(ref.url); return next; });
+                        setReferences((prev) => prev.filter((_, i) => i !== idx));
+                      }}
+                      className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      title={`Remove ${ref.filename}`}
+                      aria-label={`Remove ${ref.filename}`}
+                    >
+                      <span className="text-xs font-bold leading-none">×</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )
         )}
 
         {/* @-mention picker dropdown */}
@@ -719,11 +895,8 @@ export function ChatbotPanel({
             <Sparkles size={16} className={showPromptSearch ? "text-primary" : "text-muted-foreground"} />
           </button>
 
-          <button
-            type="button"
-            disabled={loading || uploading}
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50 transition-colors cursor-pointer"
+          <label
+            className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background hover:bg-muted transition-colors cursor-pointer ${loading || uploading ? "opacity-50 pointer-events-none" : ""}`}
             title="Upload reference files (images/video)"
             aria-label="Upload a product photo or reference file"
           >
@@ -732,16 +905,15 @@ export function ChatbotPanel({
             ) : (
               <Paperclip size={16} className="text-muted-foreground" />
             )}
-          </button>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            className="hidden"
-            accept="image/*,video/*,audio/*,.txt,.pdf"
-            multiple
-          />
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+              accept="image/*,video/*,audio/*,.txt,.pdf"
+              multiple
+            />
+          </label>
 
           <textarea
             ref={inputRef}

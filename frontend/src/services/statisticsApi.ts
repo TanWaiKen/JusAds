@@ -77,14 +77,23 @@ export interface StatsResponse {
 
 // ─── API Functions ───────────────────────────────────────────────────────────
 
+export class StatisticsError extends Error {
+  constructor(message: string, public code?: string) {
+    super(message);
+    this.name = "StatisticsError";
+  }
+}
+
 export async function fetchPostStatistics(
   _projectId?: string,
   options?: {
     platform?: string;
+    email?: string;
   }
 ): Promise<StatsResponse> {
   const params = new URLSearchParams();
   if (options?.platform) params.set("platform", options.platform);
+  if (options?.email) params.set("email", options.email);
 
   const url = params.toString()
     ? `${API_BASE}/api/statistics/posts?${params.toString()}`
@@ -93,13 +102,15 @@ export async function fetchPostStatistics(
   const response = await fetch(url);
   if (!response.ok) {
     let message = "Social analytics are currently unavailable.";
+    let code: string | undefined;
     try {
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; code?: string };
       if (payload.error) message = payload.error;
+      if (payload.code) code = payload.code;
     } catch {
       // Keep the stable public message for non-JSON upstream failures.
     }
-    throw new Error(message);
+    throw new StatisticsError(message, code);
   }
   return response.json();
 }

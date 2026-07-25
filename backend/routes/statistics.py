@@ -4,7 +4,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 from shared.zernio_client import (
@@ -15,6 +15,7 @@ from shared.zernio_client import (
     get_overall_analytics,
     get_posts_list,
 )
+from routes.profile import _get_stored_user_zernio_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/statistics", tags=["statistics"])
@@ -44,30 +45,35 @@ async def _live_response(operation: Callable[[], Awaitable[dict[str, Any]]]) -> 
 
 @router.get("")
 @router.get("/")
-async def get_statistics_overview() -> JSONResponse:
+async def get_statistics_overview(email: str = Query(...)) -> JSONResponse:
     """Get live overall analytics from Zernio."""
-    return await _live_response(get_overall_analytics)
+    api_key = _get_stored_user_zernio_key(email)
+    return await _live_response(lambda: get_overall_analytics(api_key=api_key))
 
 
 @router.get("/daily")
-async def get_daily_stats() -> JSONResponse:
+async def get_daily_stats(email: str = Query(...)) -> JSONResponse:
     """Get live daily aggregate metrics from Zernio."""
-    return await _live_response(get_daily_metrics)
+    api_key = _get_stored_user_zernio_key(email)
+    return await _live_response(lambda: get_daily_metrics(api_key=api_key))
 
 
 @router.get("/best-times")
-async def get_best_times() -> JSONResponse:
+async def get_best_times(email: str = Query(...)) -> JSONResponse:
     """Get live recommended posting times from Zernio."""
-    return await _live_response(get_best_time_to_post)
+    api_key = _get_stored_user_zernio_key(email)
+    return await _live_response(lambda: get_best_time_to_post(api_key=api_key))
 
 
 @router.get("/accounts")
-async def get_accounts() -> JSONResponse:
+async def get_accounts(email: str = Query(...)) -> JSONResponse:
     """List live connected Zernio accounts."""
-    return await _live_response(get_connected_accounts)
+    api_key = _get_stored_user_zernio_key(email)
+    return await _live_response(lambda: get_connected_accounts(api_key=api_key))
 
 
 @router.get("/posts")
-async def get_posts(platform: Optional[str] = None) -> JSONResponse:
+async def get_posts(email: str = Query(...), platform: Optional[str] = None) -> JSONResponse:
     """List live Zernio posts without synthetic fallback metrics."""
-    return await _live_response(lambda: get_posts_list(platform=platform))
+    api_key = _get_stored_user_zernio_key(email)
+    return await _live_response(lambda: get_posts_list(api_key=api_key, platform=platform))

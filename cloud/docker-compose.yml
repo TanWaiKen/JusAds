@@ -13,6 +13,15 @@ services:
       - internal
     expose:
       - "8000"
+    # Hard resource limits — prevents one container from starving the host
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"       # max 1.5 of 2 vCPUs (leave 0.5 for nginx/os)
+          memory: 1536M     # max 1.5 GB of 2 GB RAM
+        reservations:
+          cpus: "0.5"
+          memory: 512M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/ready"]
       interval: 30s

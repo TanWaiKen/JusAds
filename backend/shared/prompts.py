@@ -49,6 +49,7 @@ VIDEO_DIRECTOR_PROMPT = _load_prompt("video_director.md")
 VIDEO_EDIT_PLANNER_PROMPT = _load_prompt("video_edit_planner.md")
 PLATFORM_CREATIVE_GUIDE = _load_prompt("platform_creative_guide.md")
 COPY_GUARDRAILS = _load_prompt("copy_guardrails.md")
+LOCALIZE_PLAN_PROMPT = _load_prompt("localize_plan.md")
 
 # -- Compliance prompts --------------------------------------------------------
 

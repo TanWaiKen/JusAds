@@ -1,17 +1,143 @@
 /**
  * InspectorPanel — right panel showing the selected node's editable properties and output.
  * Label and custom props can be edited inline and dispatch UPDATE_NODE_PROPS.
+ * For "input" nodes the reference_urls prop renders as a polished upload/remove editor
+ * instead of a raw text field.
  */
 
 import { useState, useEffect } from "react";
+import { Upload, X, ImageIcon, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { API_BASE } from "@/services/taskApi";
 import type { CanvasNode } from "@/components/workspace/canvas/graphModel";
 
 interface InspectorPanelProps {
   node: CanvasNode | null;
+  projectId?: string;
+  taskId?: string;
   onUpdateProps?: (nodeId: string, updates: { label?: string; props?: Record<string, string> }) => void;
   onDelete?: (nodeId: string) => void;
   onSendRevision?: (node: CanvasNode, comment: string) => void;
+  /** Callback to re-render only the video step using the existing upstream assets. */
+  onRerender?: (node: CanvasNode) => void;
+  /** True while a re-render is in progress. */
+  isRerendering?: boolean;
 }
+
+// ─── Reference URL editor for the "input" node ───────────────────────────────
+
+interface ReferenceUrlsEditorProps {
+  nodeId: string;
+  projectId: string;
+  taskId: string;
+  /** Current reference_urls prop value — may be a comma-string or an array from the backend */
+  value: string | string[];
+  onChange: (newValue: string) => void;
+}
+
+/**
+ * Renders each reference URL as a thumbnail card with a remove button.
+ * An upload button uploads to S3 via the task upload endpoint and appends the URL.
+ */
+function ReferenceUrlsEditor({ nodeId, projectId, taskId, value, onChange }: ReferenceUrlsEditorProps) {
+  // value may be a comma-string or an actual array coming from the backend prop
+  const urls = Array.isArray(value)
+    ? (value as unknown as string[]).filter(Boolean)
+    : String(value).split(",").map((u) => u.trim()).filter(Boolean);
+
+  const [uploading, setUploading] = useState(false);
+
+  const handleRemove = (urlToRemove: string) => {
+    const next = urls.filter((u) => u !== urlToRemove).join(",");
+    onChange(next);
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(
+        `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/upload`,
+        { method: "POST", body: formData }
+      );
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json() as { public_url: string };
+      const next = [...urls, data.public_url].join(",");
+      onChange(next);
+      toast.success(`Reference "${file.name}" added`);
+    } catch {
+      toast.error("Failed to upload reference");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const isImage = (url: string) =>
+    /\.(jpg|jpeg|png|gif|webp|svg|bmp)/i.test(url.split("?")[0]);
+
+  return (
+    <div className="space-y-2">
+      {/* Existing reference thumbnails */}
+      {urls.length === 0 && (
+        <p className="text-[10px] text-muted-foreground italic">No references attached.</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {urls.map((url, i) => (
+          <div key={url} className="relative group rounded-md border border-border overflow-hidden w-[72px] h-[72px] bg-muted shrink-0">
+            {isImage(url) ? (
+              <img src={url} alt={`Ref ${i + 1}`} className="w-full h-full object-cover" />
+            ) : (
+              <div className="flex flex-col items-center justify-center w-full h-full">
+                <ImageIcon size={20} className="text-muted-foreground" />
+                <span className="text-[8px] text-muted-foreground mt-1 px-1 text-center leading-tight truncate w-full">{url.split("/").pop()}</span>
+              </div>
+            )}
+            {/* Remove button */}
+            <button
+              onClick={() => handleRemove(url)}
+              className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="Remove reference"
+            >
+              <X size={8} />
+            </button>
+            {/* Index badge */}
+            <div className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 py-px text-[8px] text-white font-medium">
+              {i + 1}
+            </div>
+          </div>
+        ))}
+
+        {/* Upload tile — label wraps the input so click is always a trusted gesture */}
+        <label
+          className={`flex flex-col items-center justify-center w-[72px] h-[72px] rounded-md border-2 border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary shrink-0 ${uploading ? "opacity-50 pointer-events-none" : "cursor-pointer"}`}
+          aria-label="Upload new reference"
+          title="Upload new reference image"
+        >
+          {uploading ? (
+            <Loader2 size={18} className="animate-spin" />
+          ) : (
+            <>
+              <Upload size={18} />
+              <span className="text-[9px] mt-1 font-medium">Upload</span>
+            </>
+          )}
+          <input
+            type="file"
+            accept="image/*,video/*"
+            className="hidden"
+            onChange={handleUpload}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface ParsedScene {
   index: string;
@@ -38,7 +164,7 @@ function parseDirectorPrompt(prompt: string): ParsedScene[] {
   });
 }
 
-export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }: InspectorPanelProps) {
+export function InspectorPanel({ node, projectId, taskId, onUpdateProps, onDelete, onSendRevision, onRerender, isRerendering }: InspectorPanelProps) {
   const [editLabel, setEditLabel] = useState("");
   const [editProps, setEditProps] = useState<Record<string, string>>({});
   const [revisionComment, setRevisionComment] = useState("");
@@ -55,7 +181,12 @@ export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }
   useEffect(() => {
     if (node) {
       setEditLabel(node.label);
-      setEditProps({ ...node.props });
+      // Normalize any array prop values to comma-strings so editProps stays Record<string,string>
+      const normalized: Record<string, string> = {};
+      for (const [k, v] of Object.entries(node.props)) {
+        normalized[k] = Array.isArray(v) ? (v as string[]).join(",") : String(v ?? "");
+      }
+      setEditProps(normalized);
       setShowRawPrompt(false);
     }
   }, [node]);
@@ -189,14 +320,27 @@ export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }
               return (
                 <div key={key}>
                   <label className="text-xs text-muted-foreground block mb-0.5">{key}</label>
-                  <input
-                    type="text"
-                    value={value}
-                    onChange={(e) => handlePropChange(key, e.target.value)}
-                    onBlur={() => handlePropBlur(key)}
-                    onKeyDown={(e) => { if (e.key === "Enter") handlePropBlur(key); }}
-                    className="w-full rounded-md border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
+                  {key === "reference_urls" && node.type === "input" && projectId && taskId ? (
+                    <ReferenceUrlsEditor
+                      nodeId={node.id}
+                      projectId={projectId}
+                      taskId={taskId}
+                      value={value}
+                      onChange={(newValue) => {
+                        handlePropChange(key, newValue);
+                        if (onUpdateProps) onUpdateProps(node.id, { props: { [key]: newValue } });
+                      }}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={value}
+                      onChange={(e) => handlePropChange(key, e.target.value)}
+                      onBlur={() => handlePropBlur(key)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handlePropBlur(key); }}
+                      className="w-full rounded-md border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  )}
                 </div>
               );
             })}
@@ -237,6 +381,22 @@ export function InspectorPanel({ node, onUpdateProps, onDelete, onSendRevision }
               Send Revision to Agent
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Re-render Video button — only for V3 video nodes */}
+      {node.type === "video" && node.props.pipeline === "v3_grid" && onRerender && (
+        <div className="mb-4 pt-3 border-t border-border">
+          <button
+            onClick={() => onRerender(node)}
+            disabled={isRerendering}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-black px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isRerendering ? "Re-rendering…" : "Re-render Video"}
+          </button>
+          <p className="mt-1.5 text-[10px] text-muted-foreground leading-tight">
+            Re-runs only the video generation using the existing Scene Grid, Character Sheet, and frame references. Upstream nodes are not affected.
+          </p>
         </div>
       )}
 

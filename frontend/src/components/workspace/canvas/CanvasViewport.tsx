@@ -277,6 +277,22 @@ export function CanvasViewport({
     e.dataTransfer.dropEffect = "copy";
   }, []);
 
+  // Listen for reference-node-toggle custom events from CanvasNode
+  const handleReferenceToggle = useCallback(
+    (e: Event) => {
+      const detail = (e as CustomEvent<{ nodeId: string; active: boolean }>).detail;
+      dispatch({ type: "TOGGLE_REFERENCE_NODE", nodeId: detail.nodeId, active: detail.active });
+    },
+    [dispatch]
+  );
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("reference-node-toggle", handleReferenceToggle);
+    return () => el.removeEventListener("reference-node-toggle", handleReferenceToggle);
+  }, [handleReferenceToggle]);
+
   return (
     <div
       ref={containerRef}

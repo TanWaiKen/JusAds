@@ -61,6 +61,7 @@ from shared.config import (
 )
 from shared.elevenlabs_utils import generate_tts
 from shared.prompts import VIDEO_DIRECTOR_PROMPT, PLATFORM_CREATIVE_GUIDE, COPY_GUARDRAILS
+from shared.prompts import LOCALIZE_PLAN_PROMPT
 from shared.prompts import _load_prompt as _load_prompt_file
 from shared.s3_client import upload_file_public
 from config import S3_BUCKET_NAME
@@ -87,6 +88,66 @@ _PLATFORM_SECTION_MAP: dict[str, str] = {
     "youtube": "## YouTube",
     "shopee": "## Shopee / E-commerce",
 }
+
+# --- Creative Strategy (Localize Plan) ----------------------------------------
+
+_CREATIVE_STYLE_MAP: dict[str, str] = {
+    "meme_shock": "### 1. `meme_shock`",
+    "culture_anchor": "### 2. `culture_anchor`",
+    "problem_punchline": "### 3. `problem_punchline`",
+    "testimonial_burst": "### 4. `testimonial_burst`",
+    "speaker_led": "### 5. `speaker_led`",
+    "product_hero": "### 6. `product_hero`",
+}
+
+_DEFAULT_CREATIVE_STYLE = "meme_shock"
+
+
+def _extract_localize_plan_section(creative_style: str) -> str:
+    """Extract the relevant strategy section + pacing rules from the localize plan.
+
+    Returns the chosen strategy description plus the Pacing Reference and
+    Anti-Patterns sections so the Director has both the 'what' and the
+    constraints in scope. Falls back to meme_shock when the style is unknown.
+    """
+    plan = LOCALIZE_PLAN_PROMPT
+    if not plan:
+        return "(No localize plan available)"
+
+    style_key = creative_style.lower().strip()
+    target_header = _CREATIVE_STYLE_MAP.get(style_key, _CREATIVE_STYLE_MAP[_DEFAULT_CREATIVE_STYLE])
+
+    # Find the strategy section
+    start = plan.find(target_header)
+    if start == -1:
+        # Fallback: return first strategy
+        start = plan.find("### 1.")
+    if start == -1:
+        return plan[:2000]
+
+    # Cut to the next ### strategy section (not the one we're in)
+    next_strategy = plan.find("\n### ", start + len(target_header))
+    if next_strategy == -1:
+        strategy_text = plan[start:]
+    else:
+        strategy_text = plan[start:next_strategy]
+
+    # Always include Pacing Reference and Anti-Patterns
+    pacing_start = plan.find("## Pacing Reference")
+    anti_start = plan.find("## Anti-Patterns")
+    director_start = plan.find("## How the Director Uses This Plan")
+
+    appendix = ""
+    if pacing_start != -1:
+        end = anti_start if anti_start != -1 else director_start if director_start != -1 else len(plan)
+        appendix += "\n\n" + plan[pacing_start:end].strip()
+    if anti_start != -1:
+        end = director_start if director_start != -1 else len(plan)
+        appendix += "\n\n" + plan[anti_start:end].strip()
+    if director_start != -1:
+        appendix += "\n\n" + plan[director_start:].strip()
+
+    return f"{strategy_text.strip()}{appendix}"
 
 
 def _reference_role_label(filename: str) -> str:
@@ -356,10 +417,10 @@ def _build_expressive_voiceover_text(scenes: list[dict[str, Any]]) -> str:
 
 
 def _build_sfx_prompt(segment: dict[str, Any]) -> str:
-    """Create a Foley-only prompt that follows one rendered video segment."""
+    """Create a provider-safe Foley-only prompt for one rendered video segment."""
     direction = str(segment.get("sound_direction") or "").strip()
     description = str(segment.get("description") or "").strip()
-    return (
+    prompt = (
         "Create synchronized cinematic Foley and sound effects only; no music, melody, speech, "
         "voices, or narration. Follow this visual sequence in order: "
         f"{description[:900]}. Sound direction: {direction[:400] or 'natural location ambience and product Foley'}. "
@@ -367,6 +428,8 @@ def _build_sfx_prompt(segment: dict[str, Any]) -> str:
         "then immediately support the product action with realistic tactile sounds. "
         "Keep impacts stylized and brand-safe, never graphic or distressing, and leave space for narration."
     )
+    # ElevenLabs sound generation rejects prompts over 450 characters.
+    return prompt[:450]
 
 
 def _generate_reference_anchored_image(
@@ -462,11 +525,17 @@ async def plan_script(
     platform: str = "tiktok",
     voiceover_type: str = "elevenlabs",
     language: str = "auto",
+    creative_style: str = "meme_shock",
 ) -> dict:
     """Stage 1: Director plans the full script.
 
     Returns a plan dict that the frontend shows for user review.
     The user can edit subtitles, reorder scenes, or approve as-is.
+
+    Args:
+        creative_style: One of meme_shock | culture_anchor | problem_punchline |
+            testimonial_burst | speaker_led | product_hero. Controls hook energy,
+            pacing rhythm, and sound direction for the entire ad.
 
     Returns:
         {
@@ -478,6 +547,7 @@ async def plan_script(
             "grid_layout": "rows x columns",
             "clip_count": N,
             "duration_sec": requested runtime,
+            "creative_style": chosen strategy,
         }
     """
     plan_id = uuid.uuid4().hex[:8]
@@ -489,6 +559,13 @@ async def plan_script(
 
     # Extract the relevant platform section from the full creative guide
     platform_guide = _extract_platform_section(platform)
+
+    # Extract the creative strategy section from the localize plan
+    resolved_style = creative_style.lower().strip() if creative_style else _DEFAULT_CREATIVE_STYLE
+    if resolved_style not in _CREATIVE_STYLE_MAP:
+        logger.warning("[V3Grid] Unknown creative_style '%s', falling back to meme_shock", resolved_style)
+        resolved_style = _DEFAULT_CREATIVE_STYLE
+    localize_plan_section = _extract_localize_plan_section(resolved_style)
 
     audio_mode = _normalise_audio_mode(voiceover_type)
     prompt = _DIRECTOR_PROMPT.format(
@@ -504,6 +581,8 @@ async def plan_script(
         market=market,
         platform=platform,
         platform_guide=platform_guide,
+        creative_style=resolved_style,
+        localize_plan_section=localize_plan_section,
     )
     if product_description:
         prompt += f"\n\nProduct: {product_description}"
@@ -571,6 +650,7 @@ async def plan_script(
                 "market": market,
                 "language": language,
                 "voiceover_type": audio_mode,
+                "creative_style": resolved_style,
             }
     except Exception as e:
         logger.error("[V3Grid] Director planning failed: %s", e)
@@ -601,6 +681,7 @@ async def plan_script(
         "market": market,
         "language": language,
         "voiceover_type": audio_mode,
+        "creative_style": resolved_style,
     }
 
 
@@ -1402,6 +1483,7 @@ async def run_grid_pipeline(
     voiceover_type: str = "elevenlabs",
     language: str = "auto",
     creative_mode: str = "",
+    creative_style: str = "meme_shock",
 ) -> AsyncGenerator[str, None]:
     """Orchestrator-compatible entry point. Runs Stage 1 + Stage 2 inline.
 
@@ -1425,6 +1507,7 @@ async def run_grid_pipeline(
         platform=platform,
         voiceover_type=voiceover_type,
         language=language,
+        creative_style=creative_style,
     )
     plan["gender"] = gender
     plan["target_ethnicity"] = target_ethnicity

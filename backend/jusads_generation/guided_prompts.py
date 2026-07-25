@@ -74,7 +74,7 @@ FORM_SCHEMA: dict[str, dict[str, list[str]]] = {
     },
     "audio_ad": {
         "common": ["product_name", "target_audience", "platform", "key_message", "brand_tone"],
-        "specific": ["audio_duration", "voice_tone", "background_music_style"],
+        "specific": ["audio_duration", "language", "voice_tone", "audio_emotion", "background_music_style"],
     },
 }
 
@@ -261,6 +261,8 @@ FIXED_PROMPTS: dict[DesignType, str] = {
         "BRAND TONE: {brand_tone}\n\n"
         "AUDIO DURATION: {audio_duration}\n\n"
         "VOICE TONE: {voice_tone}\n\n"
+        "PREFERRED V3 DELIVERY: {audio_emotion}\n\n"
+        "COPY LANGUAGE: {language}\n\n"
         "BACKGROUND MUSIC STYLE: {background_music_style}\n\n"
         "AUDIO PRODUCTION PRINCIPLES — follow these advertising best practices for audio ads:\n"
         "1. DURATION SCRIPTING: 15-second spot = 35-40 words maximum, one single message + "
@@ -286,7 +288,11 @@ FIXED_PROMPTS: dict[DesignType, str] = {
         "6. PLATFORM CONSIDERATIONS: Podcast ads — conversational, host-read style performs "
         "best. Spotify/streaming — front-load the hook (skip button at 5s). Radio — higher "
         "energy, account for ambient listening. Voice assistant — ultra-concise, no background "
-        "music.\n\n"
+        "music.\n"
+        "7. LOCALIZED SPOKEN COPY: Use COPY LANGUAGE for every spoken line. Write natural, "
+        "market-appropriate phrasing for the stated target audience rather than literal "
+        "translation or generic global ad language. Use PREFERRED V3 DELIVERY only as direction; "
+        "the audio renderer chooses distinct ElevenLabs V3 tags for hook, reveal, and CTA.\n\n"
         "Script a complete audio ad with voice direction cues, music bed notes, and timing "
         "markers. The final spot must be clear, memorable, and drive a single action."
     ),

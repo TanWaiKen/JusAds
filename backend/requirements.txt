@@ -9,6 +9,7 @@ python-dotenv==1.2.2
 
 # Google AI / Vertex AI
 google-genai==2.8.0
+google-api-python-client==2.170.0
 
 # LangGraph / LangChain (agent pipeline orchestration)
 langgraph==1.2.5

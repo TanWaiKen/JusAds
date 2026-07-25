@@ -90,6 +90,12 @@ interface ResizeNodeAction {
   height: number;
 }
 
+interface ToggleReferenceNodeAction {
+  type: "TOGGLE_REFERENCE_NODE";
+  nodeId: string;
+  active: boolean;
+}
+
 export type CanvasAction =
   | AddNodeAction
   | MoveNodeAction
@@ -101,7 +107,8 @@ export type CanvasAction =
   | PanAction
   | ZoomAction
   | SetPipelineAction
-  | ResizeNodeAction;
+  | ResizeNodeAction
+  | ToggleReferenceNodeAction;
 
 // ─── Reducer ─────────────────────────────────────────────────────────────────
 
@@ -178,6 +185,19 @@ function canvasReducer(state: CanvasGraphState, action: CanvasAction): CanvasGra
       return {
         ...state,
         pipeline: resizeNode(state.pipeline, action.nodeId, action.width, action.height),
+      };
+
+    case "TOGGLE_REFERENCE_NODE":
+      return {
+        ...state,
+        pipeline: {
+          ...state.pipeline,
+          nodes: state.pipeline.nodes.map((n) =>
+            n.id === action.nodeId
+              ? { ...n, props: { ...n.props, active: String(action.active) } }
+              : n
+          ),
+        },
       };
 
     default:

@@ -40,7 +40,7 @@ FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "ffmpeg")
 # ffprobe reports container duration with slightly more precision than the
 # CapCut media parser accepts.  Keep the source range narrowly inside the
 # asset to avoid an import failure such as "end exceeds media duration".
-CAPCUT_DURATION_GUARD_US = 10_000
+CAPCUT_DURATION_GUARD_US = 50_000
 
 # Where to store generated CapCut drafts (opened by JianYing desktop)
 DRAFTS_DIR = os.path.join(tempfile.gettempdir(), "jusads_capcut_drafts")

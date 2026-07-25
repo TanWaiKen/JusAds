@@ -17,7 +17,7 @@ import os
 import tempfile
 import urllib.request
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import NotRequired, Optional, TypedDict
 
 from jusads_generation.state import MediaType
 
@@ -45,6 +45,7 @@ class AgentResult(TypedDict):
     s3_media_key: Optional[str]
     public_url: Optional[str]
     caption: Optional[str]
+    planned_script: NotRequired[Optional[str]]
     status: str  # 'completed' | 'failed'
     error: Optional[str]
 

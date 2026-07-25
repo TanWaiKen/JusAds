@@ -476,7 +476,7 @@ const FALLBACK_SCHEMA: DesignTypeSchema[] = [
     icon: "audio-lines",
     fields: {
       common: ["product_name", "target_audience", "platform", "key_message", "brand_tone"],
-      specific: ["audio_duration", "voice_tone", "audio_emotion", "background_music_style"],
+      specific: ["audio_duration", "language", "voice_tone", "audio_emotion", "background_music_style"],
     },
   },
 ];

@@ -19,6 +19,7 @@ import {
   ExternalLink,
   RefreshCw,
   Globe,
+  Settings,
 } from "lucide-react";
 
 gsap.registerPlugin(useGSAP);
@@ -44,6 +45,7 @@ export default function DashboardHome() {
   const [profile, setProfile] = useState<any>({});
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   // ── Fetch user profile for prompt recommendations ──────────────────────────
   useEffect(() => {
@@ -67,12 +69,21 @@ export default function DashboardHome() {
 
   // ── Fetch real social media statistics ────────────────────────────────────
   useEffect(() => {
+    if (!user?.profile?.email) return;
     setStatsLoading(true);
-    fetchPostStatistics()
+    setStatsError(null);
+    fetchPostStatistics(undefined, { email: user.profile.email })
       .then(setStats)
-      .catch(() => setStats(null))
+      .catch((e) => {
+        setStats(null);
+        if (e && typeof e === "object" && "code" in e && e.code === "zernio_not_configured") {
+          setStatsError("zernio_not_configured");
+        } else {
+          setStatsError("generic");
+        }
+      })
       .finally(() => setStatsLoading(false));
-  }, []);
+  }, [user?.profile?.email]);
 
   // ── Derived stats from API ─────────────────────────────────────────────────
   const overview = stats?.account_overview;
@@ -115,35 +126,45 @@ export default function DashboardHome() {
       { y: 0, autoAlpha: 1, duration: 0.4, clearProps: "all" },
       "<0.15"
     );
-
-    tl.fromTo(".stat-card",
-      { y: 40, autoAlpha: 0, scale: 0.95 },
-      { y: 0, autoAlpha: 1, scale: 1, stagger: 0.1, duration: 0.5, ease: "back.out(1.4)", clearProps: "all" },
-      "-=0.3"
-    );
-
-    tl.fromTo(".promo-card",
-      { y: 30, autoAlpha: 0 },
-      { y: 0, autoAlpha: 1, duration: 0.6, clearProps: "all" },
-      "-=0.2"
-    );
-
-    tl.fromTo(".sentiment-panel",
-      { y: 20, autoAlpha: 0 },
-      { y: 0, autoAlpha: 1, duration: 0.5, clearProps: "all" },
-      "-=0.5"
-    );
-
-    tl.fromTo(".activity-item",
-      { x: 30, autoAlpha: 0 },
-      { x: 0, autoAlpha: 1, stagger: 0.08, duration: 0.4, clearProps: "all" },
-      "-=0.4"
-    );
   }, { scope: containerRef });
 
-  // ── GSAP count-up for stat cards (runs when stats load) ───────────────────
+  // ── GSAP data-dependent animations ────────────────────────────────────────
   useGSAP(() => {
     if (statsLoading) return;
+
+    const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+
+    if (gsap.utils.toArray(".stat-card").length > 0) {
+      tl.fromTo(".stat-card",
+        { y: 40, autoAlpha: 0, scale: 0.95 },
+        { y: 0, autoAlpha: 1, scale: 1, stagger: 0.1, duration: 0.5, ease: "back.out(1.4)", clearProps: "all" }
+      );
+    }
+
+    if (gsap.utils.toArray(".promo-card").length > 0) {
+      tl.fromTo(".promo-card",
+        { y: 30, autoAlpha: 0 },
+        { y: 0, autoAlpha: 1, duration: 0.6, clearProps: "all" },
+        "-=0.3"
+      );
+    }
+
+    if (gsap.utils.toArray(".sentiment-panel").length > 0) {
+      tl.fromTo(".sentiment-panel",
+        { y: 20, autoAlpha: 0 },
+        { y: 0, autoAlpha: 1, duration: 0.5, clearProps: "all" },
+        "-=0.5"
+      );
+    }
+
+    if (gsap.utils.toArray(".activity-item").length > 0) {
+      tl.fromTo(".activity-item",
+        { x: 30, autoAlpha: 0 },
+        { x: 0, autoAlpha: 1, stagger: 0.08, duration: 0.4, clearProps: "all" },
+        "-=0.4"
+      );
+    }
+
     const statNumbers = containerRef.current?.querySelectorAll(".stat-number");
     statNumbers?.forEach((el) => {
       const target = parseInt(el.getAttribute("data-value") || "0", 10);
@@ -181,86 +202,100 @@ export default function DashboardHome() {
       </div>
 
       {/* ── Social Media Summary Cards ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {statsLoading
-          ? [1, 2, 3].map((i) => (
-              <div key={i} className="h-28 rounded-2xl bg-surface-card border border-border-default animate-pulse" />
-            ))
-          : summaryCards.map((card, idx) => {
-              const Icon = card.icon;
-              return (
-                <div
-                  key={idx}
-                  className="stat-card bg-surface-card border border-border-default p-6 rounded-2xl retina-border card-shadow hover:-translate-y-1 transition-all duration-300 cursor-default"
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-label-ui font-semibold text-text-caption">{card.label}</span>
-                    <span className={`p-2 rounded-lg ${card.iconBg}`}>
-                      <Icon size={18} />
-                    </span>
-                  </div>
-                  <div
-                    className="stat-number text-[32px] font-bold tracking-tight text-text-heading font-mono"
-                    data-value={card.value}
-                  >
-                    0
-                  </div>
-                </div>
-              );
-            })}
-      </div>
-
-      {/* ── Platform Breakdown (from account_overview.platforms) ─────────── */}
-      {!statsLoading && platformEntries.length > 0 && (
-        <div className="promo-card bg-surface-card border border-border-default rounded-2xl p-6 retina-border shadow-xs">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="font-bold text-[16px] text-text-heading flex items-center gap-2">
-              <Globe size={16} className="text-accent-blue" />
-              Platform Breakdown
-            </h3>
-            <button
-              onClick={() => navigate("/dashboard/social-media")}
-              className="text-[12px] font-semibold text-accent-blue hover:opacity-80 transition-opacity flex items-center gap-1"
-            >
-              View all posts <ExternalLink size={11} />
-            </button>
+      {statsError === "zernio_not_configured" ? (
+        <div className="promo-card bg-surface-card border border-border-default rounded-2xl p-8 retina-border shadow-xs flex flex-col items-center justify-center text-center">
+          <div className="w-12 h-12 bg-accent-blue/10 rounded-full flex items-center justify-center mb-4">
+            <Settings className="text-accent-blue w-6 h-6" />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {platformEntries.map(([platform, data]) => {
-              const platformColor =
-                platform === "tiktok"
-                  ? "text-[#fe2c55] bg-pink-50 dark:bg-pink-950/20"
-                  : "text-[#e1306c] bg-purple-50 dark:bg-purple-950/20";
-              const label = platform.charAt(0).toUpperCase() + platform.slice(1);
-              return (
-                <div
-                  key={platform}
-                  className="flex items-center justify-between p-4 rounded-xl bg-surface-inset border border-border-subtle"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={`p-2 rounded-lg text-[13px] font-bold ${platformColor}`}>
-                      {label}
-                    </span>
-                  </div>
-                  <div className="flex gap-6 text-right">
-                    <div>
-                      <span className="block text-[10px] uppercase font-bold text-text-caption/60">Reach</span>
-                      <span className="font-mono text-[14px] font-bold text-text-heading">{formatCount(data.reach)}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] uppercase font-bold text-text-caption/60">Likes</span>
-                      <span className="font-mono text-[14px] font-bold text-text-heading">{formatCount(data.likes)}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] uppercase font-bold text-text-caption/60">Posts</span>
-                      <span className="font-mono text-[14px] font-bold text-text-heading">{data.posts}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <h3 className="text-text-heading font-bold text-[18px] mb-2">Connect Zernio to view live statistics</h3>
+          <p className="text-text-caption py-2 text-[14px] max-w-[400px] mb-1">
+            You need to provide your Zernio API key to fetch real-time social media analytics and distribute generated posts.
+          </p>
+          <button
+            onClick={() => navigate("/dashboard/profile")}
+            className="inline-flex h-10 px-6 items-center justify-center gap-1.5 rounded-md bg-[#171717] text-[13px] font-semibold text-white hover:bg-[#333] transition-colors cursor-pointer"
+          >
+            Go to Profile Settings
+          </button>
         </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {statsLoading
+              ? [1, 2, 3].map((i) => (
+                <div key={i} className="h-28 rounded-2xl bg-surface-card border border-border-default animate-pulse" />
+              ))
+              : summaryCards.map((card, idx) => {
+                const Icon = card.icon;
+                return (
+                  <div
+                    key={idx}
+                    className="stat-card bg-surface-card border border-border-default p-6 rounded-2xl retina-border card-shadow hover:-translate-y-1 transition-all duration-300 cursor-default"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-label-ui font-semibold text-text-caption">{card.label}</span>
+                      <span className={`p-2 rounded-lg ${card.iconBg}`}>
+                        <Icon size={18} />
+                      </span>
+                    </div>
+                    <div
+                      className="stat-number text-[32px] font-bold tracking-tight text-text-heading font-mono"
+                      data-value={card.value}
+                    >
+                      0
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* ── Platform Breakdown (from account_overview.platforms) ─────────── */}
+          {!statsLoading && platformEntries.length > 0 && (
+            <div className="promo-card bg-surface-card border border-border-default rounded-2xl p-6 retina-border shadow-xs">
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="font-bold text-[16px] text-text-heading flex items-center gap-2">
+                  <Globe size={16} className="text-accent-blue" />
+                  Platform Breakdown
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {platformEntries.map(([platform, data]) => {
+                  const platformColor =
+                    platform === "tiktok"
+                      ? "text-[#fe2c55] bg-pink-50 dark:bg-pink-950/20"
+                      : "text-[#e1306c] bg-purple-50 dark:bg-purple-950/20";
+                  const label = platform.charAt(0).toUpperCase() + platform.slice(1);
+                  return (
+                    <div
+                      key={platform}
+                      className="flex items-center justify-between p-4 rounded-xl bg-surface-inset border border-border-subtle"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`p-2 rounded-lg text-[13px] font-bold ${platformColor}`}>
+                          {label}
+                        </span>
+                      </div>
+                      <div className="flex gap-6 text-right">
+                        <div>
+                          <span className="block text-[10px] uppercase font-bold text-text-caption/60">Reach</span>
+                          <span className="font-mono text-[14px] font-bold text-text-heading">{formatCount(data.reach)}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] uppercase font-bold text-text-caption/60">Likes</span>
+                          <span className="font-mono text-[14px] font-bold text-text-heading">{formatCount(data.likes)}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] uppercase font-bold text-text-caption/60">Posts</span>
+                          <span className="font-mono text-[14px] font-bold text-text-heading">{data.posts}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Main Grid: Prompts + Recent Posts ────────────────────────────── */}
@@ -383,16 +418,6 @@ export default function DashboardHome() {
               })}
             </div>
           )}
-
-          <div className="mt-5 pt-4 border-t border-border-subtle">
-            <button
-              onClick={() => navigate("/dashboard/social-media")}
-              className="w-full py-2.5 px-4 rounded-xl text-code-sm font-semibold text-accent-blue bg-accent-blue/5 hover:bg-accent-blue/10 transition-colors flex items-center justify-center gap-2"
-            >
-              <Globe size={14} />
-              View All Social Media
-            </button>
-          </div>
         </div>
       </div>
     </div>

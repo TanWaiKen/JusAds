@@ -81,8 +81,7 @@ export interface ChatMessageView {
 }
 
 /**
- * A single planned scene in a Video V2 storyboard (before rendering).
- * Mirrors the backend `plan_video` output.
+ * A single planned scene in a V3 Grid storyboard before rendering.
  */
 export interface VideoPlanScene {
   index: number;
@@ -97,7 +96,7 @@ export interface VideoPlanScene {
   keyframeUrl: string;
 }
 
-/** A Video V2 storyboard plan awaiting user approval (Continue). */
+/** A V3 Grid storyboard plan awaiting approval (Continue). */
 export interface VideoPlan {
   planId: string;
   brief: string;
@@ -116,6 +115,8 @@ export interface VideoPlan {
   durationSec?: number;
   /** Target market persisted by the V3 director plan. */
   market?: string;
+  /** Creative strategy (localize plan) applied by the Director. */
+  creativeStyle?: string;
   scenes: VideoPlanScene[];
 }
 
@@ -123,7 +124,7 @@ export interface VideoPlan {
  * A parsed Server-Sent Event emitted by the generation orchestrator.
  * Any given event carries a subset of these fields depending on its kind:
  * `{ node, status, data }` | `{ text }` | `{ pipeline_state }` | `{ error }`
- * | `{ video_plan }` (Video V2 storyboard awaiting approval).
+ * | `{ video_plan }` (V3 Grid storyboard awaiting approval).
  */
 export interface SSEEvent {
   node?: string;
@@ -156,6 +157,7 @@ export interface GenerationOptions {
   gender?: string;
   parentAdId?: string;
   parentAssetUrl?: string;
+  creativeStyle?: string;
 }
 
 export async function sendChat(
@@ -165,7 +167,6 @@ export async function sendChat(
   referenceUrls: string[] = [],
   targetPlatform?: TargetPlatform,
   skipCompliance?: boolean,
-  videoV3?: boolean,
   targetEthnicity?: TargetEthnicity,
   options?: GenerationOptions
 ): Promise<Response> {
@@ -179,7 +180,6 @@ export async function sendChat(
         reference_urls: referenceUrls,
         target_platform: targetPlatform ?? DEFAULT_PLATFORM,
         skip_compliance: skipCompliance ?? false,
-        video_v3: videoV3 ?? true,
         target_ethnicity: targetEthnicity ?? "all",
         age_group: options?.ageGroup ?? "all_ages",
         market: options?.market ?? "malaysia",
@@ -189,6 +189,7 @@ export async function sendChat(
         gender: options?.gender ?? "female",
         parent_ad_id: options?.parentAdId,
         parent_asset_url: options?.parentAssetUrl,
+        creative_style: options?.creativeStyle ?? "meme_shock",
       }),
     }
   );
@@ -302,7 +303,6 @@ export async function* streamChat(
   referenceUrls: string[] = [],
   targetPlatform?: TargetPlatform,
   skipCompliance?: boolean,
-  videoV3?: boolean,
   targetEthnicity?: TargetEthnicity,
   options?: GenerationOptions
 ): AsyncGenerator<SSEEvent> {
@@ -313,7 +313,6 @@ export async function* streamChat(
     referenceUrls,
     targetPlatform,
     skipCompliance,
-    videoV3,
     targetEthnicity,
     options
   );
@@ -449,8 +448,11 @@ export interface DistributionAccount {
   label: string;
 }
 
-export async function getDistributionAccounts(): Promise<DistributionAccount[]> {
-  const res = await fetch(`${API_BASE}/api/distribution/accounts`);
+export async function getDistributionAccounts(email?: string): Promise<DistributionAccount[]> {
+  const url = email
+    ? `${API_BASE}/api/distribution/accounts?email=${encodeURIComponent(email)}`
+    : `${API_BASE}/api/distribution/accounts`;
+  const res = await fetch(url);
   if (!res.ok) return [];
   const payload = await res.json() as { accounts?: unknown };
   if (!Array.isArray(payload.accounts)) return [];
@@ -740,6 +742,7 @@ export function normalizeVideoPlan(raw: unknown): VideoPlan | undefined {
     productIntegration: typeof record.product_integration === "string" ? record.product_integration : undefined,
     durationSec: typeof record.duration_sec === "number" ? record.duration_sec : undefined,
     market: typeof record.market === "string" ? record.market : undefined,
+    creativeStyle: typeof record.creative_style === "string" ? record.creative_style : undefined,
     scenes,
   };
 }
@@ -763,6 +766,7 @@ function serializeVideoPlan(plan: VideoPlan): Record<string, unknown> {
     product_integration: plan.productIntegration,
     duration_sec: plan.durationSec,
     market: plan.market,
+    creative_style: plan.creativeStyle,
     scenes: plan.scenes.map((s) => ({
       index: s.index,
       description: s.description,
@@ -779,7 +783,7 @@ function serializeVideoPlan(plan: VideoPlan): Record<string, unknown> {
 }
 
 /**
- * Execute an approved Video V2 storyboard plan (the "Continue" action) and
+ * Execute an approved V3 Grid storyboard plan (the "Continue" action) and
  * iterate its parsed SSE events. Runs the expensive Veo/ffmpeg render on the
  * backend and streams `{node,status,data}` progress then `{pipeline_state}`.
  */

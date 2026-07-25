@@ -21,16 +21,17 @@ class ZernioServiceError(RuntimeError):
         self.not_configured = not_configured
 
 
-def _get_client() -> Any:
-    """Create a Zernio client only when a production API key is configured."""
-    if not ZERNIO_API_KEY.strip():
+def _get_client(api_key: Optional[str] = None) -> Any:
+    """Create a Zernio client using the provided key."""
+    effective_key = (api_key or "").strip()
+    if not effective_key:
         raise ZernioServiceError(
-            "Zernio analytics are not configured.",
+            "Zernio API key is not configured.",
             not_configured=True,
         )
     from zernio import Zernio
 
-    return Zernio(api_key=ZERNIO_API_KEY, timeout=30)
+    return Zernio(api_key=effective_key, timeout=30)
 
 
 async def _call(operation: str, callback: Callable[[], T]) -> T:
@@ -44,9 +45,9 @@ async def _call(operation: str, callback: Callable[[], T]) -> T:
         raise ZernioServiceError("Zernio analytics are temporarily unavailable.") from exc
 
 
-async def get_overall_analytics(period: str = "30d") -> dict[str, Any]:
+async def get_overall_analytics(api_key: Optional[str] = None, period: str = "30d") -> dict[str, Any]:
     """Return live account analytics; period is reserved for SDK support."""
-    client = _get_client()
+    client = _get_client(api_key)
     data = await _call("get_analytics", client.analytics.get_analytics)
     result = _serialize(data)
     result.setdefault("requested_period", period)
@@ -54,36 +55,36 @@ async def get_overall_analytics(period: str = "30d") -> dict[str, Any]:
     return result
 
 
-async def get_daily_metrics() -> dict[str, Any]:
+async def get_daily_metrics(api_key: Optional[str] = None) -> dict[str, Any]:
     """Return live daily aggregate metrics from Zernio."""
-    client = _get_client()
+    client = _get_client(api_key)
     data = await _call("get_daily_metrics", client.analytics.get_daily_metrics)
     result = _serialize(data)
     result["source"] = "zernio"
     return result
 
 
-async def get_best_time_to_post() -> dict[str, Any]:
+async def get_best_time_to_post(api_key: Optional[str] = None) -> dict[str, Any]:
     """Return live recommended posting times from Zernio."""
-    client = _get_client()
+    client = _get_client(api_key)
     data = await _call("get_best_time_to_post", client.analytics.get_best_time_to_post)
     result = _serialize(data)
     result["source"] = "zernio"
     return result
 
 
-async def get_connected_accounts() -> dict[str, Any]:
+async def get_connected_accounts(api_key: Optional[str] = None) -> dict[str, Any]:
     """Return live connected social accounts from Zernio."""
-    client = _get_client()
+    client = _get_client(api_key)
     data = await _call("accounts.list", client.accounts.list)
     result = _serialize(data)
     result["source"] = "zernio"
     return result
 
 
-async def get_posts_list(platform: Optional[str] = None) -> dict[str, Any]:
+async def get_posts_list(api_key: Optional[str] = None, platform: Optional[str] = None) -> dict[str, Any]:
     """Return live posts separated into JusAds and external account content."""
-    client = _get_client()
+    client = _get_client(api_key)
     analytics_data = await _call(
         "posts analytics",
         lambda: client.analytics.get_analytics(platform=platform),

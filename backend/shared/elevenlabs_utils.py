@@ -9,8 +9,10 @@ generation pipeline (uses config.ELEVENLABS_API_KEY).
 """
 
 import logging
-import requests
+from collections.abc import Sequence
 from pathlib import Path
+
+import requests
 
 from config import ELEVENLABS_API_KEY
 
@@ -26,6 +28,30 @@ except ImportError:
     HAS_PYDUB = False
 
 
+def format_v3_delivery_text(text: str, delivery_tags: Sequence[str] | None = None) -> str:
+    """Prefix clean ElevenLabs V3 performance tags without altering authored tags."""
+    spoken_text = text.strip()
+    if spoken_text.startswith("["):
+        return spoken_text
+
+    allowed = {
+        "authoritative", "bright", "calm", "clear", "concerned", "confident",
+        "energetic", "excited", "fast", "friendly", "playful", "softly",
+        "urgent", "warmly",
+    }
+    tags: list[str] = []
+    for raw_tag in delivery_tags or ():
+        if not isinstance(raw_tag, str):
+            continue
+        tag = raw_tag.strip().strip("[]").lower()
+        if tag in allowed and tag not in tags:
+            tags.append(tag)
+        if len(tags) == 3:
+            break
+    prefix = " ".join(f"[{tag}]" for tag in tags)
+    return f"{prefix} {spoken_text}".strip()
+
+
 def generate_tts(
     text: str,
     output_path: str,
@@ -36,19 +62,23 @@ def generate_tts(
     style: float = 0.12,
     language_code: str | None = None,
     emotion: str | None = None,
+    delivery_tags: Sequence[str] | None = None,
     speed: float = 1.0,
 ) -> bool:
-    """Generate voiceover audio via ElevenLabs TTS with v3 emotion & pitch control. Returns True on success."""
+    """Generate speech with ElevenLabs V3 direction and fallback to multilingual v2 only on V3 failure."""
     if not ELEVENLABS_API_KEY:
         logger.warning("[ElevenLabs] No API key configured")
         return False
 
     try:
-        formatted_text = text
-        if emotion and model_id == "eleven_v3":
-            emotion_clean = emotion.strip().lower()
-            if not text.startswith("["):
-                formatted_text = f"[{emotion_clean}] {text}"
+        requested_tags = list(delivery_tags or [])
+        if not requested_tags and emotion:
+            requested_tags = [emotion]
+        formatted_text = (
+            format_v3_delivery_text(text, requested_tags)
+            if model_id == "eleven_v3"
+            else text
+        )
 
         headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
         voice_settings = {
@@ -71,9 +101,8 @@ def generate_tts(
         endpoint = f"{ELEVENLABS_API_BASE}/v1/text-to-speech/{voice_id}"
         response = requests.post(endpoint, headers=headers, json=payload, timeout=60)
 
-        # eleven_v3 is the preferred expressive model.  Existing workspaces can
-        # still have a key/voice combination without access to it, so preserve a
-        # reliable multilingual fallback instead of silently emitting no audio.
+        # V3 is always attempted first. The fallback deliberately uses raw spoken
+        # text because V3 bracket directions are not a multilingual-v2 contract.
         if response.status_code != 200 and model_id == "eleven_v3":
             payload["model_id"] = "eleven_multilingual_v2"
             payload["text"] = text
@@ -86,10 +115,15 @@ def generate_tts(
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(response.content)
-        logger.info("[ElevenLabs] TTS saved (model=%s, emotion=%s): %s", payload["model_id"], emotion or "default", out.name)
+        logger.info(
+            "[ElevenLabs] TTS saved (model=%s, delivery_tags=%s): %s",
+            payload["model_id"],
+            ",".join(requested_tags) or "default",
+            out.name,
+        )
         return True
-    except Exception as e:
-        logger.error("[ElevenLabs] TTS failed: %s", e)
+    except Exception as exc:
+        logger.error("[ElevenLabs] TTS failed: %s", exc)
         return False
 
 
@@ -173,3 +207,63 @@ def mix_vo_and_sfx(
             return True
         except Exception:
             return False
+
+def generate_music(prompt: str, output_path: str, duration: float) -> bool:
+    """Generate background music (using SFX API as fallback)."""
+    return generate_sfx(prompt, output_path, duration_seconds=min(duration, 22.0), prompt_influence=0.5)
+
+def generate_music_from_video(video_paths: list, output_path: str, description: str, tags: str) -> bool:
+    """Generate music synchronized to video (stub)."""
+    # Just fail so it falls back to generate_music
+    return False
+
+def build_video_audio_program(
+    output_path: str,
+    target_duration: float,
+    voiceover_path: str | None = None,
+    music_path: str | None = None,
+    sound_effects: list[dict] | None = None,
+) -> bool:
+    """Build the final audio program with VO, music, and SFX."""
+    if not HAS_PYDUB:
+        logger.warning("[ElevenLabs] pydub not available for audio program")
+        return False
+
+    try:
+        target_ms = int(target_duration * 1000)
+        base = AudioSegment.silent(duration=target_ms)
+
+        if music_path and Path(music_path).exists():
+            music = AudioSegment.from_file(music_path)
+            if len(music) < target_ms and len(music) > 0:
+                loops = (target_ms // len(music)) + 1
+                music = music * loops
+            music = music[:target_ms]
+            music = music - 12  # Duck music
+            base = base.overlay(music)
+
+        if sound_effects:
+            import math
+            for sfx_info in sound_effects:
+                p = sfx_info.get("path")
+                if p and Path(p).exists():
+                    sfx = AudioSegment.from_file(p)
+                    vol = sfx_info.get("volume", 1.0)
+                    if vol != 1.0 and vol > 0:
+                        db_change = 20 * math.log10(vol)
+                        sfx = sfx + db_change
+                    start_ms = int(sfx_info.get("start_seconds", 0) * 1000)
+                    base = base.overlay(sfx, position=start_ms)
+
+        if voiceover_path and Path(voiceover_path).exists():
+            vo = AudioSegment.from_file(voiceover_path)
+            base = base.overlay(vo)
+
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        base.export(output_path, format="mp3")
+        logger.info("[ElevenLabs] Audio program built: %s", out.name)
+        return True
+    except Exception as e:
+        logger.error("[ElevenLabs] build_video_audio_program failed: %s", e)
+        return False

@@ -23,6 +23,13 @@ export type AgeGroup = "gen_z" | "millennial" | "gen_x" | "baby_boomer" | "all_a
 export type Gender = "male" | "female" | "mixed";
 export type Market = "malaysia" | "singapore";
 export type Language = "ms" | "en" | "zh" | "ta" | "auto";
+export type CreativeStyle =
+  | "meme_shock"
+  | "culture_anchor"
+  | "problem_punchline"
+  | "testimonial_burst"
+  | "speaker_led"
+  | "product_hero";
 
 export interface GenerationSettings {
   targetPlatform: TargetPlatform | null;
@@ -34,12 +41,13 @@ export interface GenerationSettings {
   productName: string;
   productCategory: string;
   complianceEnabled: boolean;
-  videoV2Enabled: boolean;
+  creativeStyle: CreativeStyle;
 }
 
 interface SettingsPanelProps {
   settings: GenerationSettings;
   onUpdate: (patch: Partial<GenerationSettings>) => void;
+  onOpenHookSearch: () => void;
   onClose: () => void;
 }
 
@@ -232,12 +240,61 @@ function TargetConsumerTab({
 function GenerationTab({
   settings,
   onUpdate,
+  onOpenHookSearch,
 }: {
   settings: GenerationSettings;
   onUpdate: (patch: Partial<GenerationSettings>) => void;
+  onOpenHookSearch: () => void;
 }): React.ReactElement {
   return (
     <div className="flex flex-col gap-5">
+      {/* Creative Strategy */}
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-semibold text-[#171717] tracking-tight">Creative Strategy</span>
+        <div className="flex flex-wrap gap-2">
+          {([
+            { value: "meme_shock", label: "⚡ Meme / Shock" },
+            { value: "culture_anchor", label: "🏮 Culture Anchor" },
+            { value: "problem_punchline", label: "💡 Problem → Punchline" },
+            { value: "testimonial_burst", label: "💬 Testimonial Burst" },
+            { value: "speaker_led", label: "🎙️ Speaker-Led" },
+            { value: "product_hero", label: "🌟 Product Hero" },
+          ] as { value: CreativeStyle; label: string }[]).map((opt) => (
+            <OptionButton
+              key={opt.value}
+              label={opt.label}
+              selected={settings.creativeStyle === opt.value}
+              onClick={() => onUpdate({ creativeStyle: opt.value })}
+            />
+          ))}
+        </div>
+        <p className="text-[10px] text-[#666666]">
+          {settings.creativeStyle === "meme_shock" && "Culture-native hook, fast cuts, no slow-mo. 3–5 scenes in 10s."}
+          {settings.creativeStyle === "culture_anchor" && "Festival / tradition anchor. Warmth over shock. Commit to one culture."}
+          {settings.creativeStyle === "problem_punchline" && "Malaysian pain point → product as punchline. Fast tension, satisfying reveal."}
+          {settings.creativeStyle === "testimonial_burst" && "Rapid-fire reactions and social proof. 5–6 cuts, overlay-driven."}
+          {settings.creativeStyle === "speaker_led" && "One person, one message. Direct, confident. Subtitles on every line."}
+          {settings.creativeStyle === "product_hero" && "No character — product IS the star. ASMR Foley, macro shots, no slow-mo."}
+        </p>
+      </div>
+
+      {/* Hook Video Search trigger */}
+      {(settings.creativeStyle === "meme_shock" || settings.creativeStyle === "problem_punchline") && (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold text-[#171717] tracking-tight">Hook Reference</span>
+          <button
+            type="button"
+            onClick={onOpenHookSearch}
+            className="rounded-md px-3 py-2 text-xs text-left text-[#171717] shadow-[rgba(0,0,0,0.08)_0px_0px_0px_1px] hover:bg-[#fafafa] transition-colors cursor-pointer"
+          >
+            🎬 Search YouTube Shorts for hook clips...
+          </button>
+          <p className="text-[10px] text-[#666666]">
+            Find viral meme/transition Shorts to inspire your ad's opening hook.
+          </p>
+        </div>
+      )}
+
       {/* Platform */}
       <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold text-[#171717] tracking-tight">Target Platform</span>
@@ -280,7 +337,7 @@ function GenerationTab({
         </select>
       </div>
 
-      {/* Toggles */}
+      {/* V3 Grid video pipeline is always used for video generation. */}
       <ToggleRow
         label="Compliance Check"
         description={
@@ -292,16 +349,6 @@ function GenerationTab({
         onToggle={() => onUpdate({ complianceEnabled: !settings.complianceEnabled })}
       />
 
-      <ToggleRow
-        label="Video V3 — Character Grid Pipeline"
-        description={
-          settings.videoV2Enabled
-            ? "Director → Character Sheet → Scene Grid → Gemini Omni → Dual Output"
-            : "Single video clip (V1). Enable for rich multi-scene character-consistent video"
-        }
-        enabled={settings.videoV2Enabled}
-        onToggle={() => onUpdate({ videoV2Enabled: !settings.videoV2Enabled })}
-      />
     </div>
   );
 }
@@ -310,7 +357,12 @@ function GenerationTab({
 
 type Tab = "consumer" | "generation";
 
-export function SettingsPanel({ settings, onUpdate, onClose }: SettingsPanelProps): React.ReactElement {
+export function SettingsPanel({
+  settings,
+  onUpdate,
+  onOpenHookSearch,
+  onClose,
+}: SettingsPanelProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<Tab>("consumer");
 
@@ -382,7 +434,11 @@ export function SettingsPanel({ settings, onUpdate, onClose }: SettingsPanelProp
           {activeTab === "consumer" ? (
             <TargetConsumerTab settings={settings} onUpdate={onUpdate} />
           ) : (
-            <GenerationTab settings={settings} onUpdate={onUpdate} />
+            <GenerationTab
+              settings={settings}
+              onUpdate={onUpdate}
+              onOpenHookSearch={onOpenHookSearch}
+            />
           )}
         </div>
       </div>

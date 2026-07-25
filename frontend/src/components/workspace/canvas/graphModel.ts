@@ -13,7 +13,8 @@ export type NodeType =
   | "video"
   | "critic"
   | "input"
-  | "output";
+  | "output"
+  | "reference";
 
 export type NodeStatus = "idle" | "running" | "done" | "error";
 
@@ -183,6 +184,7 @@ const DEFAULT_LABELS: Record<NodeType, string> = {
   critic: "Critic",
   input: "Input",
   output: "Output",
+  reference: "Reference",
 };
 
 /** Simple counter-based unique ID generator (avoids crypto dependency in tests). */
@@ -423,6 +425,7 @@ const VALID_NODE_TYPES: ReadonlySet<string> = new Set<NodeType>([
   "critic",
   "input",
   "output",
+  "reference",
 ]);
 
 const VALID_NODE_STATUSES: ReadonlySet<string> = new Set<NodeStatus>([

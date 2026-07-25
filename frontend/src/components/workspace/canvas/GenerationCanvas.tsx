@@ -15,8 +15,9 @@ import { OutputGallery } from "@/components/workspace/canvas/OutputGallery";
 import { VideoPlanStoryboard } from "@/components/workspace/canvas/VideoPlanStoryboard";
 import { SettingsPanel } from "@/components/workspace/canvas/SettingsPanel";
 import type { GenerationSettings } from "@/components/workspace/canvas/SettingsPanel";
+import { HookSearchPanel } from "@/components/workspace/canvas/HookSearchPanel";
 import type { GeneratedAdView, VideoPlan } from "@/services/generationApi";
-import { executeVideoPlan, getGeneratedAds } from "@/services/generationApi";
+import { executeVideoPlan, getGeneratedAds, normalizeVideoPlan } from "@/services/generationApi";
 
 gsap.registerPlugin(useGSAP);
 
@@ -32,9 +33,13 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   const [chatbotPrompt, setChatbotPrompt] = useState<string | null>(null);
   const [revisionContext, setRevisionContext] = useState<{ parentAdId?: string; parentAssetUrl?: string } | null>(null);
 
-  // Auto-switch to Inspector tab when a node is selected
+  // Auto-switch to Inspector tab when a non-reference node is selected.
+  // Reference nodes are selected transiently during upload — don't steal focus
+  // from the chatbot tab so the user can keep adding references without interruption.
   useEffect(() => {
     if (!state.selectedNodeId) return;
+    const node = state.pipeline.nodes.find((n) => n.id === state.selectedNodeId);
+    if (node?.type === "reference") return;
     let active = true;
     queueMicrotask(() => {
       if (active) setActiveTab("inspector");
@@ -42,7 +47,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
     return () => {
       active = false;
     };
-  }, [state.selectedNodeId]);
+  }, [state.selectedNodeId, state.pipeline.nodes]);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -54,8 +59,13 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
   const [videoPlan, setVideoPlan] = useState<VideoPlan | null>(null);
   const [planRendering, setPlanRendering] = useState(false);
 
-  // Settings state (unified, drives the SettingsPanel)
+  // References are managed locally inside ChatbotPanel (same as Easy Mode).
+  // After generation the backend emits an "input" node whose reference_urls
+  // prop can be edited from the InspectorPanel — no canvas reference nodes needed.
+
+  // Settings state (unified, drives the SettingsPanel). Video generation always uses V3 Grid.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hookSearchOpen, setHookSearchOpen] = useState(false);
 
   // The canvas and the Outputs tab must read the same persisted pipeline.
   // Guided generation can update a node before the chat panel emits its local
@@ -82,6 +92,8 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
       const hasFinalV3Video = persistedAds.some(
         (ad) => ad.mediaType === "video" && /\/final_video\.mp4(?:\?|$)/.test(ad.publicUrl ?? "")
       );
+      // Hide the storyboard approval UI if a final video already exists.
+      // The plan data itself stays in state.pipeline.video_plan for re-renders.
       if (hasFinalV3Video) setVideoPlan(null);
     });
 
@@ -105,10 +117,8 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
     language: (loadedSettings.language as GenerationSettings["language"]) ?? "auto",
     productName: (typeof loadedSettings.productName === "string" ? loadedSettings.productName : "") as string,
     productCategory: (typeof loadedSettings.productCategory === "string" ? loadedSettings.productCategory : "") as string,
-    complianceEnabled: loadedSettings.complianceEnabled !== false,
-    // New Advanced tasks use the staged V3 pipeline by default. A persisted
-    // false remains an intentional opt-out for a user who turned it off.
-    videoV2Enabled: loadedSettings.videoV2Enabled !== false,
+    complianceEnabled: loadedSettings.complianceEnabled === true,
+    creativeStyle: (loadedSettings.creativeStyle as GenerationSettings["creativeStyle"]) ?? "meme_shock",
   });
 
   // Debounced auto-save of settings to pipeline_state.generation_settings (B4).
@@ -174,8 +184,8 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
       if (renderError) {
         toast.error(`Video render error: ${renderError}`);
       } else if (hasFinalVideo) {
-        // The completed state removes video_plan and adds the final video. Keep
-        // the local view in sync with persistence before releasing the gate.
+        // Hide storyboard approval UI but keep video_plan in pipeline_state
+        // so the re-render button on the video node can reuse it.
         setVideoPlan(null);
         setActiveTab("outputs");
         setOutputs(persistedAds);
@@ -193,6 +203,53 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
     }
   }, [projectId, taskId, settings.complianceEnabled, dispatch]);
 
+  // Re-render video only — reuses the existing plan from pipeline_state.
+  const [isRerendering, setIsRerendering] = useState(false);
+  const handleRerender = useCallback(async () => {
+    // Persisted backend plans use snake_case; normalize before serializing again.
+    const rawPlan = (state.pipeline as unknown as Record<string, unknown>).video_plan;
+    const savedPlan = normalizeVideoPlan(rawPlan);
+    if (!savedPlan) {
+      toast.error("No saved storyboard found — generate a video first before re-rendering.");
+      return;
+    }
+    const usableFrameCount = (savedPlan.frameUrls ?? [])
+      .filter((url) => url.trim()).length;
+    const hasAllStoryboardAssets = Boolean(savedPlan.sceneGridUrl)
+      && usableFrameCount >= savedPlan.scenes.length;
+    if (savedPlan.pipelineVersion !== "v3_grid" || !hasAllStoryboardAssets) {
+      toast.error("This storyboard is legacy or incomplete. Regenerate a V3 storyboard before rendering.");
+      return;
+    }
+    setIsRerendering(true);
+    try {
+      let completedPipeline: PipelineState | null = null;
+      for await (const event of executeVideoPlan(
+        projectId, taskId, savedPlan, !settings.complianceEnabled
+      )) {
+        if (event.pipeline_state) {
+          completedPipeline = event.pipeline_state;
+          dispatch({ type: "SET_PIPELINE", pipeline: event.pipeline_state });
+          setOutputs(mapGeneratedAds(event.pipeline_state));
+        }
+        if (event.error) {
+          toast.error(`Re-render error: ${event.error}`);
+        }
+      }
+      if (completedPipeline) {
+        const persistedAds = await getGeneratedAds(projectId, taskId);
+        setOutputs(persistedAds);
+        setActiveTab("outputs");
+        toast.success("Video re-rendered successfully!");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to re-render the video");
+    } finally {
+      setIsRerendering(false);
+    }
+  }, [projectId, taskId, settings.complianceEnabled, state.pipeline, dispatch]);
+
   const { save, isSaving } = usePipelineRunner({
     projectId,
     taskId,
@@ -207,7 +264,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
         save(state.pipeline);
       }
 
-      if (e.key === "Delete" || e.key === "Backspace") {
+      if (e.key === "Delete") {
         if (state.selectedNodeId) {
           dispatch({ type: "DELETE_NODE", nodeId: state.selectedNodeId });
         }
@@ -309,7 +366,28 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
           <SettingsPanel
             settings={settings}
             onUpdate={updateSettings}
+            onOpenHookSearch={() => setHookSearchOpen(true)}
             onClose={() => setSettingsOpen(false)}
+          />
+        )}
+
+        {/* Hook Search Panel */}
+        {hookSearchOpen && (
+          <HookSearchPanel
+            creativeStyle={settings.creativeStyle}
+            market={settings.market}
+            ethnicity={settings.targetEthnicity}
+            productCategory={settings.productCategory}
+            onSelectHook={(video) => {
+              setHookSearchOpen(false);
+              // Use the hook video URL as a chat prompt for the Director
+              setChatbotPrompt(
+                `Use this YouTube Short as a hook reference for the ad opening: ${video.url} — "${video.title}". ` +
+                `Replicate the energy, transition style, and pacing of this clip in the first 2–3 seconds.`
+              );
+              setActiveTab("chatbot");
+            }}
+            onClose={() => setHookSearchOpen(false)}
           />
         )}
 
@@ -373,7 +451,6 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                 onStateUpdate={(pipeline) => dispatch({ type: "SET_PIPELINE", pipeline })}
                 targetPlatform={settings.targetPlatform}
                 complianceEnabled={settings.complianceEnabled}
-                videoV3Enabled={settings.videoV2Enabled}
                 targetEthnicity={settings.targetEthnicity}
                 triggerPrompt={chatbotPrompt}
                 onTriggerPromptUsed={() => setChatbotPrompt(null)}
@@ -386,6 +463,7 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                   productName: settings.productName,
                   productCategory: settings.productCategory,
                   gender: settings.gender,
+                  creativeStyle: settings.creativeStyle,
                 }}
                 initialPipelineState={state.pipeline}
                 onOutputsUpdate={setOutputs}
@@ -438,6 +516,8 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
             ) : (
               <InspectorPanel
                 node={selectedNode}
+                projectId={projectId}
+                taskId={taskId}
                 onUpdateProps={(nodeId, updates) => dispatch({ type: "UPDATE_NODE_PROPS", nodeId, ...updates })}
                 onDelete={handleDelete}
                 onSendRevision={(node, comment) => {
@@ -446,9 +526,21 @@ export function GenerationCanvas({ projectId, taskId, initialState }: Generation
                     parentAdId: isAssetNode ? (node.props.ad_id || undefined) : undefined,
                     parentAssetUrl: isAssetNode ? (node.props.asset_url || node.output || undefined) : undefined,
                   });
-                  setChatbotPrompt(`Revise the selected ${node.type} version with this feedback: ${comment}`);
+                  // Build a prompt that includes explicit generation action words so
+                  // the backend intent detector fires the pipeline, not just a chat reply.
+                  const mediaAction: Record<string, string> = {
+                    orchestrator: "Regenerate the full video ad (director plan, character sheet, and scene grid)",
+                    image: "Regenerate the image",
+                    video: "Regenerate the video",
+                    audio: "Regenerate the audio",
+                    text: "Regenerate the ad copy",
+                  };
+                  const action = mediaAction[node.type] ?? `Regenerate the ${node.type}`;
+                  setChatbotPrompt(`${action} with this feedback: ${comment}`);
                   setActiveTab("chatbot");
                 }}
+                onRerender={() => handleRerender()}
+                isRerendering={isRerendering}
               />
             )}
           </div>

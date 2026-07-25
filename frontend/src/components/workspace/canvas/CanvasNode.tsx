@@ -1,10 +1,12 @@
 /**
  * CanvasNode — a single node on the Generation Canvas.
  * Displays type color, label, input/output ports, status indicator, and selection ring.
+ * Reference nodes (type="reference") render as toggleable image cards — click the
+ * thumbnail to activate/deactivate inclusion in the next generation.
  */
 
 import { useState } from "react";
-import { Trash2, Download, Eye, X } from "lucide-react";
+import { Trash2, Download, Eye, X, ImageIcon, CheckCircle2 } from "lucide-react";
 import type { CanvasNode as CanvasNodeType, NodeStatus, NodeType } from "@/components/workspace/canvas/graphModel";
 
 interface CanvasNodeProps {
@@ -76,6 +78,7 @@ const NODE_COLORS: Record<string, string> = {
   critic: "bg-yellow-500",
   input: "bg-slate-500",
   output: "bg-emerald-500",
+  reference: "bg-sky-500",
 };
 
 const STATUS_INDICATORS: Record<NodeStatus, string> = {
@@ -97,6 +100,106 @@ export function CanvasNode({
   onContextMenu,
 }: CanvasNodeProps) {
   const [showPreview, setShowPreview] = useState(false);
+
+  // ─── Reference node — special compact image card with active/inactive toggle ───
+  if (node.type === "reference") {
+    const url = node.output ?? "";
+    const filename = node.label ?? "Reference";
+    const isActive = node.props?.active !== "false"; // default active
+    const isImage = url && /\.(jpg|jpeg|png|gif|webp|svg|bmp)/i.test(url.split("?")[0]);
+
+    return (
+      <div
+        className={`absolute select-none rounded-lg border-2 bg-card shadow-md transition-all cursor-pointer ${
+          isSelected ? "ring-2 ring-primary shadow-lg z-10" : ""
+        } ${
+          isActive
+            ? "border-sky-500 shadow-sky-500/20"
+            : "border-border opacity-50"
+        }`}
+        style={{ left: node.x, top: node.y, width: 120 }}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          onSelect(node.id);
+          onDragStart(node.id, e);
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onContextMenu(node.id, e);
+        }}
+      >
+        {/* Thumbnail */}
+        <div
+          className="relative"
+          title={isActive ? `${filename} — click to exclude from next generation` : `${filename} — click to include`}
+          onClick={(e) => {
+            e.stopPropagation();
+            // Toggle active via context menu / UPDATE_NODE_PROPS handled by parent
+            // We fire a custom event the canvas listens to
+            const event = new CustomEvent("reference-node-toggle", {
+              detail: { nodeId: node.id, active: !isActive },
+              bubbles: true,
+            });
+            e.currentTarget.dispatchEvent(event);
+          }}
+        >
+          {isImage && url ? (
+            <img
+              src={url}
+              alt={filename}
+              className="h-20 w-full rounded-t-[6px] object-cover"
+            />
+          ) : (
+            <div className="flex h-20 w-full items-center justify-center rounded-t-[6px] bg-muted">
+              <ImageIcon size={24} className="text-muted-foreground" />
+            </div>
+          )}
+          {/* Active/inactive badge */}
+          <div className="absolute top-1 left-1">
+            {isActive ? (
+              <CheckCircle2 size={16} className="text-sky-500 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]" />
+            ) : (
+              <div className="h-4 w-4 rounded-full border-2 border-white/80 bg-black/30" />
+            )}
+          </div>
+          {/* Delete button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(node.id); }}
+            className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 hover:opacity-100 transition-opacity"
+            aria-label={`Remove ${filename}`}
+          >
+            <X size={10} />
+          </button>
+        </div>
+
+        {/* Label */}
+        <div className="px-2 py-1.5 flex items-center gap-1">
+          <span className="text-[9px] font-medium text-muted-foreground truncate w-full text-center leading-tight">
+            {filename}
+          </span>
+        </div>
+
+        {/* Input port for connecting */}
+        <div
+          className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 flex h-3.5 w-3.5 cursor-crosshair items-center justify-center rounded-full border-2 border-muted-foreground/40 bg-background hover:border-primary"
+          onMouseUp={(e) => { e.stopPropagation(); onPortDrop(node.id, "input"); }}
+          aria-label="Input port"
+        >
+          <div className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+        </div>
+        {/* Output port */}
+        <div
+          className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 flex h-3.5 w-3.5 cursor-crosshair items-center justify-center rounded-full border-2 border-muted-foreground/40 bg-background hover:border-primary"
+          onMouseDown={(e) => { e.stopPropagation(); onPortDragStart(node.id, "output"); }}
+          aria-label="Output port"
+        >
+          <div className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+        </div>
+      </div>
+    );
+  }
+  // ────────────────────────────────────────────────────────────────────────────
   const referenceUrls: string[] = node.type === "input" && node.props?.reference_urls
     ? (Array.isArray(node.props.reference_urls)
         ? node.props.reference_urls.filter((url): url is string => typeof url === "string").slice(0, 4)
@@ -300,12 +403,6 @@ export function CanvasNode({
                   </a>
                 )}
               </div>
-              {parsedCampaignOutput.audio && (
-                <div className="text-[8px] font-medium text-muted-foreground flex items-center justify-between bg-background p-1 rounded border">
-                  <span>🔊 Voiceover Audio</span>
-                  <a href={parsedCampaignOutput.audio} target="_blank" rel="noreferrer" className="text-primary hover:underline">Download</a>
-                </div>
-              )}
               {parsedCampaignOutput.text && (
                 <div className="text-[9px] text-muted-foreground bg-background p-1.5 rounded border line-clamp-3 leading-snug">
                   {parsedCampaignOutput.text}
@@ -316,8 +413,17 @@ export function CanvasNode({
         </div>
       )}
 
-      {/* Prompt used for generation */}
-      {node.props?.prompt_used && (
+      {/* Planned V3 TTS script is distinct from the original prompt. */}
+      {node.type === "audio" && node.props?.planned_script ? (
+        <div className="border-t border-border bg-muted/10 px-3 py-1.5">
+          <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+            ElevenLabs V3 Script
+          </span>
+          <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-sans text-[10px] italic leading-tight text-muted-foreground">
+            {node.props.planned_script}
+          </pre>
+        </div>
+      ) : node.props?.prompt_used && (
         <div className="border-t border-border bg-muted/10 px-3 py-1.5">
           <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
             {node.type === "orchestrator" ? "Director Plan" : "Prompt"}

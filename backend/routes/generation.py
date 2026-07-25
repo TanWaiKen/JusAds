@@ -19,7 +19,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -119,9 +119,6 @@ class ChatRequest(BaseModel):
     reference_urls: List[str] = []
     target_platform: Optional[str] = None
     skip_compliance: bool = False
-    # V3 is the production video path. Legacy single-clip generation remains
-    # an explicit opt-out for existing workflows only.
-    video_v3: bool = True
     target_ethnicity: Optional[str] = None
     age_group: Optional[str] = None  # gen_z|millennial|gen_x|baby_boomer|all_ages
     market: Optional[str] = None  # malaysia|singapore
@@ -129,6 +126,9 @@ class ChatRequest(BaseModel):
     product_name: Optional[str] = None
     product_category: Optional[str] = None
     gender: Optional[str] = None  # male|female|mixed
+    # Creative strategy for the localize plan (Director hook/pacing style).
+    # meme_shock | culture_anchor | problem_punchline | testimonial_burst | speaker_led | product_hero
+    creative_style: Optional[str] = None
     # Easy Mode fields (Req 14.1, 14.5)
     revision_instruction: Optional[str] = None
     advanced_overrides: Optional[dict] = None
@@ -142,7 +142,7 @@ class UploadUrlRequest(BaseModel):
 
 
 class ExecuteVideoPlanRequest(BaseModel):
-    """Body for executing an approved Video V2 storyboard plan (Continue button)."""
+    """Body for executing an approved V3 storyboard plan (Continue button)."""
 
     plan: dict  # the plan dict from the `video_plan` SSE event (possibly edited)
     skip_compliance: bool = False
@@ -432,7 +432,6 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                 target_platform=body.target_platform,
                 current_state=current_pipeline_state,
                 skip_compliance=body.skip_compliance,
-                video_v3=body.video_v3,
                 target_ethnicity=body.target_ethnicity,
                 age_group=body.age_group,
                 market=body.market,
@@ -446,6 +445,7 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                 parent_asset_url=parent_url if revision_parent else None,
                 revision_feedback=(body.revision_instruction or body.message) if revision_parent else None,
                 force_media_types=forced_media,
+                creative_style=body.creative_style,
             ):
                 # Push chunk to queue for any listening SSE client
                 await queue.put(chunk)
@@ -586,9 +586,9 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
 async def execute_video_plan_endpoint(
     project_id: str, task_id: str, body: ExecuteVideoPlanRequest
 ) -> StreamingResponse:
-    """Render an approved Video V2 storyboard plan into the final video (SSE).
+    """Render an approved, complete V3 storyboard plan into a final video (SSE).
 
-    Runs as a BACKGROUND TASK — if client disconnects, rendering continues.
+    Runs as a background task, so rendering continues if the client disconnects.
     """
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
@@ -600,27 +600,24 @@ async def execute_video_plan_endpoint(
     current_pipeline_state = task.get("pipeline_state") or {
         "nodes": [], "edges": [], "viewport": {"panX": 0, "panY": 0, "zoom": 1}
     }
-    if (
-        body.plan.get("pipeline_version") == "v3_grid"
-        and not _is_usable_v3_plan(body.plan)
-    ):
+    if not _is_usable_v3_plan(body.plan):
         return JSONResponse(
             status_code=422,
             content={
                 "error": (
-                    "Video storyboard assets are incomplete. Regenerate the scene grid "
-                    "and sliced frames before starting paid rendering."
+                    "A complete V3 storyboard is required. Regenerate the scene grid and "
+                    "sliced frames before starting paid rendering."
                 )
             },
         )
 
-    run_id = f"v2_{project_id}_{task_id}_{uuid.uuid4().hex[:6]}"
+    run_id = f"v3_{project_id}_{task_id}_{uuid.uuid4().hex[:6]}"
     queue: asyncio.Queue = asyncio.Queue()
     _active_runs[run_id] = queue
     _run_complete[run_id] = False
 
-    async def _run_v2_background():
-        """Background task for Video V2 execution."""
+    async def _run_v3_background():
+        """Background task for V3 storyboard production."""
         final_state = None
         try:
             async for chunk in run_video_plan_execution(
@@ -642,9 +639,9 @@ async def execute_video_plan_endpoint(
                                 status="in_progress", pipeline_state=final_state,
                             )
                     except Exception as pe:
-                        logger.warning("[BG-V2] Error parsing/persisting state: %s", pe)
+                        logger.warning("[BG-V3] Error parsing/persisting state: %s", pe)
         except Exception as err:
-            logger.error("[BG-V2] Video V2 execution error: %s", err)
+            logger.error("[BG-V3] Video production error: %s", err)
             await queue.put(f"data: {json.dumps({'error': str(err)})}\n\n")
 
         if final_state:
@@ -653,9 +650,9 @@ async def execute_video_plan_endpoint(
                     project_id=project_id, task_id=task_id,
                     status="completed", pipeline_state=final_state,
                 )
-                logger.info("[BG-V2] Persisted final V2 pipeline state.")
+                logger.info("[BG-V3] Persisted final V3 pipeline state.")
             except Exception as se:
-                logger.error("[BG-V2] Failed to persist final V2 state: %s", se)
+                logger.error("[BG-V3] Failed to persist final V3 state: %s", se)
 
         _run_complete[run_id] = True
         await queue.put(None)
@@ -663,7 +660,7 @@ async def execute_video_plan_endpoint(
         _active_runs.pop(run_id, None)
         _run_complete.pop(run_id, None)
 
-    asyncio.create_task(_run_v2_background())
+    asyncio.create_task(_run_v3_background())
 
     async def event_generator():
         try:
@@ -677,7 +674,7 @@ async def execute_video_plan_endpoint(
                     break
                 yield chunk
         except asyncio.CancelledError:
-            logger.info("[SSE-V2] Client disconnected — background task continues")
+            logger.info("[SSE-V3] Client disconnected — background task continues")
 
     return StreamingResponse(
         event_generator(),
@@ -843,12 +840,14 @@ class DistributionTarget(BaseModel):
 
 
 @router.get("/distribution/accounts")
-async def list_distribution_accounts() -> JSONResponse:
+async def list_distribution_accounts(email: str = Query(...)) -> JSONResponse:
     """Return normalized connected Zernio accounts for multi-account posting."""
     try:
         from shared.zernio_client import get_connected_accounts
+        from routes.profile import _get_stored_user_zernio_key
 
-        payload = await get_connected_accounts()
+        api_key = _get_stored_user_zernio_key(email)
+        payload = await get_connected_accounts(api_key=api_key)
         raw_accounts = payload.get("accounts") or payload.get("data") or []
         if isinstance(raw_accounts, dict):
             raw_accounts = raw_accounts.get("accounts") or raw_accounts.get("data") or []
@@ -897,9 +896,23 @@ async def distribute_generated_ad(
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
 
-    # Verify the ad exists and is published.
+    # Verify the ad exists and is published, and get the project owner.
     try:
         from shared.clients import supabase as sb
+        from routes.profile import _get_stored_user_zernio_key
+
+        proj_resp = sb.table("projects").select("user_id").eq("id", project_id).limit(1).execute()
+        proj_rows = proj_resp.data or []
+        if not proj_rows:
+            return JSONResponse(status_code=404, content={"error": f"Project {project_id} not found"})
+        owner_email = proj_rows[0].get("user_id")
+
+        api_key = _get_stored_user_zernio_key(owner_email) if owner_email else ""
+        if not api_key:
+            return JSONResponse(
+                status_code=409,
+                content={"error": "Zernio API key is not configured for this user."},
+            )
 
         resp = sb.table("generated_ads").select("id, status, platform, metadata, media_type, prompt_used, caption").eq("id", ad_id).eq("project_id", project_id).limit(1).execute()
         rows = resp.data or []
@@ -947,6 +960,7 @@ async def distribute_generated_ad(
                 account_id=target.account_id,
                 media_url=media_url,
                 media_type=ad_row.get("media_type", "image"),
+                api_key=api_key,
                 caption=caption,
                 metadata=metadata,
             )
@@ -1524,3 +1538,100 @@ async def autofill_easy_form(body: AutofillRequest) -> JSONResponse:
     except Exception as e:
         logger.warning("[Autofill] AI extraction failed; using deterministic fallback: %s", e)
         return JSONResponse(content=_fallback_autofill(body))
+
+
+# ─── Hook Video Search ────────────────────────────────────────────────────────
+
+
+class HookSearchRequest(BaseModel):
+    """Request body for searching YouTube hook/transition videos."""
+    query: str = ""
+    creative_style: str = "meme_shock"
+    market: str = "malaysia"
+    ethnicity: str = "all"
+    product_category: str = ""
+    max_results: int = 8
+
+
+class HookPreferenceRequest(BaseModel):
+    """Record a user's hook video preference for learning."""
+    video_id: str
+    tags: List[str] = []
+    creative_style: str = "meme_shock"
+    product_category: str = ""
+
+
+@router.post("/hook-search")
+async def search_hook_videos_endpoint(body: HookSearchRequest) -> JSONResponse:
+    """Search YouTube for hook/transition videos for ad creative references.
+
+    Uses the YouTube Data API v3 to find short, viral clips suitable as
+    hook references for the meme_shock creative style.
+
+    Returns a list of video results with thumbnails, titles, and URLs.
+    """
+    from jusads_generation.hook_search import search_hook_videos
+
+    try:
+        results = await search_hook_videos(
+            query=body.query,
+            creative_style=body.creative_style,
+            market=body.market,
+            ethnicity=body.ethnicity,
+            product_category=body.product_category,
+            max_results=min(body.max_results, 20),
+        )
+        return JSONResponse(content={
+            "results": [r.to_dict() for r in results],
+            "count": len(results),
+            "query_used": body.query or f"(auto: {body.creative_style})",
+        })
+    except Exception as exc:
+        logger.error("[HookSearch] Endpoint error: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Hook video search failed", "detail": str(exc)},
+        )
+
+
+@router.post("/hook-search/preference")
+async def record_hook_preference(body: HookPreferenceRequest, user_email: str = Query("")) -> JSONResponse:
+    """Record a user's hook video selection for preference learning.
+
+    The system learns which hook styles the user prefers via simple
+    association rules. Future searches are reranked by this profile.
+    """
+    from jusads_generation.hook_search import learn_preference
+
+    user_id = user_email or "anonymous"
+    try:
+        learn_preference(
+            user_id=user_id,
+            selected_video_id=body.video_id,
+            tags=body.tags,
+            creative_style=body.creative_style,
+            product_category=body.product_category,
+        )
+        return JSONResponse(content={"status": "ok", "message": "Preference recorded"})
+    except Exception as exc:
+        logger.warning("[HookSearch] Preference recording failed: %s", exc)
+        return JSONResponse(content={"status": "ok", "message": "Preference recording attempted"})
+
+
+@router.get("/hook-search/tags")
+async def suggest_hook_tags(
+    brief: str = Query(""),
+    creative_style: str = Query("meme_shock"),
+) -> JSONResponse:
+    """Suggest hook style tags for a given brief and creative strategy.
+
+    Returns a list of recommended HOOK_TAGS to guide the user's hook
+    video selection or auto-search refinement.
+    """
+    from jusads_generation.hook_search import suggest_hook_tags_for_brief, HOOK_TAGS
+
+    suggestions = suggest_hook_tags_for_brief(brief, creative_style)
+    return JSONResponse(content={
+        "suggestions": suggestions,
+        "all_tags": HOOK_TAGS,
+    })

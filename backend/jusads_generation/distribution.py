@@ -99,6 +99,7 @@ def distribute_ad(
     platform: str,
     media_url: str,
     media_type: str,
+    api_key: str,
     caption: Optional[str] = None,
     account_id: Optional[str] = None,
     metadata: Optional[dict[str, Any]] = None,
@@ -113,6 +114,7 @@ def distribute_ad(
         platform: Target platform (``tiktok`` / ``instagram`` / ``youtube``).
         media_url: The public S3 URL of the ad's media file.
         media_type: The ad's media type (``image`` / ``video`` / ``audio``).
+        api_key: The user's Zernio API key.
         caption: Optional text caption / copy for the post.
 
     Returns:
@@ -122,10 +124,8 @@ def distribute_ad(
         AccountNotConfiguredError: When no Zernio account is set for the platform.
         DistributionError: On any Zernio API failure.
     """
-    if not ZERNIO_API_KEY:
-        raise DistributionError(
-            "ZERNIO_API_KEY is not configured. Set it in backend/.env to enable distribution."
-        )
+    if not api_key:
+        raise DistributionError("Zernio API key is not configured for this user.")
 
     resolved_account_id = account_id or _resolve_account_id(platform)
     if not resolved_account_id:
@@ -168,7 +168,7 @@ def distribute_ad(
     )
 
     try:
-        client = Zernio(api_key=ZERNIO_API_KEY, timeout=_TIMEOUT_SECONDS)
+        client = Zernio(api_key=api_key, timeout=_TIMEOUT_SECONDS)
         result = client.posts.create(
             content=caption or "",
             platforms=platforms_payload,
