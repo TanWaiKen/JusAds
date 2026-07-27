@@ -430,7 +430,7 @@ export default function EasyResultsPage() {
 
             {selected?.mediaType === "image" && selected.publicUrl && (
               <div className="overflow-hidden rounded-2xl border border-border-default bg-surface-card">
-                <img src={selected.publicUrl} alt="Selected generated ad" className="max-h-[560px] w-full object-contain bg-surface-inset" />
+                <img src={selected.publicUrl} alt="Selected generated ad" className="max-h-140 w-full object-contain bg-surface-inset" />
               </div>
             )}
 
@@ -441,7 +441,7 @@ export default function EasyResultsPage() {
                   controls
                   playsInline
                   preload="metadata"
-                  className="max-h-[560px] w-full object-contain"
+                  className="max-h-140 w-full object-contain"
                 >
                   Your browser does not support video playback.
                 </video>
