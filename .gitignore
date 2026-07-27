@@ -70,4 +70,4 @@ diagram/*.png
 
 .agents
 .kiro
-.tmp
+.tmp/
