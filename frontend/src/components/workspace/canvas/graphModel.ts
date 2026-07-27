@@ -52,6 +52,8 @@ export interface PipelineState {
   video_plan?: unknown;
   /** Persisted Advanced Mode settings (kept as JSON-compatible data). */
   generation_settings?: Record<string, unknown>;
+  /** Generated ads attached to this pipeline. */
+  generated_ads?: unknown[];
 }
 
 export interface Point {
@@ -113,6 +115,7 @@ export function serializePipeline(state: PipelineState): unknown {
     },
     ...(state.video_plan !== undefined ? { video_plan: state.video_plan } : {}),
     ...(state.generation_settings !== undefined ? { generation_settings: state.generation_settings } : {}),
+    ...(state.generated_ads !== undefined ? { generated_ads: state.generated_ads } : {}),
   };
 }
 
@@ -169,6 +172,7 @@ export function deserializePipeline(raw: unknown): PipelineState {
     viewport,
     ...(videoPlan !== undefined ? { video_plan: videoPlan } : {}),
     ...(generationSettings ? { generation_settings: generationSettings } : {}),
+    ...(data.generated_ads !== undefined ? { generated_ads: data.generated_ads as unknown[] } : {}),
   };
 }
 

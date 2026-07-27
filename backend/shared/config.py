@@ -25,6 +25,20 @@ CORS_ORIGINS: tuple[str, ...] = tuple(
     if origin.strip()
 )
 
+# -- Authentication -----------------------------------------------------------
+# Cognito issuer/client identifiers are public configuration, not secrets.  The
+# defaults match the checked-in frontend development configuration so local and
+# deployed token validation use the same trust boundary unless explicitly
+# overridden.
+COGNITO_ISSUER = os.environ.get(
+    "COGNITO_ISSUER",
+    "https://cognito-idp.ap-southeast-1.amazonaws.com/ap-southeast-1_8hAosB1se",
+).strip().rstrip("/")
+COGNITO_CLIENT_ID = os.environ.get(
+    "COGNITO_CLIENT_ID",
+    "41rfef3ni43sfr2v9lnjk0prj5",
+).strip()
+
 # -- Google Vertex AI / Gemini -------------------------------------------------
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
@@ -56,6 +70,9 @@ PREDICTHQ_API_KEY = os.environ.get("PREDICTHQ_API_KEY", "")
 
 # -- Tavily Control ------------------------------------------------------------
 TAVILY_ENABLED = os.environ.get("TAVILY_ENABLED", "true").lower() == "true"
+
+# Disabled proof of concept: advisory metadata only, never a compliance verdict.
+ML_TRIAGE_ADVISORY_ENABLED = os.environ.get("ML_TRIAGE_ADVISORY_ENABLED", "false").lower() == "true"
 
 # -- AWS Credentials & S3 ------------------------------------------------------
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")

@@ -26,6 +26,26 @@ const STATUS_CONFIG: Record<TaskStatus, { color: string; dotClass: string; label
     dotClass: "bg-accent-amber animate-pulse",
     label: "Processing",
   },
+  pending_recheck: {
+    color: "text-accent-amber",
+    dotClass: "bg-accent-amber animate-pulse",
+    label: "Recheck pending",
+  },
+  rechecking: {
+    color: "text-accent-amber",
+    dotClass: "bg-accent-amber animate-pulse",
+    label: "Rechecking",
+  },
+  verified_compliant: {
+    color: "text-accent-emerald",
+    dotClass: "bg-accent-emerald",
+    label: "Verified compliant",
+  },
+  verified_non_compliant: {
+    color: "text-accent-error",
+    dotClass: "bg-accent-error",
+    label: "Not compliant",
+  },
 };
 
 export function TaskStatusIndicator({ status }: TaskStatusIndicatorProps) {

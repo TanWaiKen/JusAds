@@ -54,6 +54,8 @@ backend/assets/
 
 # Data files (runtime / scraped)
 backend/data/
+!backend/data/
+!backend/data/demo_ml_triage_dataset.jsonl
 backend/dustbin/
 
 # Cloud secrets (only template is committed)
@@ -68,3 +70,4 @@ diagram/*.png
 
 .agents
 .kiro
+.tmp

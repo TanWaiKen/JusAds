@@ -15,7 +15,7 @@ export const initialProjectStore: ProjectStore = {
  * Enforces state transition rules:
  * - NAVIGATE_TO_STEP only allows navigation to steps already in completedSteps
  * - SET_RESULT auto-advances currentStep to "review" and adds "check" to completedSteps
- * - SET_REMIX_RESULT auto-advances currentStep to "compare" and adds "remix" to completedSteps
+ * - SET_REMIX_RESULT only advances to "compare" after a verified recheck
  *
  * Requirements: 1.1, 1.2, 2.3, 2.4, 2.5, 2.6
  */
@@ -66,12 +66,16 @@ export function projectReducer(
     case "SET_REMIX_RESULT": {
       const project = state.projects.get(action.projectId);
       if (!project) return state;
+      const remediation = action.remixResult as Record<string, unknown> | null;
+      const isVerifiedCompliant = remediation?.verification_status === "verified_compliant";
       const newProjects = new Map(state.projects);
       newProjects.set(action.projectId, {
         ...project,
         remixResult: action.remixResult,
-        completedSteps: [...project.completedSteps, "remix"],
-        currentStep: "compare",
+        completedSteps: isVerifiedCompliant
+          ? [...project.completedSteps, "remix"]
+          : project.completedSteps,
+        currentStep: isVerifiedCompliant ? "compare" : "remix",
         error: null,
       });
       return { ...state, projects: newProjects };

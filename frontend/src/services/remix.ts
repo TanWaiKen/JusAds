@@ -5,6 +5,7 @@
  * long-running agent workflow with its own result and progress events.
  */
 import { API_BASE } from "@/services/complianceApi";
+import { authenticatedFetch, toApiRequestError } from "@/lib/apiAuth";
 
 export interface RemixNodeStatus {
   type: "node_status";
@@ -85,12 +86,12 @@ export async function streamRemix(
   onEvent: (event: RemixStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/compliance/${checkId}/remix`, {
+  const response = await authenticatedFetch(`${API_BASE}/api/compliance/${checkId}/remix`, {
     method: "POST",
     signal,
   });
   if (!response.ok || !response.body) {
-    throw new Error(`Remix API error: ${response.status} ${response.statusText}`);
+    throw await toApiRequestError(response, "Remediation could not be started.");
   }
 
   const reader = response.body.getReader();

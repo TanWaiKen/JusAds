@@ -5,6 +5,7 @@
 
 import type { PipelineState } from "@/components/workspace/canvas/graphModel";
 import { API_BASE } from "@/lib/apiConfig";
+import { authenticatedFetch, toApiRequestError } from "@/lib/apiAuth";
 
 export { API_BASE };
 
@@ -61,42 +62,33 @@ export interface ProjectResponse {
   updated_at: string;
 }
 
-export async function listTasks(projectId: string, username?: string): Promise<TaskSummary[]> {
-  const url = username
-    ? `${API_BASE}/api/projects/${projectId}/tasks?username=${encodeURIComponent(username)}`
-    : `${API_BASE}/api/projects/${projectId}/tasks`;
-  const res = await fetch(url);
+export async function listTasks(projectId: string): Promise<TaskSummary[]> {
+  const res = await authenticatedFetch(`${API_BASE}/api/projects/${projectId}/tasks`);
 
   if (res.status === 404) throw new Error("404: Project not found");
   if (res.status === 403) throw new Error("403: Access denied");
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiRequestError(res, "Tasks could not be retrieved.");
 
   return res.json();
 }
 
 export async function getTask(projectId: string, taskId: string): Promise<TaskDetail> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/tasks/${taskId}`);
+  const res = await authenticatedFetch(`${API_BASE}/api/projects/${projectId}/tasks/${taskId}`);
 
   if (res.status === 404) throw new Error("404: Task not found");
   if (res.status === 403) throw new Error("403: Access denied");
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiRequestError(res, "Task could not be retrieved.");
   return res.json();
 }
 
 export async function createGenerationTask(projectId: string): Promise<TaskSummary> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/tasks`, {
+  const res = await authenticatedFetch(`${API_BASE}/api/projects/${projectId}/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "generation" }),
   });
 
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiRequestError(res, "Task could not be created.");
 
   return res.json();
 }
@@ -107,7 +99,7 @@ export async function savePipeline(
   state: PipelineState,
   status: string = "saved"
 ): Promise<void> {
-  const res = await fetch(
+  const res = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/pipeline`,
     {
       method: "PUT",
@@ -116,46 +108,38 @@ export async function savePipeline(
     }
   );
 
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiRequestError(res, "Task progress could not be saved.");
 }
 
 export async function updateProjectName(
   projectId: string,
   name: string
 ): Promise<ProjectResponse> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}`, {
+  const res = await authenticatedFetch(`${API_BASE}/api/projects/${projectId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
 
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiRequestError(res, "Project could not be updated.");
 
   return res.json();
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}`, {
+  const res = await authenticatedFetch(`${API_BASE}/api/projects/${projectId}`, {
     method: "DELETE",
   });
 
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiRequestError(res, "Project could not be deleted.");
 }
 
 export async function deleteTask(projectId: string, taskId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/tasks/${taskId}`, {
+  const res = await authenticatedFetch(`${API_BASE}/api/projects/${projectId}/tasks/${taskId}`, {
     method: "DELETE",
   });
 
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiRequestError(res, "Task could not be deleted.");
 }
 
 export async function sendChatWithAgent(
@@ -164,7 +148,7 @@ export async function sendChatWithAgent(
   message: string,
   referenceUrls: string[] = []
 ): Promise<Response> {
-  return fetch(
+  return authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/chat`,
     {
       method: "POST",

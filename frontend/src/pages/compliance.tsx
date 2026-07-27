@@ -2,7 +2,6 @@ import { useReducer, useRef, useCallback, useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router";
 import { useComplianceCheck } from "@/hooks/useComplianceCheck";
 import { useComplianceRemix } from "@/hooks/useComplianceRemix";
-import { useAuth } from "@/hooks/useAuth";
 import { projectReducer, initialProjectStore } from "@/reducers/projectReducer";
 import { StepNavigator } from "@/components/compliance/StepNavigator";
 import { UploadStep } from "@/components/compliance/UploadStep";
@@ -14,6 +13,7 @@ import type { UploadParams, Project } from "@/types/compliance";
 import { WORKFLOW_STEPS } from "@/types/compliance";
 import type { ComplianceResult } from "@/services/complianceApi";
 import { API_BASE } from "@/services/complianceApi";
+import { authenticatedFetch } from "@/lib/apiAuth";
 import { savePipeline } from "@/services/taskApi";
 
 
@@ -48,7 +48,6 @@ export default function DashboardCompliance() {
   const location = useLocation();
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(projectReducer, initialProjectStore);
-  const { user } = useAuth();
   const complianceCheck = useComplianceCheck();
   const remix = useComplianceRemix();
 
@@ -107,7 +106,7 @@ export default function DashboardCompliance() {
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/projects/${routeProjectId}/tasks/${routeTaskId}`);
+        const res = await authenticatedFetch(`${API_BASE}/api/projects/${routeProjectId}/tasks/${routeTaskId}`);
         if (!res.ok) return;
         const task = await res.json();
 
@@ -152,7 +151,7 @@ export default function DashboardCompliance() {
         // A video is eligible for Compare only after an actual Omni edit. This
         // prevents historical redact/mute fallback assets from being presented
         // as a completed AI remediation.
-        const hasConfirmedRemix = compliance?.status === "remediated"
+        const hasConfirmedRemix = compliance?.status === "verified_compliant"
           && !!compliance?.s3_remix_key
           && (mediaType !== "video" || persistedRemix?.omni_edit_status === "completed");
         const restoredStep = hasConfirmedRemix ? "compare" : savedStep;
@@ -196,7 +195,7 @@ export default function DashboardCompliance() {
   // Fetch task history on mount for project-scoped routes
   useEffect(() => {
     if (!routeProjectId) return;
-    fetch(`${API_BASE}/api/projects/${routeProjectId}/tasks`)
+    authenticatedFetch(`${API_BASE}/api/projects/${routeProjectId}/tasks`)
       .then((res) => res.ok ? res.json() : [])
       .then((data: { id: string; reference_id: string | null; type: string; status: string; summary: string; created_at: string }[]) => {
         // Only show compliance tasks in the sidebar
@@ -285,7 +284,6 @@ export default function DashboardCompliance() {
         const result: ComplianceResult = await complianceCheck.submit({
           ...params,
           projectId: id,
-          username: user?.profile?.email ?? "anonymous",
         } as UploadParams & { projectId: string });
 
         console.log("[Compliance] Check complete, result:", result);
@@ -301,7 +299,7 @@ export default function DashboardCompliance() {
         // Persist step state — find the task that was just created
         if (routeProjectId) {
           try {
-            const tasksRes = await fetch(`${API_BASE}/api/projects/${routeProjectId}/tasks`);
+            const tasksRes = await authenticatedFetch(`${API_BASE}/api/projects/${routeProjectId}/tasks`);
             if (tasksRes.ok) {
               const tasks = await tasksRes.json();
               const latestTask = tasks[0]; // ordered by created_at desc
@@ -328,7 +326,7 @@ export default function DashboardCompliance() {
         });
       }
     },
-    [complianceCheck, routeProjectId, user, persistStepState]
+    [complianceCheck, routeProjectId, persistStepState]
   );
 
   // ─── Remix flow ─────────────────────────────────────────────────────────────
@@ -449,6 +447,7 @@ export default function DashboardCompliance() {
             cannotFixData={remix.cannotFixData}
             imageEditResult={remix.imageEditResult}
             editFailedData={remix.editFailedData}
+            remediationResult={activeProject.remixResult as { verification_status?: string; remediation_status?: string } | null}
             onRetry={handleRetry}
             mediaType={activeProject.mediaType}
           />
@@ -515,8 +514,9 @@ export default function DashboardCompliance() {
                     }`}
                   >
                     <span className={`h-2 w-2 rounded-full shrink-0 ${
-                      task.status === "remediated" || task.status === "remix_failed" ? "bg-red-500" :
-                      task.status === "checked" ? "bg-amber-500" : "bg-emerald-500"
+                      task.status === "verified_compliant" ? "bg-emerald-500" :
+                      task.status === "pending_recheck" || task.status === "rechecking" || task.status === "checked" ? "bg-amber-500" :
+                      task.status === "verified_non_compliant" || task.status === "remix_failed" || task.status === "generation_failed" ? "bg-red-500" : "bg-slate-400"
                     }`} />
                     <span className="truncate flex-1">{task.summary || `${task.type} • ${task.status}`}</span>
                     <span className="text-[10px] shrink-0">{new Date(task.created_at).toLocaleDateString()}</span>

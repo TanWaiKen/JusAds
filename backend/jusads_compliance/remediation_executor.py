@@ -18,6 +18,7 @@ Flow:
 import json
 import logging
 import base64
+import hashlib
 import mimetypes
 import os
 import subprocess
@@ -27,8 +28,9 @@ import uuid
 from typing import Optional
 
 from shared.clients import supabase, gemini
-from shared.s3_client import upload_file_public, build_s3_key
+from shared.s3_client import upload_file, build_s3_key
 from shared.config import MODEL_TEXT
+from jusads_compliance.remediation_store import RemediationStore
 from jusads_compliance.tool_router import RoutingDecision, ToolSelection
 
 logger = logging.getLogger(__name__)
@@ -56,11 +58,49 @@ async def execute_remediation(
     check_id: str,
     source_media_url: str,
     project_id: str,
-    user_email: str,
+    user_id: str,
     compliance_result: Optional[dict] = None,
     market: str = "malaysia",
     ethnicity: str = "malay",
     gender: str = "female",
+    idempotency_key: str | None = None,
+    source_asset_key: str | None = None,
+) -> dict:
+    """Execute remediation and always remove its task-scoped source file."""
+    extension = _get_extension(routing_decision.media_type, source_media_url)
+    tmp_source = os.path.join(
+        tempfile.gettempdir(), f"remediate_src_{check_id}{extension}"
+    )
+    try:
+        return await _execute_remediation_impl(
+            routing_decision=routing_decision,
+            check_id=check_id,
+            source_media_url=source_media_url,
+            project_id=project_id,
+            user_id=user_id,
+            compliance_result=compliance_result,
+            market=market,
+            ethnicity=ethnicity,
+            gender=gender,
+            idempotency_key=idempotency_key,
+            source_asset_key=source_asset_key,
+        )
+    finally:
+        _cleanup_temp(tmp_source)
+
+
+async def _execute_remediation_impl(
+    routing_decision: RoutingDecision,
+    check_id: str,
+    source_media_url: str,
+    project_id: str,
+    user_id: str,
+    compliance_result: Optional[dict] = None,
+    market: str = "malaysia",
+    ethnicity: str = "malay",
+    gender: str = "female",
+    idempotency_key: str | None = None,
+    source_asset_key: str | None = None,
 ) -> dict:
     """Execute the remediation plan from the AI Tool Router.
 
@@ -72,7 +112,7 @@ async def execute_remediation(
         check_id: Compliance check ID this remediation belongs to.
         source_media_url: S3 URL of the original media.
         project_id: Project this belongs to.
-        user_email: Owner's email.
+        user_id: Verified immutable identity-provider subject.
         compliance_result: Full compliance result dict for context.
         market: Market context for voice selection etc.
         ethnicity: Ethnicity context.
@@ -80,8 +120,8 @@ async def execute_remediation(
 
     Returns:
         Dict with:
-          - status: "remediated" | "partially_remediated" | "failed"
-          - output_url: S3 URL of the remediated media (if success)
+          - status: "pending_recheck" | "generation_failed"
+          - output_key: Private S3 key of the remediated media (if success)
           - tools_applied: List of tool names that were applied
           - tools_failed: List of tools that failed
           - strategy_summary: Description of what was done
@@ -90,7 +130,12 @@ async def execute_remediation(
     tools = routing_decision.tools
 
     if not tools:
-        return {"status": "failed", "error": "No tools in routing decision"}
+        return {"status": "generation_failed", "error_code": "NO_REMEDIATION_TOOLS"}
+    if supabase and not (idempotency_key or "").strip():
+        return {
+            "status": "generation_failed",
+            "error_code": "IDEMPOTENCY_KEY_REQUIRED",
+        }
 
     # Download source media to temp
     extension = _get_extension(media_type, source_media_url)
@@ -100,7 +145,8 @@ async def execute_remediation(
         urllib.request.urlretrieve(source_media_url, tmp_source)
     except Exception as e:
         logger.error("[Executor] Failed to download source: %s", e)
-        return {"status": "failed", "error": f"Source download failed: {e}"}
+        _cleanup_temp(tmp_source)
+        return {"status": "generation_failed", "error_code": "SOURCE_DOWNLOAD_FAILED"}
 
     # Execute tools sequentially — output of one is input to next
     current_path = tmp_source
@@ -128,7 +174,11 @@ async def execute_remediation(
             if "error" in result:
                 logger.warning("[Executor] Tool %s failed: %s", tool_selection.tool, result["error"])
                 tools_failed.append(tool_selection.tool)
-                tool_results.append({"tool": tool_selection.tool, "status": "failed", "error": result["error"]})
+                tool_results.append({
+                    "tool": tool_selection.tool,
+                    "status": "failed",
+                    "error_code": "TOOL_EXECUTION_FAILED",
+                })
             else:
                 new_path = result.get("output_path")
                 if new_path and os.path.exists(new_path):
@@ -137,70 +187,94 @@ async def execute_remediation(
                     tool_results.append({"tool": tool_selection.tool, "status": "success"})
                 else:
                     tools_failed.append(tool_selection.tool)
-                    tool_results.append({"tool": tool_selection.tool, "status": "failed", "error": "No output file"})
+                    tool_results.append({
+                        "tool": tool_selection.tool,
+                        "status": "failed",
+                        "error_code": "TOOL_OUTPUT_MISSING",
+                    })
 
         except Exception as e:
             logger.error("[Executor] Tool %s crashed: %s", tool_selection.tool, e)
             tools_failed.append(tool_selection.tool)
-            tool_results.append({"tool": tool_selection.tool, "status": "failed", "error": str(e)})
+            tool_results.append({
+                "tool": tool_selection.tool,
+                "status": "failed",
+                "error_code": "TOOL_EXECUTION_FAILED",
+            })
 
     # Determine final status
-    if not tools_applied:
-        status = "failed"
-    elif tools_failed:
-        status = "partially_remediated"
-    else:
-        status = "remediated"
+    # Generation is never proof of compliance. A successful output must be
+    # evaluated again before any caller may promote it.
+    status = "generation_failed" if not tools_applied else "pending_recheck"
 
     # Upload result to S3
-    output_url = None
+    output_key = None
     if tools_applied and current_path != tmp_source:
         try:
             filename = f"remediated_{check_id}{extension}"
-            s3_key = build_s3_key("remixed", user_email, project_id, check_id, filename)
-            output_url = upload_file_public(current_path, s3_key)
-            logger.info("[Executor] Uploaded remediated media: %s", output_url)
+            s3_key = build_s3_key("remixed", user_id, project_id, check_id, filename)
+            output_key = upload_file(current_path, s3_key)
+            logger.info("[Executor] Uploaded private remediated media key: %s", output_key)
         except Exception as e:
             logger.error("[Executor] S3 upload failed: %s", e)
-            status = "partially_remediated"
+            status = "generation_failed"
+    if not output_key:
+        status = "generation_failed"
 
-    # Update compliance check record
-    if supabase and output_url:
+    version_id = None
+    asset_sha256 = _sha256_file(current_path) if output_key else None
+    # Persist through the transactional version state machine. Finalization
+    # also creates the unique durable recheck job.
+    if supabase and output_key:
+        store = RemediationStore(supabase)
+        version = None
         try:
-            supabase.table("compliance_checks").update({
-                "status": status,
-                "s3_remix_key": output_url,
-                "result_json": supabase.table("compliance_checks")
-                    .select("result_json")
-                    .eq("check_id", check_id)
-                    .execute()
-                    .data[0].get("result_json", {}),
-            }).eq("check_id", check_id).execute()
-
-            # Actually update with remix info merged into result_json
-            existing = supabase.table("compliance_checks").select("result_json").eq("check_id", check_id).execute()
-            existing_result = (existing.data[0] if existing.data else {}).get("result_json", {})
-            existing_result["remix"] = {
-                "output_url": output_url,
-                "tools_applied": tools_applied,
-                "strategy": routing_decision.strategy_summary,
-                "severity": routing_decision.overall_severity,
-            }
-            supabase.table("compliance_checks").update({
-                "status": status,
-                "s3_remix_key": output_url,
-                "result_json": existing_result,
-            }).eq("check_id", check_id).execute()
-
-        except Exception as e:
-            logger.warning("[Executor] DB update failed: %s", e)
+            version = store.begin_version(
+                task_id=check_id,
+                idempotency_key=idempotency_key,
+                media_type=media_type,
+                source_asset_key=source_asset_key,
+                created_by_subject=user_id,
+                agent_strategy=routing_decision.strategy_summary,
+                model_provider="mixed",
+                prompt_inputs={"tools": [item.tool for item in tools]},
+            )
+            version_id = str(version["id"])
+            store.mark_generated(
+                version_id=version_id,
+                asset_key=output_key,
+                asset_sha256=asset_sha256,
+                asset_size_bytes=os.path.getsize(current_path),
+                content_type=mimetypes.guess_type(filename)[0],
+                generation_metadata={
+                    "tools_applied": tools_applied,
+                    "tools_failed": tools_failed,
+                    "severity": routing_decision.overall_severity,
+                },
+            )
+        except Exception:
+            logger.exception("[Executor] Version persistence failed for task %s", check_id)
+            if version:
+                try:
+                    store.mark_generation_failed(
+                        version_id=str(version["id"]),
+                        error_code="VERSION_PERSISTENCE_FAILED",
+                    )
+                except Exception:
+                    logger.exception(
+                        "[Executor] Could not persist failure for version %s",
+                        version.get("id"),
+                    )
+            status = "generation_failed"
 
     # Cleanup temp files
     _cleanup_temp(tmp_source, current_path)
 
     return {
         "status": status,
-        "output_url": output_url,
+        "version_id": version_id,
+        "output_key": output_key,
+        "asset_sha256": asset_sha256,
         "tools_applied": tools_applied,
         "tools_failed": tools_failed,
         "tool_results": tool_results,
@@ -534,6 +608,12 @@ def _cleanup_temp(*paths: str) -> None:
                 os.remove(path)
             except OSError:
                 pass
+
+
+def _sha256_file(path: str) -> str:
+    """Return the immutable content digest persisted with a generated asset."""
+    with open(path, "rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
 
 
 def _execute_omni_video_edit(input_path: str, instruction: str, additional_references: Optional[list[str]] = None) -> dict:

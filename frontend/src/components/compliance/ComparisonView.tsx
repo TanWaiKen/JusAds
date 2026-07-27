@@ -351,9 +351,9 @@ export function ComparisonView({ originalResult, remixResult, mediaType, onRegen
                       <p className="text-text-primary text-[12px] leading-relaxed">
                         The original image is fully compliant and does not require any edits.
                       </p>
-                    ) : (res as Record<string, unknown>).verification_status === "pending_compliance_recheck" ? (
+                    ) : (res as Record<string, unknown>).verification_status === "pending_recheck" ? (
                       <p className="text-amber-600 text-[12px] leading-relaxed">
-                        Gemini Omni edited the affected video scenes. Review this version and run a fresh compliance check before publishing.
+                        This remediated version is awaiting an automated compliance recheck. Do not publish it unless that recheck passes.
                       </p>
                     ) : (res as Record<string, unknown>).localization_verified === false ? (
                       <p className="text-amber-600 text-[12px] leading-relaxed">

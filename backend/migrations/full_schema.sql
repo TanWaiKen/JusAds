@@ -19,8 +19,12 @@
 --   9. chat_messages (FK → tasks)
 --   10. storyboard_scenes (FK → projects, optional task_id)
 --   11. generated_ads (FK → projects, tasks, self-referencing)
---   12. remediation_logs (FK → compliance_checks.task_id)
---   13. brand_voices (FK → projects)
+--   12. brand_voices (FK → projects)
+--   13. remediation_versions / compliance_evaluations (FK → compliance_checks)
+--
+-- Legacy remediation_logs and post_statistics_cache are intentionally omitted:
+-- neither is used by the application. Keep existing production rows until the
+-- archival migration is approved; do not re-create either table on new installs.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -32,6 +36,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     email text NOT NULL,
     is_onboarded boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
+    zernio_api_key text,
     CONSTRAINT users_pkey PRIMARY KEY (email)
 );
 
@@ -87,7 +92,8 @@ CREATE TABLE IF NOT EXISTS public.business_profiles (
     onboarding_complete boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT business_profiles_pkey PRIMARY KEY (id)
+    CONSTRAINT business_profiles_pkey PRIMARY KEY (id),
+    CONSTRAINT business_profiles_private_key_values CHECK (COALESCE(logo_s3_key, '') !~* '^https?://')
 );
 
 CREATE INDEX IF NOT EXISTS idx_business_profiles_email
@@ -124,19 +130,31 @@ CREATE TABLE IF NOT EXISTS public.compliance_checks (
     age_group text NOT NULL,
     platform text NOT NULL DEFAULT 'general',
     risk_percentage numeric CHECK (risk_percentage >= 0 AND risk_percentage <= 100),
-    status text NOT NULL CHECK (status IN ('pending', 'checked', 'verified', 'edit_pending', 'remediated', 'remix_failed', 'pass', 'critical_regen', 'remediate')),
+    status text NOT NULL CHECK (status IN (
+        'pending', 'checked', 'verified', 'edit_pending', 'remix_failed',
+        'pass', 'critical_regen', 'remediate', 'queued', 'processing',
+        'pending_recheck', 'rechecking', 'verified_compliant',
+        'verified_non_compliant', 'generation_failed', 'recheck_error',
+        'cancelled'
+    )),
     result_json jsonb,
     s3_upload_key text,
     s3_segmented_key text,
     s3_remix_key text,
     remediation_metadata jsonb,
+    current_remediation_version_id uuid,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT compliance_checks_pkey PRIMARY KEY (task_id),
     CONSTRAINT compliance_checks_task_id_fkey FOREIGN KEY (task_id)
         REFERENCES public.tasks(id) ON DELETE CASCADE,
     CONSTRAINT compliance_checks_project_id_fkey FOREIGN KEY (project_id)
-        REFERENCES public.projects(id) ON DELETE CASCADE
+        REFERENCES public.projects(id) ON DELETE CASCADE,
+    CONSTRAINT compliance_checks_private_key_values CHECK (
+        COALESCE(s3_upload_key, '') !~* '^https?://'
+        AND COALESCE(s3_segmented_key, '') !~* '^https?://'
+        AND COALESCE(s3_remix_key, '') !~* '^https?://'
+    )
 );
 
 
@@ -155,7 +173,8 @@ CREATE TABLE IF NOT EXISTS public.violations (
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT violations_pkey PRIMARY KEY (id),
     CONSTRAINT violations_task_id_fkey FOREIGN KEY (task_id)
-        REFERENCES public.compliance_checks(task_id) ON DELETE CASCADE
+        REFERENCES public.compliance_checks(task_id) ON DELETE CASCADE,
+    CONSTRAINT violations_private_key_values CHECK (COALESCE(clip_s3_key, '') !~* '^https?://')
 );
 
 
@@ -307,7 +326,11 @@ CREATE TABLE IF NOT EXISTS public.storyboard_scenes (
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT storyboard_scenes_pkey PRIMARY KEY (id),
     CONSTRAINT storyboard_scenes_project_id_fkey FOREIGN KEY (project_id)
-        REFERENCES public.projects(id) ON DELETE CASCADE
+        REFERENCES public.projects(id) ON DELETE CASCADE,
+    CONSTRAINT storyboard_scenes_private_key_values CHECK (
+        COALESCE(s3_anchor_image_key, '') !~* '^https?://'
+        AND COALESCE(s3_raw_video_key, '') !~* '^https?://'
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_storyboard_scenes_project
@@ -372,7 +395,12 @@ CREATE TABLE IF NOT EXISTS public.generated_ads (
     CONSTRAINT generated_ads_task_id_fkey FOREIGN KEY (task_id)
         REFERENCES public.tasks(id) ON DELETE SET NULL,
     CONSTRAINT generated_ads_parent_fkey FOREIGN KEY (parent_ad_id)
-        REFERENCES public.generated_ads(id) ON DELETE SET NULL
+        REFERENCES public.generated_ads(id) ON DELETE SET NULL,
+    CONSTRAINT generated_ads_private_key_values CHECK (
+        COALESCE(s3_media_key, '') !~* '^https?://'
+        AND COALESCE(s3_draft_key, '') !~* '^https?://'
+        AND COALESCE(s3_rendered_key, '') !~* '^https?://'
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_generated_ads_project
@@ -386,27 +414,6 @@ CREATE INDEX IF NOT EXISTS idx_generated_ads_parent
 
 
 -- ─── 12. remediation_logs ────────────────────────────────────────────────────
--- Audit trail for each remediation attempt. Enables rollback.
-
-CREATE TABLE IF NOT EXISTS public.remediation_logs (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    task_id uuid NOT NULL,
-    agent_strategy text NOT NULL,
-    modified_media_type text NOT NULL CHECK (modified_media_type IN ('text', 'image', 'audio', 'video')),
-    previous_s3_key text,
-    remediated_s3_key text,
-    quality_score integer CHECK (quality_score >= 0 AND quality_score <= 100),
-    attempt_number integer NOT NULL DEFAULT 1,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT remediation_logs_pkey PRIMARY KEY (id),
-    CONSTRAINT remediation_logs_task_id_fkey FOREIGN KEY (task_id)
-        REFERENCES public.compliance_checks(task_id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_remediation_logs_task
-    ON public.remediation_logs(task_id);
-
-
 -- ─── 13. brand_voices ────────────────────────────────────────────────────────
 -- Voice catalog + custom clones for brand-consistent audio.
 -- Global voices (project_id IS NULL) are available to all users.
@@ -418,7 +425,8 @@ CREATE TABLE IF NOT EXISTS public.brand_voices (
     voice_id text NOT NULL,
     voice_name text NOT NULL,
     description text,
-    sample_url text,
+    -- Private object key only; the API issues authorized short-lived URLs.
+    sample_s3_key text CHECK (COALESCE(sample_s3_key, '') !~* '^https?://'),
     market text,
     ethnicity text,
     gender text DEFAULT 'female',
@@ -462,6 +470,7 @@ CREATE TABLE IF NOT EXISTS public.trends_cache (
     scraped_at timestamptz NOT NULL DEFAULT now(),
     scrape_batch_id uuid NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
+    owner_email text,
     CONSTRAINT trends_cache_pkey PRIMARY KEY (id)
 );
 
@@ -476,6 +485,27 @@ CREATE INDEX IF NOT EXISTS idx_trends_cache_event
     WHERE cultural_event_tag IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_trends_cache_batch
     ON public.trends_cache(scrape_batch_id);
+
+-- ─── 14b. youtube_hook_reference_cache ─────────────────────────────────────
+-- Company-context YouTube Shorts references.  Backend-only cache; public
+-- results are advisory creative inspiration, never an ad/compliance verdict.
+CREATE TABLE IF NOT EXISTS public.youtube_hook_reference_cache (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_email text NOT NULL,
+    market text NOT NULL DEFAULT 'malaysia',
+    profile_fingerprint char(64) NOT NULL,
+    query_text text NOT NULL,
+    results jsonb NOT NULL DEFAULT '[]'::jsonb,
+    fetched_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT youtube_hook_reference_cache_scope_unique UNIQUE (owner_email, market, profile_fingerprint),
+    CONSTRAINT youtube_hook_reference_cache_results_array CHECK (jsonb_typeof(results) = 'array')
+);
+CREATE INDEX IF NOT EXISTS idx_youtube_hook_reference_cache_expiry
+    ON public.youtube_hook_reference_cache(owner_email, market, expires_at DESC);
+ALTER TABLE public.youtube_hook_reference_cache ENABLE ROW LEVEL SECURITY;
 
 
 -- ─── 15. cultural_events ─────────────────────────────────────────────────────
@@ -501,33 +531,6 @@ CREATE INDEX IF NOT EXISTS idx_cultural_events_type
 
 
 -- ─── 16. post_statistics_cache ───────────────────────────────────────────────
--- Cached Zernio post performance metrics for the statistics page.
-
-CREATE TABLE IF NOT EXISTS public.post_statistics_cache (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    generated_ad_id uuid NOT NULL,
-    platform text NOT NULL,
-    post_external_id text NOT NULL,
-    impressions integer DEFAULT 0,
-    clicks integer DEFAULT 0,
-    engagement_rate numeric DEFAULT 0,
-    reach integer DEFAULT 0,
-    conversions integer DEFAULT 0,
-    raw_metrics jsonb,
-    fetched_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT post_statistics_cache_pkey PRIMARY KEY (id),
-    CONSTRAINT post_stats_ad_fkey FOREIGN KEY (generated_ad_id)
-        REFERENCES public.generated_ads(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_post_stats_ad
-    ON public.post_statistics_cache(generated_ad_id);
-CREATE INDEX IF NOT EXISTS idx_post_stats_fetched
-    ON public.post_statistics_cache(fetched_at DESC);
-CREATE INDEX IF NOT EXISTS idx_post_stats_platform
-    ON public.post_statistics_cache(platform);
-
-
 -- ─── 17. tavily_usage_log ────────────────────────────────────────────────────
 -- Audit log for Tavily API invocations (cost monitoring).
 
@@ -545,6 +548,179 @@ CREATE INDEX IF NOT EXISTS idx_tavily_usage_task
     ON public.tavily_usage_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_tavily_usage_time
     ON public.tavily_usage_log(invoked_at DESC);
+
+
+-- Daily trend intelligence. These tables are actively queried by the director
+-- and daily-idea services; they are not optional cache decorations.
+CREATE TABLE IF NOT EXISTS public.creative_trend_signals (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    signal_type text NOT NULL CHECK (signal_type IN ('sound', 'music', 'dance_or_challenge', 'hook', 'meme_or_phrase', 'format_or_template', 'visual_style', 'creator_behavior', 'hashtag_or_topic', 'seasonal_or_cultural_moment')),
+    title text NOT NULL,
+    summary text NOT NULL,
+    why_trending text,
+    how_it_works text,
+    suggested_adaptation text NOT NULL,
+    do_not_do text,
+    target_platforms text[] NOT NULL DEFAULT '{}',
+    market text NOT NULL DEFAULT 'malaysia',
+    owner_email text,
+    audience text,
+    language text,
+    momentum text NOT NULL DEFAULT 'unknown' CHECK (momentum IN ('rising', 'peaking', 'stable', 'declining', 'unknown')),
+    confidence text NOT NULL DEFAULT 'low' CHECK (confidence IN ('low', 'medium', 'high')),
+    detected_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.creative_trend_sources (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    signal_id uuid NOT NULL REFERENCES public.creative_trend_signals(id) ON DELETE CASCADE,
+    url text NOT NULL,
+    source_title text,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_creative_trend_sources_signal ON public.creative_trend_sources(signal_id);
+
+CREATE TABLE IF NOT EXISTS public.daily_creative_ideas (
+    idea_date date NOT NULL,
+    market text NOT NULL DEFAULT 'malaysia',
+    payload jsonb NOT NULL,
+    generated_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (idea_date, market)
+);
+
+CREATE TABLE IF NOT EXISTS public.hook_preferences (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id text NOT NULL,
+    video_id text NOT NULL,
+    tags jsonb NOT NULL DEFAULT '[]',
+    creative_style text NOT NULL DEFAULT 'meme_shock',
+    product_category text NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT hook_preferences_user_video_unique UNIQUE (user_id, video_id)
+);
+
+
+-- Immutable remediation state machine. A generated edit remains pending until
+-- one of its append-only evaluations passes; it is never "compliant by edit".
+CREATE TABLE IF NOT EXISTS public.remediation_versions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id uuid NOT NULL REFERENCES public.compliance_checks(task_id) ON DELETE CASCADE,
+    version_number integer NOT NULL CHECK (version_number > 0),
+    parent_version_id uuid REFERENCES public.remediation_versions(id),
+    idempotency_key text NOT NULL CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
+    status text NOT NULL CHECK (status IN ('queued', 'processing', 'pending_recheck', 'rechecking', 'verified_compliant', 'verified_non_compliant', 'generation_failed', 'recheck_error', 'cancelled')),
+    media_type text NOT NULL CHECK (media_type IN ('text', 'image', 'audio', 'video')),
+    source_asset_key text CHECK (source_asset_key IS NULL OR source_asset_key !~* '^https?://'),
+    asset_key text CHECK (asset_key IS NULL OR asset_key !~* '^https?://'),
+    asset_sha256 text CHECK (asset_sha256 IS NULL OR asset_sha256 ~ '^[0-9a-f]{64}$'),
+    asset_size_bytes bigint CHECK (asset_size_bytes IS NULL OR asset_size_bytes >= 0),
+    content_type text,
+    agent_strategy text NOT NULL DEFAULT '',
+    policy_version text NOT NULL DEFAULT '',
+    rule_version text NOT NULL DEFAULT '',
+    model_provider text NOT NULL DEFAULT '',
+    model_name text NOT NULL DEFAULT '',
+    model_version text NOT NULL DEFAULT '',
+    prompt_template_version text NOT NULL DEFAULT '',
+    prompt_inputs jsonb NOT NULL DEFAULT '{}',
+    generation_metadata jsonb NOT NULL DEFAULT '{}',
+    created_by_subject text NOT NULL,
+    failure_code text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    generation_started_at timestamptz NOT NULL DEFAULT now(),
+    generated_at timestamptz,
+    recheck_started_at timestamptz,
+    recheck_completed_at timestamptz,
+    verified_at timestamptz,
+    CONSTRAINT remediation_versions_task_number_unique UNIQUE (task_id, version_number),
+    CONSTRAINT remediation_versions_idempotency_unique UNIQUE (task_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_remediation_versions_task_created ON public.remediation_versions(task_id, created_at DESC);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'compliance_checks_current_remediation_version_id_fkey'
+          AND conrelid = 'public.compliance_checks'::regclass
+    ) THEN
+        ALTER TABLE public.compliance_checks
+            ADD CONSTRAINT compliance_checks_current_remediation_version_id_fkey
+            FOREIGN KEY (current_remediation_version_id) REFERENCES public.remediation_versions(id);
+    END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS public.compliance_evaluations (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    remediation_version_id uuid NOT NULL REFERENCES public.remediation_versions(id) ON DELETE CASCADE,
+    attempt_number integer NOT NULL CHECK (attempt_number > 0),
+    idempotency_key text NOT NULL CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
+    status text NOT NULL CHECK (status IN ('passed', 'failed', 'error')),
+    verdict text,
+    risk_percentage numeric CHECK (risk_percentage IS NULL OR (risk_percentage >= 0 AND risk_percentage <= 100)),
+    result_json jsonb NOT NULL DEFAULT '{}',
+    policy_version text NOT NULL,
+    rule_version text NOT NULL,
+    model_provider text NOT NULL DEFAULT '',
+    model_name text NOT NULL DEFAULT '',
+    model_version text NOT NULL DEFAULT '',
+    error_code text,
+    started_at timestamptz NOT NULL,
+    completed_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT compliance_evaluations_attempt_unique UNIQUE (remediation_version_id, attempt_number),
+    CONSTRAINT compliance_evaluations_idempotency_unique UNIQUE (remediation_version_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_compliance_evaluations_version_created ON public.compliance_evaluations(remediation_version_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.remediation_recheck_jobs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    remediation_version_id uuid NOT NULL UNIQUE REFERENCES public.remediation_versions(id) ON DELETE CASCADE,
+    status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
+    attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    available_at timestamptz NOT NULL DEFAULT now(),
+    claimed_at timestamptz,
+    completed_at timestamptz,
+    last_error_code text,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.remediation_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.compliance_evaluations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.remediation_recheck_jobs ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.remediation_versions, public.compliance_evaluations, public.remediation_recheck_jobs FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.remediation_versions, public.compliance_evaluations, public.remediation_recheck_jobs TO service_role;
+
+-- Operational audit view for accidental URL persistence. It has no client-role
+-- access; production URLs must always be presigned after backend authorization.
+CREATE OR REPLACE VIEW public.private_media_url_audit
+WITH (security_invoker = true) AS
+SELECT 'compliance_checks.s3_upload_key'::text AS field_name, task_id::text AS record_id, s3_upload_key::text AS value
+FROM public.compliance_checks WHERE s3_upload_key ~* '^https?://'
+UNION ALL
+SELECT 'compliance_checks.s3_segmented_key', task_id::text, s3_segmented_key::text
+FROM public.compliance_checks WHERE s3_segmented_key ~* '^https?://'
+UNION ALL
+SELECT 'compliance_checks.s3_remix_key', task_id::text, s3_remix_key::text
+FROM public.compliance_checks WHERE s3_remix_key ~* '^https?://'
+UNION ALL
+SELECT 'storyboard_scenes.s3_anchor_image_key', id::text, s3_anchor_image_key::text
+FROM public.storyboard_scenes WHERE s3_anchor_image_key ~* '^https?://'
+UNION ALL
+SELECT 'storyboard_scenes.s3_raw_video_key', id::text, s3_raw_video_key::text
+FROM public.storyboard_scenes WHERE s3_raw_video_key ~* '^https?://'
+UNION ALL
+SELECT 'generated_ads.s3_media_key', id::text, s3_media_key::text
+FROM public.generated_ads WHERE s3_media_key ~* '^https?://'
+UNION ALL
+SELECT 'brand_voices.sample_s3_key', id::text, sample_s3_key::text
+FROM public.brand_voices WHERE sample_s3_key ~* '^https?://';
+REVOKE ALL ON TABLE public.private_media_url_audit FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.private_media_url_audit TO service_role;
 
 
 -- ─── ALTER generated_ads — CapCut dual output columns ────────────────────────

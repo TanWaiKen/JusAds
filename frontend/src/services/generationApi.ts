@@ -10,6 +10,7 @@
 
 import type { PipelineState } from "@/components/workspace/canvas/graphModel";
 import { API_BASE } from "@/lib/apiConfig";
+import { authenticatedFetch, toApiRequestError } from "@/lib/apiAuth";
 
 export { API_BASE };
 
@@ -170,7 +171,7 @@ export async function sendChat(
   targetEthnicity?: TargetEthnicity,
   options?: GenerationOptions
 ): Promise<Response> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/chat`,
     {
       method: "POST",
@@ -330,7 +331,7 @@ export async function getChatHistory(
   projectId: string,
   taskId: string
 ): Promise<ChatMessageView[]> {
-  const res = await fetch(
+  const res = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/chat-history`
   );
 
@@ -352,7 +353,7 @@ export async function getGeneratedAds(
   projectId: string,
   taskId: string
 ): Promise<GeneratedAdView[]> {
-  const res = await fetch(
+  const res = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/generated-ads`
   );
   if (!res.ok) return [];
@@ -407,7 +408,7 @@ export async function publishAd(
   taskId: string,
   adId: string
 ): Promise<PublishResult> {
-  const res = await fetch(
+  const res = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/ads/${adId}/publish`,
     { method: "POST" }
   );
@@ -452,7 +453,7 @@ export async function getDistributionAccounts(email?: string): Promise<Distribut
   const url = email
     ? `${API_BASE}/api/distribution/accounts?email=${encodeURIComponent(email)}`
     : `${API_BASE}/api/distribution/accounts`;
-  const res = await fetch(url);
+  const res = await authenticatedFetch(url);
   if (!res.ok) return [];
   const payload = await res.json() as { accounts?: unknown };
   if (!Array.isArray(payload.accounts)) return [];
@@ -492,7 +493,7 @@ export async function distributeAd(
   caption?: string,
   accountId?: string,
 ): Promise<DistributeResult> {
-  const res = await fetch(
+  const res = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/ads/${adId}/distribute`,
     {
       method: "POST",
@@ -528,7 +529,7 @@ export async function distributeToAccounts(
   adId: string,
   destinations: DistributionAccount[],
 ): Promise<{ caption: string; results: Array<Record<string, unknown>> }> {
-  const res = await fetch(
+  const res = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/ads/${adId}/distribute`,
     {
       method: "POST",
@@ -611,7 +612,7 @@ export async function submitGuidedGeneration(
   guidedInputs: Record<string, string>,
   referenceUrls: string[] = []
 ): Promise<Response> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/chat`,
     {
       method: "POST",
@@ -793,7 +794,7 @@ export async function* executeVideoPlan(
   plan: VideoPlan,
   skipCompliance?: boolean
 ): AsyncGenerator<SSEEvent> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/execute-video-plan`,
     {
       method: "POST",

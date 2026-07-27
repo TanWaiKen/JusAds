@@ -24,8 +24,9 @@ import {
   fetchCulturalEvents,
   fetchCreativeSignals,
   researchCreativeSignals,
+  fetchYouTubeHookReferences,
 } from "@/services/trendsApi";
-import type { CreativeTrendSignal, TrendItem, CulturalEvent } from "@/services/trendsApi";
+import type { CreativeTrendSignal, TrendItem, CulturalEvent, YouTubeHookReference } from "@/services/trendsApi";
 import type { TrendBrief } from "@/services/session";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -322,6 +323,8 @@ export default function DashboardTrends() {
   const [creativeSignals, setCreativeSignals] = useState<CreativeTrendSignal[]>([]);
   const [signalMessage, setSignalMessage] = useState<string | null>(null);
   const [isSignalResearching, setIsSignalResearching] = useState(false);
+  const [youtubeHooks, setYoutubeHooks] = useState<YouTubeHookReference[]>([]);
+  const [youtubeHooksCached, setYoutubeHooksCached] = useState<boolean | null>(null);
 
   const allItems = Object.values(trendsData).flat();
   const filteredItems = platform ? (trendsData[platform] ?? []) : allItems;
@@ -349,18 +352,33 @@ export default function DashboardTrends() {
     setIsLoading(true);
     setError(null);
     try {
-      const [trendsRes, eventsRes, signalsRes] = await Promise.all([
+      const [trendsRes, eventsRes, signalsRes, youtubeHooksRes] = await Promise.all([
         fetchTrends(platform || undefined, eventMarket, 30, ownerEmail || undefined),
         fetchCulturalEvents(eventMarket === "all" ? undefined : eventMarket, 60),
         fetchCreativeSignals(ownerEmail, eventMarket, platform || undefined).catch((): { signals: CreativeTrendSignal[]; count: number; message?: string } => ({ signals: [], count: 0 })),
+        fetchYouTubeHookReferences(eventMarket).catch(() => null),
       ]);
       const cachedTrends = Array.isArray(trendsRes.trends) ? {} : trendsRes.trends;
-      setTrendsData(cachedTrends);
+      const hookItems: TrendItem[] = (youtubeHooksRes?.items || []).map((item) => ({
+        id: `youtube-hook-${item.video_id}`,
+        title: item.title,
+        url: item.watch_url,
+        platform: "youtube",
+        content_type: "video",
+        engagement_metrics: { views: 0, likes: 0, shares: 0, comments: 0 },
+        hashtags: ["hook-reference"],
+        categories: ["company-context", "hook-reference"],
+        cultural_event_tag: null,
+        scraped_at: youtubeHooksRes?.fetched_at || new Date().toISOString(),
+      }));
+      setTrendsData({ ...cachedTrends, youtube: [...hookItems, ...(cachedTrends.youtube || [])] });
+      setYoutubeHooks(youtubeHooksRes?.items || []);
+      setYoutubeHooksCached(youtubeHooksRes?.cached ?? null);
       setLastRefresh(trendsRes.last_refresh || {});
       setResearchProvider("cache");
       setFreshness(Object.keys(cachedTrends).length > 0 ? "cached" : "unavailable");
       setResearchSources([]);
-      setTotalItems(trendsRes.total_items || 0);
+      setTotalItems((trendsRes.total_items || 0) + hookItems.length);
       setEmptyMessage(trendsRes.message ?? null);
       setEvents(eventsRes.events || []);
       setCreativeSignals(signalsRes.signals || []);
@@ -468,14 +486,6 @@ export default function DashboardTrends() {
               <Sparkles size={16} className={isResearching ? "animate-spin" : ""} />
               {isResearching ? "Finding ideas..." : "Find ideas"}
             </button>
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing || isLoading}
-              className="border border-border-default bg-surface-elevated text-text-body px-5 py-2 rounded-lg font-semibold text-[14px] hover:bg-surface-inset transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
-              {isRefreshing ? "Refreshing..." : "Refresh"}
-            </button>
           </div>
         </section>
 
@@ -577,7 +587,7 @@ export default function DashboardTrends() {
                 </span>
               )}
             </h3>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <select
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value)}
@@ -587,8 +597,23 @@ export default function DashboardTrends() {
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
               </select>
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing || isLoading}
+                className="border border-border-default bg-surface-elevated text-text-body px-3 py-1.5 rounded-lg font-semibold text-[13px] hover:bg-surface-inset transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Refresh Sources"
+              >
+                <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </button>
             </div>
           </div>
+
+          {youtubeHooks.length > 0 && (
+            <p className="-mt-2 mb-4 text-xs text-text-caption">
+              {youtubeHooksCached ? "Using saved YouTube hook references for your company context." : "Fresh YouTube hook references saved for your company context."}
+            </p>
+          )}
 
           {isLoading && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">

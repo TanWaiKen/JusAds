@@ -15,6 +15,7 @@ import { listTasks, updateProjectName, deleteTask } from "@/services/taskApi";
 import type { TaskSummary } from "@/services/taskApi";
 import { API_BASE } from "@/services/taskApi";
 import { useAuth } from "@/hooks/useAuth";
+import { authenticatedFetch } from "@/lib/apiAuth";
 import {
   RecordStats,
   TaskTable,
@@ -41,7 +42,11 @@ function mapTaskToExecution(task: TaskSummary): TaskExecution {
     completed: "completed",
     checked: "completed",
     reviewed: "completed",
-    remixed: "completed",
+    pending_recheck: "pending_recheck",
+    rechecking: "rechecking",
+    verified_compliant: "verified_compliant",
+    verified_non_compliant: "verified_non_compliant",
+    remixed: "pending_recheck",
     failed: "failed",
     error: "failed",
     created: "processing",
@@ -136,7 +141,7 @@ export default function ProjectOverviewPage() {
     }
 
     try {
-      const projectRes = await fetch(
+      const projectRes = await authenticatedFetch(
         `${API_BASE}/api/projects?username=${encodeURIComponent(email)}`
       );
       if (!projectRes.ok) throw new Error("Failed to fetch projects");

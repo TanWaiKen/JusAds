@@ -5,6 +5,8 @@ Backward-compatibility shim. Use agent.s3_utils instead.
 """
 
 import logging
+import hashlib
+import re
 from pathlib import PurePosixPath
 from urllib.parse import quote, unquote, urlparse
 
@@ -12,11 +14,46 @@ from botocore.exceptions import ClientError
 
 from shared.clients import s3
 from config import AWS_REGION, S3_BUCKET_NAME
+from shared.media_security import safe_filename
 
 logger = logging.getLogger(__name__)
 
 BUCKET = S3_BUCKET_NAME
 REGION = AWS_REGION
+
+_SAFE_SCOPE_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def _safe_scope(value: str, *, label: str) -> str:
+    """Normalize a project/task scope without permitting prefix injection."""
+    candidate = str(value or "").strip()
+    if _SAFE_SCOPE_RE.fullmatch(candidate) and candidate not in {".", ".."}:
+        return candidate
+    if not candidate:
+        raise ValueError(f"{label} is required")
+    digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:32]
+    return f"{label}-{digest}"
+
+
+def opaque_user_prefix(user_id: str) -> str:
+    """Derive a stable, non-PII S3 subject prefix from a verified user ID."""
+    candidate = str(user_id or "").strip()
+    if not candidate:
+        raise ValueError("verified user_id is required")
+    digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:32]
+    return f"user-{digest}"
+
+
+def is_private_key_for_user(s3_key: str, user_id: str) -> bool:
+    """Return whether a canonical private key belongs to this principal."""
+    key = normalize_s3_key(s3_key)
+    if not key:
+        return False
+    subject = opaque_user_prefix(user_id)
+    return any(
+        key.startswith(f"private/{asset_prefix}/{subject}/")
+        for asset_prefix in ("uploads", "remixed", "segmented")
+    )
 
 
 
@@ -28,6 +65,9 @@ class S3MediaClient:
 
     def upload_file(self, file_path, s3_key):
         return upload_file(file_path, s3_key)
+
+    def upload_file_private(self, file_path, s3_key):
+        return upload_file_private(file_path, s3_key)
 
     def get_public_url(self, s3_key):
         return get_public_url(s3_key)
@@ -53,10 +93,12 @@ def build_s3_key(
     check_id: str,
     filename: str,
 ) -> str:
-    """Construct an S3 object key.
+    """Construct a private, tenant-scoped S3 object key.
 
     asset_type: "upload" | "remixed" | "segmented"
-    Returns: e.g. uploads/{username}/{project_id}/{task_id}/{filename}
+    ``username`` is retained as a parameter name for source compatibility, but
+    must be the immutable verified identity (for example Cognito ``sub``), not
+    an email address or a client-provided username.
     """
     prefix_map = {"upload": "uploads", "remixed": "remixed", "segmented": "segmented"}
     prefix = prefix_map.get(asset_type)
@@ -64,7 +106,11 @@ def build_s3_key(
         raise ValueError(
             f"Invalid asset_type '{asset_type}'. Must be 'upload', 'remixed', or 'segmented'."
         )
-    return f"{prefix}/{username}/{project_id}/{check_id}/{filename}"
+    subject = opaque_user_prefix(username)
+    project = _safe_scope(project_id, label="project")
+    check = _safe_scope(check_id, label="check")
+    name = safe_filename(filename)
+    return f"private/{prefix}/{subject}/{project}/{check}/{name}"
 
 
 def get_public_url(s3_key: str) -> str:
@@ -91,8 +137,21 @@ def upload_file(file_path: str, s3_key: str) -> str:
         raise
 
 
+def upload_file_private(file_path: str, s3_key: str) -> str:
+    """Upload a private object and return only its canonical S3 key."""
+    key = normalize_s3_key(s3_key)
+    if not key or not key.startswith("private/"):
+        raise ValueError("Invalid S3 object key")
+    return upload_file(file_path, key)
+
+
 def upload_file_public(file_path: str, s3_key: str) -> str:
-    """Upload a local file to S3 and return its public URL."""
+    """Legacy compatibility helper.
+
+    New source uploads, masks, voice samples, and remediation versions must use
+    :func:`upload_file_private` and disclose only authorized presigned URLs.
+    """
+    logger.warning("upload_file_public is deprecated; use private storage and presigned reads")
     upload_file(file_path, s3_key)
     return get_public_url(s3_key)
 
@@ -174,8 +233,12 @@ def delete_project_media(project_id: str, owner_email: str | None = None) -> int
 
     prefixes = [f"generated_ads/{project_id}/"]
     if owner_email:
+        subject = opaque_user_prefix(owner_email)
         prefixes.extend(
             [
+                f"private/uploads/{subject}/{project_id}/",
+                f"private/remixed/{subject}/{project_id}/",
+                f"private/segmented/{subject}/{project_id}/",
                 f"uploads/{owner_email}/{project_id}/",
                 f"remixed/{owner_email}/{project_id}/",
                 f"segmented/{owner_email}/{project_id}/",
@@ -228,10 +291,15 @@ def generate_presigned_url(
         if attachment_filename:
             filename = PurePosixPath(attachment_filename).name.replace('"', "")
             params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
+        effective_expiry = (
+            max(1, min(expiry_seconds, 900))
+            if s3_key.startswith("private/")
+            else expiry_seconds
+        )
         url = s3.generate_presigned_url(
             "get_object",
             Params=params,
-            ExpiresIn=expiry_seconds,
+            ExpiresIn=effective_expiry,
         )
         return url
     except ClientError as exc:
@@ -250,6 +318,7 @@ def generate_presigned_upload_url(
     without routing through the backend server.
     """
     try:
+        effective_expiry = max(1, min(expiry_seconds, 900))
         url = s3.generate_presigned_url(
             "put_object",
             Params={
@@ -257,9 +326,9 @@ def generate_presigned_upload_url(
                 "Key": s3_key,
                 "ContentType": content_type,
             },
-            ExpiresIn=expiry_seconds,
+            ExpiresIn=effective_expiry,
         )
-        logger.info("Generated presigned PUT URL for %s (expires %ds)", s3_key, expiry_seconds)
+        logger.info("Generated presigned PUT URL for %s (expires %ds)", s3_key, effective_expiry)
         return url
     except ClientError as exc:
         logger.error("Presigned PUT URL generation failed for %s: %s", s3_key, exc)
@@ -272,7 +341,12 @@ def generate_presigned_upload_url(
 def get_user_storage_usage(username: str) -> int:
     """Calculate total bytes stored under a user's S3 prefix."""
     total_bytes = 0
-    prefixes = [f"uploads/{username}/", f"remixed/{username}/"]
+    subject = opaque_user_prefix(username)
+    prefixes = [
+        f"private/uploads/{subject}/",
+        f"private/remixed/{subject}/",
+        f"private/segmented/{subject}/",
+    ]
     paginator = s3.get_paginator("list_objects_v2")
 
     for prefix in prefixes:

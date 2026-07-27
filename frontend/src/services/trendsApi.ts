@@ -4,6 +4,7 @@
  */
 
 import { API_BASE } from "@/lib/apiConfig";
+import { authenticatedFetch, toApiRequestError } from "@/lib/apiAuth";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -36,6 +37,23 @@ export interface TrendResearchResponse extends TrendsResponse {
   research_provider: "google_grounding" | "tavily" | "none" | string;
   freshness: "fresh" | "cached" | "unavailable" | string;
   research_sources: Array<{ url: string; title?: string; provider?: string }>;
+}
+
+export interface YouTubeHookReference {
+  video_id: string;
+  title: string;
+  channel_title: string;
+  published_at: string;
+  thumbnail_url: string;
+  watch_url: string;
+}
+
+export interface YouTubeHookReferencesResponse {
+  items: YouTubeHookReference[];
+  cached: boolean;
+  fetched_at: string;
+  expires_at: string;
+  disclaimer: string;
 }
 
 export interface CreativeTrendSignal {
@@ -119,6 +137,13 @@ export async function fetchTrends(
 
   const response = await fetch(`${API_BASE}/api/trends?${params.toString()}`);
   if (!response.ok) throw new Error(`Failed to fetch trends: ${response.status}`);
+  return response.json();
+}
+
+export async function fetchYouTubeHookReferences(market: string): Promise<YouTubeHookReferencesResponse> {
+  const params = new URLSearchParams({ market });
+  const response = await authenticatedFetch(`${API_BASE}/api/trends/youtube-hook-references?${params.toString()}`);
+  if (!response.ok) throw await toApiRequestError(response, "YouTube hook references could not be loaded.");
   return response.json();
 }
 

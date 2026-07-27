@@ -4,6 +4,7 @@
  */
 
 import { API_BASE } from "@/lib/apiConfig";
+import { authenticatedFetch, toApiRequestError } from "@/lib/apiAuth";
 
 export { API_BASE };
 
@@ -211,22 +212,22 @@ export async function checkCompliance(
   formData.append("age_group", ageGroup);
   formData.append("platform", platform);
 
-  const res = await fetch(`${API_BASE}/api/compliance/check`, {
+  const res = await authenticatedFetch(`${API_BASE}/api/compliance/check`, {
     method: "POST",
     body: formData,
   });
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    throw await toApiRequestError(res, "Compliance check could not be started.");
   }
 
   return res.json();
 }
 
 export async function getComplianceResult(checkId: string): Promise<ComplianceResult> {
-  const res = await fetch(`${API_BASE}/api/compliance/${checkId}`);
+  const res = await authenticatedFetch(`${API_BASE}/api/compliance/${checkId}`);
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    throw await toApiRequestError(res, "Compliance result could not be retrieved.");
   }
   return res.json();
 }
@@ -270,13 +271,13 @@ export async function checkComplianceStream(
   formData.append("age_group", ageGroup);
   formData.append("platform", platform);
 
-  const res = await fetch(`${API_BASE}/api/compliance/check`, {
+  const res = await authenticatedFetch(`${API_BASE}/api/compliance/check`, {
     method: "POST",
     body: formData,
   });
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    throw await toApiRequestError(res, "Compliance check could not be started.");
   }
 
   const reader = res.body!.getReader();
@@ -396,12 +397,12 @@ export async function remixComplianceStream(
   checkId: string,
   onEvent: (event: RemixStreamEvent) => void
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/compliance/${checkId}/remix`, {
+  const res = await authenticatedFetch(`${API_BASE}/api/compliance/${checkId}/remix`, {
     method: "POST",
   });
 
   if (!res.ok) {
-    throw new Error(`Remix API error: ${res.status} ${res.statusText}`);
+    throw await toApiRequestError(res, "Remediation could not be started.");
   }
 
   const reader = res.body!.getReader();

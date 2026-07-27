@@ -10,6 +10,7 @@ Usage:
 import logging
 import os
 import sys
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -50,6 +51,17 @@ verify_required_secrets()
 
 # -- App -----------------------------------------------------------------------
 app = FastAPI(title="JusAds Compliance API")
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Attach a stable correlation id without trusting arbitrary client values."""
+    supplied = request.headers.get("X-Request-ID", "").strip()
+    request_id = supplied if supplied and len(supplied) <= 128 else str(uuid.uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 if ENVIRONMENT == "production" and not CORS_ORIGINS:
     logger.warning("[Init] No CORS origins configured; only same-origin requests are expected")

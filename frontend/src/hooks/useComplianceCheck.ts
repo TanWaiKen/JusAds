@@ -5,6 +5,7 @@ import type {
   ComplianceResult,
 } from "@/services/complianceApi";
 import { API_BASE } from "@/services/complianceApi";
+import { authenticatedFetch, toApiRequestError } from "@/lib/apiAuth";
 
 export interface UseComplianceCheckReturn {
   submit: (params: UploadParams & { projectId?: string }) => Promise<ComplianceResult>;
@@ -66,11 +67,6 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
       if (params.projectId) {
         formData.append("project_id", params.projectId);
       }
-      const username = (params as unknown as Record<string, unknown>).username as string | undefined;
-      if (username) {
-        formData.append("username", username);
-      }
-
       console.log("[ComplianceCheck] Submitting compliance check (SSE)", {
         hasFile: !!params.file,
         hasText: !!params.text,
@@ -79,17 +75,16 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
       });
 
       try {
-        const res = await fetch(`${API_BASE}/api/compliance/check`, {
+        const res = await authenticatedFetch(`${API_BASE}/api/compliance/check`, {
           method: "POST",
           body: formData,
           signal: abortRef.current.signal,
         });
 
         if (!res.ok) {
-          const retryable = res.status >= 500;
-          const message = res.status === 400
-            ? "Validation error: please provide a file or text"
-            : `Server error (${res.status})`;
+          const requestError = await toApiRequestError(res, "Compliance check could not be started.");
+          const retryable = res.status >= 500 || res.status === 429;
+          const message = requestError.message;
           setError({ message, retryable });
           setIsStreaming(false);
           throw new Error(message);

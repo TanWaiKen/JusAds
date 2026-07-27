@@ -35,6 +35,7 @@ async def clone_brand_voice(
     project_id: str,
     voice_name: str,
     sample_audio_url: str,
+    sample_s3_key: str | None = None,
     description: str = "",
 ) -> Optional[dict]:
     """Clone a voice from sample audio and persist the voice_id.
@@ -42,7 +43,8 @@ async def clone_brand_voice(
     Args:
         project_id: The project this voice belongs to.
         voice_name: Human-readable name for the voice (e.g., "Brand VO - Malay Female").
-        sample_audio_url: S3 URL of the audio sample to clone from.
+        sample_audio_url: Short-lived, authorized URL used only for this clone.
+        sample_s3_key: Canonical private S3 key persisted for audit purposes.
         description: Optional description of the voice characteristics.
 
     Returns:
@@ -74,7 +76,8 @@ async def clone_brand_voice(
             "voice_id": voice_id,
             "voice_name": voice_name,
             "description": description,
-            "sample_url": sample_audio_url,
+            # Never persist a presigned URL: it is both transient and sensitive.
+            "sample_s3_key": sample_s3_key,
             "status": "active",
         }
 

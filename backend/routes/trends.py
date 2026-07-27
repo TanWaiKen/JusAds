@@ -9,18 +9,20 @@ Also provides a manual refresh trigger for admins.
 Requirements: 9.1, 9.2, 9.3, 9.4, 9.5
 """
 
+import asyncio
 import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from shared.clients import supabase
 from shared.predicthq_client import PredictHQServiceError, fetch_predicthq_events
+from shared.auth import Principal, get_current_principal
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,35 @@ def _group_trends(items: list[dict[str, Any]]) -> tuple[dict[str, list[dict[str,
         grouped.setdefault(platform, []).append(_trend_item(item, platform))
         last_refresh.setdefault(platform, item.get("scraped_at", ""))
     return grouped, last_refresh
+
+
+@router.get("/youtube-hook-references")
+async def get_youtube_hook_references(
+    market: str = "malaysia",
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
+    """Return cached, company-context YouTube Shorts for hook inspiration.
+
+    A cache miss calls YouTube once, then stores a 24-hour result keyed by the
+    verified account and the saved business-profile fingerprint. Results are
+    creative references, not verified paid advertisements or compliance advice.
+    """
+    from jusads_trends.youtube_hook_references import (
+        YouTubeHookReferenceError,
+        get_company_hook_references,
+    )
+
+    try:
+        result = await get_company_hook_references(
+            supabase, owner_email=principal.email, market=market,
+        )
+        return JSONResponse(content={
+            **result,
+            "disclaimer": "Public YouTube hook references, not verified paid ads or compliance guidance.",
+        })
+    except YouTubeHookReferenceError:
+        logger.exception("[TrendsAPI] YouTube hook reference lookup failed subject=%s", principal.subject)
+        return JSONResponse(status_code=502, content={"error": {"code": "YOUTUBE_REFERENCE_FAILED", "message": "YouTube hook references are temporarily unavailable."}})
 
 
 @router.get("/signals")

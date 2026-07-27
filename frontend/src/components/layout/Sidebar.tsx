@@ -204,7 +204,6 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
           transform: isOpen ? "translateX(0px)" : `translateX(-${SIDEBAR_WIDTH}px)`,
         }}
         aria-label="Sidebar navigation"
-        aria-hidden={!isOpen}
         inert={!isOpen}
       >
         {/* Sidebar Header with close button */}

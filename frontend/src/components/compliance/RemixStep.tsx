@@ -3,6 +3,8 @@ import type { RemixOutcome } from "@/hooks/useComplianceRemix";
 import { CheckStep } from "@/components/compliance/CheckStep";
 import { Button } from "@/components/ui/button";
 
+type RemediationSummary = { verification_status?: string; remediation_status?: string };
+
 interface RemixStepProps {
   remixNodes: RemixNodeStatus[];
   currentNode: string | null;
@@ -13,6 +15,7 @@ interface RemixStepProps {
   cannotFixData: RemixCannotFixEvent | null;
   imageEditResult: RemixImageEditEvent | null;
   editFailedData: RemixEditFailedEvent | null;
+  remediationResult?: RemediationSummary | null;
   onRetry: () => void;
   mediaType: "text" | "image" | "audio" | "video";
 }
@@ -33,6 +36,7 @@ export function RemixStep({
   cannotFixData,
   imageEditResult,
   editFailedData,
+  remediationResult,
   onRetry,
   mediaType,
 }: RemixStepProps) {
@@ -147,6 +151,19 @@ export function RemixStep({
               <Button onClick={onRetry} variant="default" size="sm" className="mt-2 self-start bg-on-error-container text-error-container hover:bg-on-error-container/90">
                 Retry Edit
               </Button>
+            </div>
+          )}
+
+          {(remediationResult?.verification_status === "pending_recheck" ||
+            remediationResult?.remediation_status === "pending_recheck") && (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
+              <span className="material-symbols-outlined text-amber-500">pending</span>
+              <div>
+                <p className="font-label-ui text-label-ui font-semibold text-amber-500">Compliance recheck pending</p>
+                <p className="mt-1 text-sm text-text-body">
+                  The remediated asset was created, but it is not compliant yet. It will only be marked compliant after the automated recheck passes.
+                </p>
+              </div>
             </div>
           )}
         </div>
