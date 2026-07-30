@@ -73,3 +73,15 @@ diagram/*.png
 .agents
 .kiro
 .tmp/
+
+# AI files
+.agents/
+.cline/
+.roo/
+Clean UP.md
+README (1).md
+design.md
+handoff.md
+docs/handoff/
+.kiro/
+agent_delivery/
