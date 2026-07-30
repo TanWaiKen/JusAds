@@ -24,6 +24,7 @@ from tavily import TavilyClient
 from config import (
     VERTEX_PROJECT_ID,
     VERTEX_LOCATION,
+    GEMINI_API_KEY,
     ELEVENLABS_API_KEY,
     TAVILY_API_KEY,
     SUPABASE_URL,
@@ -34,10 +35,14 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# -- Gemini (Vertex AI) --------------------------------------------------------
+# -- Gemini (Vertex AI / Google AI Studio) --------------------------------------
 try:
-    gemini = genai.Client(vertexai=True, project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
-    logger.info("[Clients] Gemini (Vertex AI) client initialized")
+    if GEMINI_API_KEY:
+        gemini = genai.Client(api_key=GEMINI_API_KEY)
+        logger.info("[Clients] Gemini (AI Studio) client initialized")
+    else:
+        gemini = genai.Client(vertexai=True, project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
+        logger.info("[Clients] Gemini (Vertex AI) client initialized")
 except Exception as e:  # noqa: BLE001 - resilient init, do not propagate (Req 3.1)
     logger.error("[Clients] Gemini client init failed; AI generation will degrade: %s", e)
     gemini = None

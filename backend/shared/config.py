@@ -43,6 +43,7 @@ COGNITO_CLIENT_ID = os.environ.get(
 
 # -- Google Vertex AI / Gemini -------------------------------------------------
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
 # Short-lived source/output objects for Gemini Omni Flash Interactions.  This
 # must be a bucket in the configured Vertex project; Omni cannot read the
