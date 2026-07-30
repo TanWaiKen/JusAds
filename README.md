@@ -17,6 +17,17 @@ JusAds helps marketing teams move from an advertising brief to market-ready crea
 | Analytics | Displays post performance, daily metrics, best posting times, and account summaries | Zernio analytics, Recharts |
 | Persistence | Stores users, projects, tasks, checks, violations, generated ads, profiles, and trend caches | Supabase PostgreSQL |
 
+## Screenshots
+
+### Advanced Mode Ads Generation
+![Advanced Mode Ads Generation](advanced_mode_ads_generation.png)
+
+### Compliance Result
+![Compliance Result](compliance_result.png)
+
+### Remediate Results
+![Remediate Results](remediate_results.png)
+
 ## End-to-end workflow
 
 ```mermaid
