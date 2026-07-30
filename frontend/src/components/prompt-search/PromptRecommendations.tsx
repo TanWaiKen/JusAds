@@ -10,20 +10,14 @@ import React, { useEffect, useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { Sparkles, RefreshCw, Loader2 } from "lucide-react";
-import { API_BASE } from "@/services/generationApi";
+import { getPromptRecommendations } from "@/services/mediaService";
+import type { PromptRecommendationContext } from "@/models/generation";
 import { PromptCard } from "./PromptCard";
 import { PromptSearchBox, type PromptSuggestion } from "./PromptSearchBox";
 
 gsap.registerPlugin(useGSAP);
 
-interface ProfileContext {
-  productName?: string;
-  productCategory?: string;
-  targetEthnicity?: string;
-  platform?: string;
-  ageGroup?: string;
-  userEmail?: string;
-}
+type ProfileContext = PromptRecommendationContext & { userEmail?: string };
 
 interface PromptRecommendationsProps {
   /** User's profile settings for personalized recommendations. */
@@ -32,38 +26,6 @@ interface PromptRecommendationsProps {
   onUse: (prompt: string, suggestion: PromptSuggestion) => void;
   /** Number of recommendation cards to show. */
   maxCards?: number;
-}
-
-async function fetchRecommendations(profile: ProfileContext, topK: number): Promise<PromptSuggestion[]> {
-  const params = new URLSearchParams();
-  if (profile.productName) params.set("product_name", profile.productName);
-  if (profile.productCategory) params.set("product_category", profile.productCategory);
-  if (profile.targetEthnicity) params.set("target_ethnicity", profile.targetEthnicity);
-  if (profile.platform) params.set("platform", profile.platform);
-  if (profile.ageGroup) params.set("age_group", profile.ageGroup);
-  if (profile.userEmail) params.set("user_email", profile.userEmail);
-  params.set("top_k", String(topK));
-
-  try {
-    const res = await fetch(`${API_BASE}/api/prompt-recommendations?${params.toString()}`);
-    if (!res.ok) return [];
-    const data = (await res.json()) as { recommendations?: unknown[] };
-    if (!Array.isArray(data.recommendations)) return [];
-
-    return data.recommendations.map((s) => {
-      const item = s as Record<string, unknown>;
-      return {
-        title: typeof item.title === "string" ? item.title : "",
-        description: typeof item.description === "string" ? item.description : "",
-        content: typeof item.content === "string" ? item.content : "",
-        score: typeof item.score === "number" ? item.score : 0,
-        sourceMedia: typeof item.source_media === "string" ? item.source_media : "",
-        sourceLink: typeof item.source_link === "string" ? item.source_link : "",
-      };
-    });
-  } catch {
-    return [];
-  }
 }
 
 export function PromptRecommendations({
@@ -96,7 +58,7 @@ export function PromptRecommendations({
 
     let cancelled = false;
     setLoading(true);
-    fetchRecommendations(profile, maxCards).then((results) => {
+    getPromptRecommendations(profile, maxCards).catch(() => []).then((results) => {
       if (!cancelled) {
         setRecommendations(results);
         setLoading(false);
@@ -124,7 +86,7 @@ export function PromptRecommendations({
 
   const handleRefresh = (): void => {
     setLoading(true);
-    fetchRecommendations(profile, maxCards).then((results) => {
+    getPromptRecommendations(profile, maxCards).catch(() => []).then((results) => {
       setRecommendations(results);
       setLoading(false);
     });

@@ -3,20 +3,25 @@ routes/profile.py
 ─────────────────
 User + Business profile endpoints.
 
-- GET /api/user/{email} — Get or create user record, returns is_onboarded
-- POST /api/profile — Save business profile + set is_onboarded=true on users table
-- GET /api/profile/{email} — Get business profile details
+- GET /api/account/user — Get or create the authenticated user's record
+- GET/POST /api/account/profile — Read/write the authenticated user's profile
 """
 
 import logging
 from typing import Any
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from shared.clients import supabase
+from shared.auth import Principal, get_current_principal
+from shared.zernio_key_vault import (
+    ZernioKeySecurityError,
+    decrypt_key,
+    encrypt_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +30,6 @@ router = APIRouter(prefix="/api", tags=["profile"])
 
 class BusinessProfileRequest(BaseModel):
     """Request body for creating/updating a business profile."""
-    owner_email: str
     company_name: str
     product_category: str
     product_description: str = ""
@@ -36,75 +40,78 @@ class BusinessProfileRequest(BaseModel):
 # -- User endpoints ------------------------------------------------------------
 
 
-@router.get("/user/{email}")
-async def get_or_create_user(email: str) -> JSONResponse:
+@router.get("/account/user")
+async def get_or_create_user(principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Get user record. Creates one if it doesn't exist (first login).
 
     Returns: { email, is_onboarded }
     """
     try:
-        response = supabase.table("users").select("*").eq("email", email).execute()
+        response = supabase.table("users").select("email, is_onboarded").eq("email", principal.email).execute()
         rows = response.data or []
 
         if rows:
             return JSONResponse(content=rows[0])
 
         # First time — create user record
-        insert_resp = supabase.table("users").insert({"email": email, "is_onboarded": False}).execute()
+        insert_resp = supabase.table("users").insert({"email": principal.email, "is_onboarded": False}).execute()
         if insert_resp.data:
-            logger.info("[Profile] Created new user: %s", email)
+            logger.info("[Profile] Created new user subject=%s", principal.subject)
             return JSONResponse(content=insert_resp.data[0])
 
-        return JSONResponse(content={"email": email, "is_onboarded": False})
+        return JSONResponse(content={"email": principal.email, "is_onboarded": False})
 
-    except Exception as e:
-        logger.error("[Profile] get_or_create_user failed for %s: %s", email, e)
-        return JSONResponse(content={"email": email, "is_onboarded": False})
+    except Exception:
+        logger.exception("[Profile] get_or_create_user failed subject=%s", principal.subject)
+        return JSONResponse(status_code=503, content={"error": "User profile is temporarily unavailable."})
 
 
-@router.get("/profile/{email}/onboarding-status")
-async def check_onboarding_status(email: str) -> JSONResponse:
+@router.get("/account/onboarding-status")
+async def check_onboarding_status(principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Quick check: has user completed onboarding? Uses the users table."""
     try:
-        response = supabase.table("users").select("is_onboarded").eq("email", email).execute()
+        response = supabase.table("users").select("is_onboarded").eq("email", principal.email).execute()
         rows = response.data or []
         if not rows:
             return JSONResponse(content={"onboarding_complete": False})
         return JSONResponse(content={"onboarding_complete": rows[0].get("is_onboarded", False)})
-    except Exception as e:
-        logger.error("[Profile] Onboarding check failed for %s: %s", email, e)
-        return JSONResponse(content={"onboarding_complete": False})
+    except Exception:
+        logger.exception("[Profile] Onboarding check failed subject=%s", principal.subject)
+        return JSONResponse(status_code=503, content={"error": "Onboarding status is temporarily unavailable."})
 
 
 # -- Business Profile endpoints ------------------------------------------------
 
 
-@router.get("/profile/{email}")
-async def get_profile(email: str) -> JSONResponse:
+@router.get("/account/profile")
+async def get_profile(principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Get a user's business profile."""
     try:
         response = (
             supabase.table("business_profiles")
             .select("*")
-            .eq("owner_email", email)
+            .eq("owner_email", principal.email)
             .execute()
         )
         rows = response.data or []
         if not rows:
             return JSONResponse(status_code=404, content={"error": "Profile not found"})
         return JSONResponse(content=rows[0])
-    except Exception as e:
-        logger.error("[Profile] Failed to get profile for %s: %s", email, e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception:
+        logger.exception("[Profile] Failed to get profile subject=%s", principal.subject)
+        return JSONResponse(status_code=503, content={"error": "Business profile is temporarily unavailable."})
 
 
-@router.post("/profile")
-async def create_or_update_profile(body: BusinessProfileRequest) -> JSONResponse:
+@router.post("/account/profile")
+async def create_or_update_profile(
+    body: BusinessProfileRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
     """Create/update business profile AND set users.is_onboarded = true."""
     try:
         # Upsert business profile
         profile_data = {
-            "owner_email": body.owner_email,
+            "owner_email": principal.email,
             "company_name": body.company_name,
             "product_category": body.product_category,
             "product_description": body.product_description,
@@ -122,19 +129,19 @@ async def create_or_update_profile(body: BusinessProfileRequest) -> JSONResponse
 
         # Mark user as onboarded (upsert in case user record doesn't exist)
         supabase.table("users").upsert({
-            "email": body.owner_email,
+            "email": principal.email,
             "is_onboarded": True,
         }, on_conflict="email").execute()
 
         if response.data:
-            logger.info("[Profile] Onboarding complete for %s", body.owner_email)
+            logger.info("[Profile] Onboarding complete subject=%s", principal.subject)
             return JSONResponse(status_code=200, content=response.data[0])
 
         return JSONResponse(status_code=500, content={"error": "Upsert returned no data"})
 
-    except Exception as e:
-        logger.error("[Profile] Failed to save profile for %s: %s", body.owner_email, e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception:
+        logger.exception("[Profile] Failed to save profile subject=%s", principal.subject)
+        return JSONResponse(status_code=503, content={"error": "Could not save business profile."})
 
 
 # ─── Zernio API Key Management ────────────────────────────────────────────────
@@ -147,16 +154,21 @@ class ZernioKeyRequest(BaseModel):
 
 
 def _get_stored_user_zernio_key(email: str) -> str:
-    """Fetch stored Zernio key from memory or Supabase users table."""
+    """Fetch and decrypt a user's Zernio key, migrating legacy plaintext once."""
     if email in _USER_ZERNIO_KEYS:
         return _USER_ZERNIO_KEYS[email]
     try:
         resp = supabase.table("users").select("zernio_api_key").eq("email", email).execute()
         if resp.data and resp.data[0].get("zernio_api_key"):
-            key = resp.data[0]["zernio_api_key"]
+            key, migrate_legacy_value = decrypt_key(resp.data[0]["zernio_api_key"])
+            if migrate_legacy_value:
+                supabase.table("users").update({"zernio_api_key": encrypt_key(key)}).eq("email", email).execute()
             _USER_ZERNIO_KEYS[email] = key
             return key
+    except ZernioKeySecurityError:
+        raise
     except Exception:
+        logger.exception("[Zernio] Could not read encrypted key for user")
         pass
     return ""
 
@@ -191,10 +203,27 @@ def _format_zernio_accounts(raw_accounts_data: Any) -> list[dict]:
     return accounts
 
 
-@router.get("/user/{email}/zernio")
-async def get_user_zernio_status(email: str) -> JSONResponse:
-    """Get status of user's configured Zernio API key (default = NOT CONNECTED)."""
-    key = _get_stored_user_zernio_key(email)
+@router.get("/user/zernio/connection")
+async def get_user_zernio_status(
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
+    """Get the authenticated user's Zernio connection status.
+
+    The owner is derived from the verified Cognito identity.  Never accept an
+    email in this endpoint: doing so would allow one signed-in user to query
+    or overwrite another user's publishing connection.
+    """
+    try:
+        key = _get_stored_user_zernio_key(principal.email)
+    except ZernioKeySecurityError as exc:
+        logger.error("[Zernio] Secure key storage unavailable while reading connection: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "Secure Zernio key storage is temporarily unavailable.",
+                "code": "zernio_key_storage_unavailable",
+            },
+        )
 
     if not key:
         return JSONResponse(content={
@@ -225,22 +254,38 @@ async def get_user_zernio_status(email: str) -> JSONResponse:
     })
 
 
-@router.post("/user/{email}/zernio")
-async def save_user_zernio_key(email: str, body: ZernioKeyRequest) -> JSONResponse:
-    """Save user's Zernio API key to DB and fetch live connected accounts."""
+@router.post("/user/zernio/connection")
+async def save_user_zernio_key(
+    body: ZernioKeyRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
+    """Save the authenticated user's Zernio API key and fetch live accounts."""
     raw_key = body.api_key.strip()
     if not raw_key:
         return JSONResponse(status_code=400, content={"error": "API key cannot be empty"})
 
-    # Store in-memory and attempt DB persistence
-    _USER_ZERNIO_KEYS[email] = raw_key
+    # Encrypt before persistence.  The plaintext lives only for the duration
+    # of this request and in the short-lived in-process cache used for Zernio.
+    _USER_ZERNIO_KEYS[principal.email] = raw_key
     try:
         supabase.table("users").upsert({
-            "email": email,
-            "zernio_api_key": raw_key,
+            "email": principal.email,
+            "zernio_api_key": encrypt_key(raw_key),
         }, on_conflict="email").execute()
+    except ZernioKeySecurityError as exc:
+        _USER_ZERNIO_KEYS.pop(principal.email, None)
+        logger.error("[Zernio] Secure key storage unavailable while saving connection: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "Secure Zernio key storage is temporarily unavailable.",
+                "code": "zernio_key_storage_unavailable",
+            },
+        )
     except Exception as e:
-        logger.warning("[Zernio] Failed to persist key to users table (column might be missing): %s", e)
+        _USER_ZERNIO_KEYS.pop(principal.email, None)
+        logger.exception("[Zernio] Failed to persist encrypted user key")
+        return JSONResponse(status_code=503, content={"error": "Could not securely save the Zernio API key."})
 
     masked = raw_key[:6] + "..." + raw_key[-4:] if len(raw_key) > 10 else "***"
 
@@ -262,13 +307,15 @@ async def save_user_zernio_key(email: str, body: ZernioKeyRequest) -> JSONRespon
     })
 
 
-@router.delete("/user/{email}/zernio")
-async def delete_user_zernio_key(email: str) -> JSONResponse:
-    """Remove user's Zernio API key."""
-    if email in _USER_ZERNIO_KEYS:
-        del _USER_ZERNIO_KEYS[email]
+@router.delete("/user/zernio/connection")
+async def delete_user_zernio_key(
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
+    """Remove the authenticated user's Zernio API key."""
+    if principal.email in _USER_ZERNIO_KEYS:
+        del _USER_ZERNIO_KEYS[principal.email]
     try:
-        supabase.table("users").update({"zernio_api_key": None}).eq("email", email).execute()
+        supabase.table("users").update({"zernio_api_key": None}).eq("email", principal.email).execute()
     except Exception:
         pass
     return JSONResponse(content={

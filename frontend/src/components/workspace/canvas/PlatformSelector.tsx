@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { Music2 } from "lucide-react";
-import { DEFAULT_PLATFORM, type TargetPlatform } from "@/services/generationApi";
+import { DEFAULT_PLATFORM, type TargetPlatform } from "@/services/generationService";
 
 gsap.registerPlugin(useGSAP);
 

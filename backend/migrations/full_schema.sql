@@ -14,7 +14,6 @@
 --   4. violations (FK → compliance_checks.task_id)
 --   5. ad_policy_rules (no FK)
 --   6. personas (no FK)
---   7. pipeline_progress (task_id references tasks)
 --   8. platform_rules (no FK)
 --   9. chat_messages (FK → tasks)
 --   10. storyboard_scenes (FK → projects, optional task_id)
@@ -188,6 +187,7 @@ CREATE TABLE IF NOT EXISTS public.ad_policy_rules (
     framework text NOT NULL,
     category text NOT NULL,
     rule_title text NOT NULL,
+    evidence_urls jsonb NOT NULL DEFAULT '[]',
     rule_text text NOT NULL,
     applies_to text NOT NULL,
     enforcement text NOT NULL,
@@ -234,40 +234,7 @@ CREATE INDEX IF NOT EXISTS idx_personas_market_ethnicity
     ON public.personas(market, ethnicity);
 
 
--- ─── 7. pipeline_progress ────────────────────────────────────────────────────
--- Frontend polls this instead of WebSocket. Each pipeline node writes here.
-
-CREATE TABLE IF NOT EXISTS public.pipeline_progress (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    task_id uuid NOT NULL,
-    step_name text NOT NULL,
-    status text NOT NULL CHECK (status IN ('running', 'completed', 'error')),
-    message text CHECK (char_length(message) <= 1000),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT pipeline_progress_pkey PRIMARY KEY (id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_pipeline_progress_task_id
-    ON public.pipeline_progress(task_id);
-
--- Auto-update updated_at trigger
-CREATE OR REPLACE FUNCTION update_pipeline_progress_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_pipeline_progress_updated_at ON public.pipeline_progress;
-CREATE TRIGGER trg_pipeline_progress_updated_at
-    BEFORE UPDATE ON public.pipeline_progress
-    FOR EACH ROW
-    EXECUTE FUNCTION update_pipeline_progress_updated_at();
-
-
--- ─── 8. platform_rules ───────────────────────────────────────────────────────
+-- ─── 7. platform_rules ───────────────────────────────────────────────────────
 -- Platform-specific format requirements (aspect ratio, duration, file size).
 
 CREATE TABLE IF NOT EXISTS public.platform_rules (
@@ -309,29 +276,6 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_created
 
 -- ─── 10. storyboard_scenes ───────────────────────────────────────────────────
 -- Per-cut tracking for multi-scene video generation. Resume on timeout.
-
-CREATE TABLE IF NOT EXISTS public.storyboard_scenes (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    project_id uuid NOT NULL,
-    task_id uuid,
-    scene_index integer NOT NULL,
-    timestamp_start numeric NOT NULL,
-    timestamp_end numeric NOT NULL,
-    visual_prompt text NOT NULL,
-    audio_script text,
-    s3_anchor_image_key text,
-    s3_raw_video_key text,
-    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'generating', 'completed', 'failed')),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT storyboard_scenes_pkey PRIMARY KEY (id),
-    CONSTRAINT storyboard_scenes_project_id_fkey FOREIGN KEY (project_id)
-        REFERENCES public.projects(id) ON DELETE CASCADE,
-    CONSTRAINT storyboard_scenes_private_key_values CHECK (
-        COALESCE(s3_anchor_image_key, '') !~* '^https?://'
-        AND COALESCE(s3_raw_video_key, '') !~* '^https?://'
-    )
-);
 
 CREATE INDEX IF NOT EXISTS idx_storyboard_scenes_project
     ON public.storyboard_scenes(project_id);
@@ -461,6 +405,7 @@ CREATE TABLE IF NOT EXISTS public.trends_cache (
     platform text NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube', 'facebook_ads')),
     content_type text NOT NULL,
     title text NOT NULL,
+    evidence_urls jsonb NOT NULL DEFAULT '[]',
     url text NOT NULL,
     engagement_metrics jsonb NOT NULL DEFAULT '{}',
     hashtags text[] DEFAULT '{}',
@@ -520,29 +465,29 @@ CREATE TABLE IF NOT EXISTS public.cultural_events (
     event_type text NOT NULL CHECK (event_type IN ('religious', 'festive', 'sports', 'national', 'global')),
     tags text[] DEFAULT '{}',
     impact_score integer CHECK (impact_score >= 0 AND impact_score <= 100),
+    source text NOT NULL DEFAULT 'manual',
+    source_event_id text,
+    source_updated_at timestamptz,
+    source_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    last_synced_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT cultural_events_pkey PRIMARY KEY (id)
+    CONSTRAINT cultural_events_pkey PRIMARY KEY (id),
+    CONSTRAINT cultural_events_source_event_unique UNIQUE (source, source_event_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_cultural_events_market_date
     ON public.cultural_events(market, start_date);
 CREATE INDEX IF NOT EXISTS idx_cultural_events_type
     ON public.cultural_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_cultural_events_source_sync
+    ON public.cultural_events(source, last_synced_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cultural_events_source_end_date
+    ON public.cultural_events(source, end_date);
 
 
 -- ─── 16. post_statistics_cache ───────────────────────────────────────────────
 -- ─── 17. tavily_usage_log ────────────────────────────────────────────────────
 -- Audit log for Tavily API invocations (cost monitoring).
-
-CREATE TABLE IF NOT EXISTS public.tavily_usage_log (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    task_id uuid NOT NULL,
-    query text NOT NULL,
-    results_count integer DEFAULT 0,
-    search_depth text NOT NULL DEFAULT 'advanced',
-    invoked_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT tavily_usage_log_pkey PRIMARY KEY (id)
-);
 
 CREATE INDEX IF NOT EXISTS idx_tavily_usage_task
     ON public.tavily_usage_log(task_id);
@@ -556,6 +501,7 @@ CREATE TABLE IF NOT EXISTS public.creative_trend_signals (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     signal_type text NOT NULL CHECK (signal_type IN ('sound', 'music', 'dance_or_challenge', 'hook', 'meme_or_phrase', 'format_or_template', 'visual_style', 'creator_behavior', 'hashtag_or_topic', 'seasonal_or_cultural_moment')),
     title text NOT NULL,
+    evidence_urls jsonb NOT NULL DEFAULT '[]',
     summary text NOT NULL,
     why_trending text,
     how_it_works text,
@@ -571,15 +517,6 @@ CREATE TABLE IF NOT EXISTS public.creative_trend_signals (
     detected_at timestamptz NOT NULL DEFAULT now(),
     created_at timestamptz NOT NULL DEFAULT now()
 );
-
-CREATE TABLE IF NOT EXISTS public.creative_trend_sources (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    signal_id uuid NOT NULL REFERENCES public.creative_trend_signals(id) ON DELETE CASCADE,
-    url text NOT NULL,
-    source_title text,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_creative_trend_sources_signal ON public.creative_trend_sources(signal_id);
 
 CREATE TABLE IF NOT EXISTS public.daily_creative_ideas (
     idea_date date NOT NULL,

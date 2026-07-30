@@ -1,4 +1,4 @@
-import type { NodeStatus } from "@/services/complianceApi";
+import type { NodeStatus } from "@/services/complianceService";
 
 interface PipelineStatusIndicatorProps {
   nodeStatuses: NodeStatus[];

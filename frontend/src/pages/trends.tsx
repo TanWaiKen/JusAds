@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
@@ -16,18 +16,19 @@ import {
   AlertCircle,
   MapPin,
   RefreshCw,
+  ArrowRight,
+  Clock3,
+  Target,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
-  fetchTrends,
-  researchTrends,
-  refreshTrends,
-  fetchCulturalEvents,
-  fetchCreativeSignals,
-  researchCreativeSignals,
-  fetchYouTubeHookReferences,
-} from "@/services/trendsApi";
-import type { CreativeTrendSignal, TrendItem, CulturalEvent, YouTubeHookReference } from "@/services/trendsApi";
-import type { TrendBrief } from "@/services/session";
+  findCreativeIdeas,
+  loadTrendsDashboard,
+  refreshTrendResearch,
+} from "@/services/trendsService";
+import type { CreativeTrendSignal, TrendItem, CulturalEvent, DailyCreativeIdea } from "@/models/trends";
+import type { TrendBrief } from "@/lib/sessionStorage";
 import { useAuth } from "@/hooks/useAuth";
 
 gsap.registerPlugin(useGSAP);
@@ -79,6 +80,9 @@ const EVENT_TYPE_COLORS: Record<string, string> = {
   global: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300",
 };
 
+const EVENTS_PER_PAGE = 4;
+const SOURCES_PER_PAGE = 8;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatCount(n: number): string {
@@ -89,6 +93,26 @@ function formatCount(n: number): string {
 
 function formatDate(d: string): string {
   return new Date(d).toLocaleDateString("en-MY", { day: "numeric", month: "short" });
+}
+
+function formatDateTime(d?: string): string | null {
+  if (!d) return null;
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString("en-MY", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function getPlanObjective(plan: DailyCreativeIdea): string {
+  const text = `${plan.title} ${plan.idea} ${plan.hook}`.toLowerCase();
+  if (/buy|shop|order|sale|discount|promo|register|sign up|book now/.test(text)) {
+    return "Conversion / action";
+  }
+  return "Awareness & engagement";
 }
 
 function getYouTubeThumbnail(url: string): string | null {
@@ -108,7 +132,7 @@ function getYouTubeThumbnail(url: string): string | null {
       }
     }
 
-    return videoId && /^[A-Za-z0-9_-]{11}$/.test(videoId)
+    return videoId && videoId !== "placeholder" && /^[A-Za-z0-9_-]{11}$/.test(videoId)
       ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
       : null;
   } catch {
@@ -134,10 +158,8 @@ interface TrendCardProps {
 function TrendCard({ item }: TrendCardProps) {
   const views = item.engagement_metrics?.views;
   const previewUrl = getYouTubeThumbnail(item.url);
-  const [previewFailed, setPreviewFailed] = useState(false);
-  const showPreview = Boolean(previewUrl) && !previewFailed;
-
-  useEffect(() => setPreviewFailed(false), [previewUrl]);
+  const [failedPreviewUrl, setFailedPreviewUrl] = useState<string | null>(null);
+  const showPreview = Boolean(previewUrl) && failedPreviewUrl !== previewUrl;
 
   return (
     <article className="trend-card self-start bg-surface-elevated border border-border-default rounded-xl overflow-hidden group hover:border-accent-blue/40 transition-all duration-200 shadow-xs retina-border">
@@ -154,7 +176,7 @@ function TrendCard({ item }: TrendCardProps) {
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
-            onError={() => setPreviewFailed(true)}
+            onError={() => setFailedPreviewUrl(previewUrl)}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           />
           <span className="absolute inset-0 flex items-center justify-center bg-black/10">
@@ -268,13 +290,16 @@ function CreativeSignalCard({ signal, onUseInCampaign }: CreativeSignalCardProps
 
 interface EventCardProps {
   event: CulturalEvent;
+  todayTimestamp: number;
 }
 
-function EventCard({ event }: EventCardProps) {
+function EventCard({ event, todayTimestamp }: EventCardProps) {
   const daysUntil = Math.ceil(
-    (new Date(event.start_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    (new Date(event.start_date).getTime() - todayTimestamp) / (1000 * 60 * 60 * 24)
   );
   const typeColor = EVENT_TYPE_COLORS[event.event_type] ?? "bg-gray-100 text-gray-700";
+  const sourceUrl = event.source_payload?.source_url;
+  const isOfficialCalendar = event.source === "official_calendar_2026";
 
   return (
     <article className="event-card rounded-xl border border-border-default bg-surface-card p-4 shadow-xs">
@@ -293,7 +318,51 @@ function EventCard({ event }: EventCardProps) {
         </span>
         <span className="text-[11px] font-semibold text-text-body">Relevance {event.impact_score}</span>
       </div>
+      {isOfficialCalendar && (
+        <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-text-caption">
+          <span>Verified official calendar</span>
+          {sourceUrl && (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-accent-blue hover:underline"
+            >
+              Source
+            </a>
+          )}
+        </div>
+      )}
     </article>
+  );
+}
+
+interface PaginationProps {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+  label: string;
+}
+
+function Pagination({ page, pageSize, totalItems, onPageChange, label }: PaginationProps) {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
+  const start = page * pageSize + 1;
+  const end = Math.min((page + 1) * pageSize, totalItems);
+
+  return (
+    <div className="mt-4 flex items-center justify-between text-[11px] text-text-caption">
+      <span>{start}–{end} of {totalItems}</span>
+      <div className="flex gap-1">
+        <button type="button" onClick={() => onPageChange(page - 1)} disabled={page === 0} aria-label={`Previous ${label} page`} className="rounded-md border border-border-default p-1 disabled:opacity-40">
+          <ChevronLeft size={14} aria-hidden="true" />
+        </button>
+        <button type="button" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages - 1} aria-label={`Next ${label} page`} className="rounded-md border border-border-default p-1 disabled:opacity-40">
+          <ChevronRight size={14} aria-hidden="true" />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -313,6 +382,8 @@ export default function DashboardTrends() {
   const [freshness, setFreshness] = useState("unavailable");
   const [researchSources, setResearchSources] = useState<Array<{ url: string; title?: string }>>([]);
   const [events, setEvents] = useState<CulturalEvent[]>([]);
+  const [eventSourceCounts, setEventSourceCounts] = useState<Record<string, number>>({});
+  const [latestPredictHqSync, setLatestPredictHqSync] = useState<string | null>(null);
   const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -323,66 +394,65 @@ export default function DashboardTrends() {
   const [creativeSignals, setCreativeSignals] = useState<CreativeTrendSignal[]>([]);
   const [signalMessage, setSignalMessage] = useState<string | null>(null);
   const [isSignalResearching, setIsSignalResearching] = useState(false);
-  const [youtubeHooks, setYoutubeHooks] = useState<YouTubeHookReference[]>([]);
+  const [dailyIdea, setDailyIdea] = useState<DailyCreativeIdea | null>(null);
+  const [dailyIdeaError, setDailyIdeaError] = useState<string | null>(null);
+  const [youtubeHookReferenceCount, setYoutubeHookReferenceCount] = useState(0);
   const [youtubeHooksCached, setYoutubeHooksCached] = useState<boolean | null>(null);
+  const [eventPage, setEventPage] = useState(0);
+  const [sourcePage, setSourcePage] = useState(0);
+  const [todayTimestamp] = useState(() => Date.now());
 
   const allItems = Object.values(trendsData).flat();
   const filteredItems = platform ? (trendsData[platform] ?? []) : allItems;
+  // A small verified calendar layer must not be buried behind a noisy event
+  // feed. Show it first, then preserve chronological order within each group.
+  const displayedEvents = useMemo(() => [...events].sort((a, b) => {
+    const sourcePriority = Number(b.source === "official_calendar_2026") - Number(a.source === "official_calendar_2026");
+    return sourcePriority || a.start_date.localeCompare(b.start_date);
+  }), [events]);
+  const pagedEvents = displayedEvents.slice(eventPage * EVENTS_PER_PAGE, (eventPage + 1) * EVENTS_PER_PAGE);
+  const pagedItems = filteredItems.slice(sourcePage * SOURCES_PER_PAGE, (sourcePage + 1) * SOURCES_PER_PAGE);
 
   const handleResearch = useCallback(async () => {
     setIsResearching(true);
     setError(null);
     try {
-      const trendsRes = await researchTrends(ownerEmail, eventMarket, platform);
-      setTrendsData(trendsRes.trends || {});
-      setLastRefresh(trendsRes.last_refresh || {});
-      setResearchProvider(trendsRes.research_provider || "none");
-      setFreshness(trendsRes.freshness || "unavailable");
-      setResearchSources(trendsRes.research_sources || []);
-      setTotalItems(trendsRes.total_items || 0);
-      setEmptyMessage(trendsRes.message ?? null);
+      const summary = await refreshTrendResearch({ ownerEmail, market: eventMarket });
+      if (summary.status === "partial") setError(summary.message);
+      await loadData();
     } catch {
       setError("Research request failed. Please try again.");
     } finally {
       setIsResearching(false);
     }
-  }, [ownerEmail, eventMarket, platform]);
+  // `loadData` is declared below this callback. Referencing it in the hook
+  // dependency expression triggers a temporal-dead-zone error during render;
+  // it is safely resolved only when the user invokes this handler.
+  }, [ownerEmail, eventMarket]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [trendsRes, eventsRes, signalsRes, youtubeHooksRes] = await Promise.all([
-        fetchTrends(platform || undefined, eventMarket, 30, ownerEmail || undefined),
-        fetchCulturalEvents(eventMarket === "all" ? undefined : eventMarket, 60),
-        fetchCreativeSignals(ownerEmail, eventMarket, platform || undefined).catch((): { signals: CreativeTrendSignal[]; count: number; message?: string } => ({ signals: [], count: 0 })),
-        fetchYouTubeHookReferences(eventMarket).catch(() => null),
-      ]);
-      const cachedTrends = Array.isArray(trendsRes.trends) ? {} : trendsRes.trends;
-      const hookItems: TrendItem[] = (youtubeHooksRes?.items || []).map((item) => ({
-        id: `youtube-hook-${item.video_id}`,
-        title: item.title,
-        url: item.watch_url,
-        platform: "youtube",
-        content_type: "video",
-        engagement_metrics: { views: 0, likes: 0, shares: 0, comments: 0 },
-        hashtags: ["hook-reference"],
-        categories: ["company-context", "hook-reference"],
-        cultural_event_tag: null,
-        scraped_at: youtubeHooksRes?.fetched_at || new Date().toISOString(),
-      }));
-      setTrendsData({ ...cachedTrends, youtube: [...hookItems, ...(cachedTrends.youtube || [])] });
-      setYoutubeHooks(youtubeHooksRes?.items || []);
-      setYoutubeHooksCached(youtubeHooksRes?.cached ?? null);
-      setLastRefresh(trendsRes.last_refresh || {});
+      const data = await loadTrendsDashboard({ ownerEmail, market: eventMarket, platform });
+      setTrendsData(data.trendsData);
+      setDailyIdea(data.dailyIdea);
+      setDailyIdeaError(data.dailyIdea ? null : "No campaign recommendation yet.");
+      setYoutubeHookReferenceCount(data.youtubeHookReferenceCount);
+      setYoutubeHooksCached(data.youtubeHooksCached);
+      setLastRefresh(data.lastRefresh);
       setResearchProvider("cache");
-      setFreshness(Object.keys(cachedTrends).length > 0 ? "cached" : "unavailable");
+      setFreshness(Object.keys(data.trendsData).length > 0 ? "cached" : "unavailable");
       setResearchSources([]);
-      setTotalItems((trendsRes.total_items || 0) + hookItems.length);
-      setEmptyMessage(trendsRes.message ?? null);
-      setEvents(eventsRes.events || []);
-      setCreativeSignals(signalsRes.signals || []);
-      setSignalMessage(signalsRes.message ?? null);
+      setTotalItems(data.totalItems);
+      setEmptyMessage(data.emptyMessage);
+      setEvents(data.events);
+      setEventSourceCounts(data.eventSourceCounts);
+      setLatestPredictHqSync(data.latestPredictHqSync);
+      setCreativeSignals(data.creativeSignals);
+      setSignalMessage(data.signalMessage);
+      setEventPage(0);
+      setSourcePage(0);
     } catch {
       setError("Failed to load saved trend research. Please try again.");
     } finally {
@@ -394,7 +464,10 @@ export default function DashboardTrends() {
     setIsRefreshing(true);
     setError(null);
     try {
-      await refreshTrends(ownerEmail, eventMarket);
+      const summary = await refreshTrendResearch({ ownerEmail, market: eventMarket });
+      if (summary.status === "partial") {
+        setError(summary.message);
+      }
       // After refresh completes, reload the page data to show new results
       await loadData();
     } catch {
@@ -408,7 +481,7 @@ export default function DashboardTrends() {
     setIsSignalResearching(true);
     setError(null);
     try {
-      const response = await researchCreativeSignals(ownerEmail, eventMarket, platform || undefined);
+      const response = await findCreativeIdeas({ ownerEmail, market: eventMarket, platform });
       setCreativeSignals(response.signals || []);
       setSignalMessage(response.message ?? null);
     } catch {
@@ -430,7 +503,22 @@ export default function DashboardTrends() {
     navigate("/dashboard/new", { state: { trendBrief } });
   }, [navigate]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const handleUseDailyPlan = useCallback(() => {
+    if (!dailyIdea) return;
+    navigate("/dashboard/new", { state: { trendBrief: {
+      signalId: `daily-plan:${dailyIdea.market}:${dailyIdea.idea_date}`,
+      title: dailyIdea.title,
+      signalType: "seasonal_or_cultural_moment",
+      suggestedAdaptation: `${dailyIdea.idea} Opening hook: ${dailyIdea.hook} Recommended format: ${dailyIdea.format}`,
+      doNotDo: "Do not invent unsupported product claims, discounts, or event affiliations.",
+      evidenceUrls: dailyIdea.source_urls,
+    } } });
+  }, [dailyIdea, navigate]);
+
+  useEffect(() => {
+    const requestId = window.setTimeout(() => { void loadData(); }, 0);
+    return () => window.clearTimeout(requestId);
+  }, [loadData]);
 
   useGSAP(() => {
     if (isLoading) return;
@@ -471,22 +559,11 @@ export default function DashboardTrends() {
 
           <h1 className="mb-1 text-[24px] font-semibold tracking-tight text-text-heading">Content ideas</h1>
 
-          <p className="mb-4 max-w-2xl text-sm text-text-caption">
+          <p className="max-w-2xl text-sm text-text-caption">
             {totalItems > 0
-              ? "Find timely inspiration and review the original source before using it."
-              : "Find timely inspiration for your next ad."}
+              ? "Browse research and review the original source before using it."
+              : "Browse research for your next ad."}
           </p>
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleResearch}
-              disabled={isResearching || isLoading}
-              className="bg-text-primary text-white dark:bg-white dark:text-text-primary px-5 py-2 rounded-lg font-semibold text-[14px] hover:opacity-90 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Sparkles size={16} className={isResearching ? "animate-spin" : ""} />
-              {isResearching ? "Finding ideas..." : "Find ideas"}
-            </button>
-          </div>
         </section>
 
         {/* ── Error Banner ────────────────────────────────────────────────── */}
@@ -499,7 +576,7 @@ export default function DashboardTrends() {
 
         {/* ── Event Calendar (full width) ─────────────────────────────────── */}
         <section className="bg-surface-elevated border border-border-default rounded-2xl p-5 retina-border shadow-xs">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-5">
             <div>
               <h3 className="font-bold text-base text-text-heading flex items-center gap-2">
                 <Calendar size={18} className="text-accent-blue" />
@@ -509,18 +586,34 @@ export default function DashboardTrends() {
                 <MapPin size={11} />
                 Next 60 days in {MARKET_OPTIONS.find(m => m.value === eventMarket)?.label ?? eventMarket}
               </p>
+              <p className="mt-1 text-[11px] text-text-caption">
+                {latestPredictHqSync
+                  ? `PredictHQ last refreshed ${formatDate(latestPredictHqSync)} · ${eventSourceCounts.predicthq ?? 0} imported events in this view.`
+                  : "No PredictHQ import has completed yet; this view currently uses curated calendar data only."}
+              </p>
             </div>
-            <select
-              value={eventMarket}
-              onChange={(e) => setEventMarket(e.target.value)}
-              className="bg-surface-inset border border-border-default rounded-lg text-[13px] py-1.5 px-3 text-text-body cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-blue/20"
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <select
+                value={eventMarket}
+                onChange={(e) => {
+                  setEventMarket(e.target.value);
+                  setEventPage(0);
+                  setSourcePage(0);
+                }}
+                className="bg-surface-inset border border-border-default rounded-lg text-[13px] py-1.5 px-3 text-text-body cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-blue/20"
+              >
+                {MARKET_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+              <button
+              type="button"
+              onClick={handleResearch}
+              disabled={isResearching || isLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-border-default bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-text-heading transition-colors hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {MARKET_OPTIONS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+              <Sparkles size={14} className={isResearching ? "animate-spin" : ""} />
+              {isResearching ? "Refreshing…" : "Refresh research"}
+              </button>
+            </div>
           </div>
 
           {isLoading ? (
@@ -530,14 +623,17 @@ export default function DashboardTrends() {
               ))}
             </div>
           ) : events.length === 0 ? (
-            <p className="text-text-caption text-[13px] py-4">No upcoming events found.</p>
+            <p className="text-text-caption text-[13px] py-4">
+              No events are stored for this market in the selected window. {latestPredictHqSync ? "PredictHQ has run; expand the date range or choose another market." : "Run the PredictHQ importer before treating this as an empty market."}
+            </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {events.slice(0, 6).map((ev) => (
-                <EventCard key={ev.id} event={ev} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {pagedEvents.map((ev) => (
+                <EventCard key={ev.id} event={ev} todayTimestamp={todayTimestamp} />
               ))}
             </div>
           )}
+          <Pagination page={eventPage} pageSize={EVENTS_PER_PAGE} totalItems={displayedEvents.length} onPageChange={setEventPage} label="moments" />
         </section>
 
         {/* ── Creative Trend Signals ─────────────────────────────────────── */}
@@ -559,18 +655,118 @@ export default function DashboardTrends() {
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-text-primary px-4 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-text-primary"
             >
               <Sparkles size={14} className={isSignalResearching ? "animate-spin" : ""} />
-              {isSignalResearching ? "Finding ideas..." : "Find ad ideas"}
+              {isSignalResearching ? "Generating ideas..." : "Generate campaign ideas"}
             </button>
           </div>
           {creativeSignals.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border-default bg-surface-elevated p-5 text-sm text-text-caption">
-              {signalMessage ?? "No saved ad ideas yet. Select Find ad ideas to get started."}
+              {signalMessage ?? "No saved ad ideas yet. Generate campaign ideas to get started."}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {creativeSignals.map((signal) => (
                 <CreativeSignalCard key={signal.id} signal={signal} onUseInCampaign={handleUseSignalInCampaign} />
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-border-default bg-surface-elevated shadow-xs retina-border">
+          <div className="border-b border-border-default bg-gradient-to-r from-amber-50 via-surface-elevated to-surface-elevated px-5 py-5 dark:from-amber-950/20">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                    <Sparkles size={17} aria-hidden="true" />
+                  </span>
+                  <h3 className="text-base font-bold text-text-heading">Campaign planner</h3>
+                  <p className="mt-1 text-xs text-text-caption">Uses only upcoming events with relevance 70/100 or higher. Relevance is the normalized event rank from PredictHQ or the manual event source—not an AI confidence score.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {!dailyIdea ? (
+            <div className="p-5">
+              <div className="rounded-xl border border-dashed border-border-default bg-surface-inset p-5 text-sm text-text-caption">
+                <p className="font-semibold text-text-body">No campaign recommendation is ready yet</p>
+                <p className="mt-1">{dailyIdeaError ?? "Loading…"}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="p-5">
+              <div className="mb-5 flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                  {dailyIdea.market}
+                </span>
+                <span className="rounded-full bg-surface-inset px-2.5 py-1 font-medium capitalize text-text-caption">
+                  {dailyIdea.confidence} confidence
+                </span>
+                {dailyIdea.event_name && (
+                  <span className="rounded-full bg-surface-inset px-2.5 py-1 font-medium text-text-caption">
+                    Timed to: {dailyIdea.event_name}
+                  </span>
+                )}
+                {formatDateTime(dailyIdea.generated_at) && (
+                  <span className="ml-auto inline-flex items-center gap-1 text-text-caption">
+                    <Clock3 size={12} aria-hidden="true" />
+                    Generated {formatDateTime(dailyIdea.generated_at)}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+                <div>
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300">Recommended campaign</p>
+                  <h4 className="text-xl font-bold tracking-tight text-text-heading">{dailyIdea.title}</h4>
+                  <p className="mt-3 text-sm leading-6 text-text-body">{dailyIdea.idea}</p>
+                  {dailyIdea.why_today && (
+                    <div className="mt-4 rounded-xl border border-border-default bg-surface-inset px-4 py-3 text-xs leading-5 text-text-caption">
+                      <strong className="text-text-heading">Why now: </strong>{dailyIdea.why_today}
+                    </div>
+                  )}
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-border-default p-3">
+                      <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-text-caption"><Target size={12} aria-hidden="true" /> Recommended objective</span>
+                      <p className="mt-1.5 text-sm font-semibold text-text-heading">{getPlanObjective(dailyIdea)}</p>
+                    </div>
+                    <div className="rounded-xl border border-border-default p-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-text-caption">Recommended format</span>
+                      <p className="mt-1.5 text-sm font-semibold text-text-heading">{dailyIdea.format}</p>
+                    </div>
+                    <div className="rounded-xl border border-border-default p-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-text-caption">Opening hook</span>
+                      <p className="mt-1.5 text-sm font-semibold leading-5 text-text-heading">{dailyIdea.hook}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <aside className="rounded-xl border border-border-default bg-surface-inset p-4">
+                  <h5 className="text-sm font-bold text-text-heading">Execution checklist</h5>
+                  {dailyIdea.execution_steps.length > 0 ? (
+                    <ol className="mt-3 space-y-3">
+                      {dailyIdea.execution_steps.slice(0, 4).map((step, index) => (
+                        <li key={`${index}-${step}`} className="flex gap-2.5 text-xs leading-5 text-text-body">
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{index + 1}</span>
+                          <span>{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="mt-3 text-xs leading-5 text-text-caption">Use the objective, format and opening hook to turn this recommendation into your campaign brief.</p>
+                  )}
+                  <div className="mt-5 border-t border-border-default pt-4">
+                    <button type="button" onClick={handleUseDailyPlan} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-text-primary px-4 py-2.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 dark:bg-white dark:text-text-primary">
+                      Use in campaign <ArrowRight size={14} aria-hidden="true" />
+                    </button>
+                  </div>
+                </aside>
+              </div>
+
+              <div className="mt-5 border-t border-border-default pt-4 text-[11px] text-text-caption">
+                {dailyIdea.source_urls.length > 0 && `${dailyIdea.source_urls.length} source link${dailyIdea.source_urls.length === 1 ? "" : "s"}`}
+              </div>
             </div>
           )}
         </section>
@@ -588,9 +784,20 @@ export default function DashboardTrends() {
               )}
             </h3>
             <div className="flex items-center gap-2">
+              {youtubeHookReferenceCount > 0 && (
+                <span
+                  title={youtubeHooksCached ? "Saved YouTube/Reels hook references" : "Fresh YouTube/Reels hook references"}
+                  className="rounded-full bg-surface-inset px-2 py-1 text-[10px] font-semibold text-text-caption"
+                >
+                  YouTube/Reels refs · {youtubeHookReferenceCount}
+                </span>
+              )}
               <select
                 value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
+                onChange={(e) => {
+                  setPlatform(e.target.value);
+                  setSourcePage(0);
+                }}
                 className="bg-surface-inset border border-border-default rounded-lg text-[13px] py-1.5 px-3 text-text-body cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent-blue/20"
               >
                 {PLATFORMS.map((p) => (
@@ -604,16 +811,10 @@ export default function DashboardTrends() {
                 title="Refresh Sources"
               >
                 <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
-                {isRefreshing ? "Refreshing..." : "Refresh"}
+                {isRefreshing ? "Refreshing..." : "Refresh sources"}
               </button>
             </div>
           </div>
-
-          {youtubeHooks.length > 0 && (
-            <p className="-mt-2 mb-4 text-xs text-text-caption">
-              {youtubeHooksCached ? "Using saved YouTube hook references for your company context." : "Fresh YouTube hook references saved for your company context."}
-            </p>
-          )}
 
           {isLoading && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -641,10 +842,13 @@ export default function DashboardTrends() {
 
           {!isLoading && filteredItems.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-              {filteredItems.slice(0, 16).map((item) => (
+              {pagedItems.map((item) => (
                 <TrendCard key={item.id} item={item} />
               ))}
             </div>
+          )}
+          {!isLoading && filteredItems.length > 0 && (
+            <Pagination page={sourcePage} pageSize={SOURCES_PER_PAGE} totalItems={filteredItems.length} onPageChange={setSourcePage} label="sources" />
           )}
 
           {Object.keys(lastRefresh).length > 0 && (

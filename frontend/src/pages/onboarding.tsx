@@ -9,8 +9,7 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { Building2, Package, Globe, MonitorPlay, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "@/hooks/useAuth";
-import { API_BASE } from "@/lib/apiConfig";
+import { saveBusinessProfile } from "@/services/accountService";
 
 gsap.registerPlugin(useGSAP);
 
@@ -51,7 +50,6 @@ const MARKETS = [
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [companyName, setCompanyName] = useState("");
@@ -90,23 +88,14 @@ export default function OnboardingPage() {
     }
 
     setIsSubmitting(true);
-    const email = user?.profile?.email ?? "anonymous";
-
     try {
-      const res = await fetch(`${API_BASE}/api/profile`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          owner_email: email,
+      await saveBusinessProfile({
           company_name: companyName.trim(),
           product_category: productCategory,
           product_description: productDescription.trim(),
           target_platforms: selectedPlatforms,
           target_markets: selectedMarkets,
-        }),
       });
-
-      if (!res.ok) throw new Error("Failed to save profile");
 
       toast.success("Profile saved! Welcome to JusAds.");
       // Redirect to dashboard home which will trigger status refresh

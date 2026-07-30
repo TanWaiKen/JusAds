@@ -17,6 +17,8 @@ _MARKET_REGION_CODES = {
     "vietnam": "VN", "philippines": "PH",
 }
 _SPACE = re.compile(r"\s+")
+_QUERY_WORD = re.compile(r"[A-Za-z0-9]+")
+_GENERIC_CATEGORY_WORDS = frozenset({"product", "products", "service", "services", "other", "general"})
 
 
 def market_region_code(market: str) -> str:
@@ -49,10 +51,75 @@ def profile_fingerprint(profile: dict[str, Any], market: str) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def _category_terms(category: str) -> list[str]:
+    """Return meaningful category words suitable for a four-word query."""
+
+    return [
+        word.casefold()
+        for word in _QUERY_WORD.findall(category)
+        if len(word) > 1 and word.casefold() not in _GENERIC_CATEGORY_WORDS
+    ][:2]
+
+
+def normalise_hook_query(candidate: str, category: str) -> str | None:
+    """Accept only short LLM queries that retain the product category.
+
+    The LLM is allowed to choose hook language, but it must not turn a
+    product-specific search into an unhelpful generic query such as
+    ``Malaysia viral hooks``.
+    """
+
+    words = _QUERY_WORD.findall(candidate or "")
+    if not words or len(words) > 4:
+        return None
+    category_terms = _category_terms(category)
+    if category_terms and not any(word.casefold() in category_terms for word in words):
+        return None
+    return " ".join(words)
+
+
+def _fallback_hook_query(category: str, company: str, market: str) -> str:
+    category_words = _category_terms(category)
+    if category_words:
+        return " ".join([*category_words, _clean(market, 32) or "Malaysia", "hook"]).strip()
+    fallback = _clean(company, 40) or "consumer product"
+    return f"{fallback} {_clean(market, 32) or 'Malaysia'} marketing hook"[:100]
+
+
 def build_hook_query(profile: dict[str, Any], market: str) -> str:
     """Build a YouTube query for popular short-form creative hook references."""
+    category = _clean(profile.get("product_category"), 80)
+    company = _clean(profile.get("company_name"), 80)
+    description = _clean(profile.get("product_description"), 300)
+    
+    prompt = f"""You are an expert YouTube marketer. Generate a highly effective, short YouTube search query (maximum 4 words) to find viral, trending short-form advertising hooks in the {market.strip() or 'Malaysia'} market for this product.
+Do NOT use quotes. Do NOT explain. Just return the raw query string.
+If a category is provided, you MUST include at least one category word in the query.
 
-    return f"{company_context(profile)} {market.strip() or 'Malaysia'} popular advertising hook"[:350]
+Product/Company: {company}
+Category: {category}
+Description: {description}"""
+
+    try:
+        from shared.clients import gemini
+        from shared.config import SMALL_TEXT_MODEL
+        import logging
+        if gemini:
+            response = gemini.models.generate_content(
+                model=SMALL_TEXT_MODEL,
+                contents=prompt,
+            )
+            query = normalise_hook_query(response.text.strip().strip('"').strip("'"), category)
+            if query:
+                logging.getLogger(__name__).info("Generated AI YouTube query: %s", query)
+                return query
+            logging.getLogger(__name__).warning("AI query omitted the required category; using category-led fallback")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("AI query generation failed, falling back to static query: %s", e)
+
+    # Fallback to static generation
+    return _fallback_hook_query(category, company, market)
 
 
 def serialise_video(video: Any) -> dict[str, str]:

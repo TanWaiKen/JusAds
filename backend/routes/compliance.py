@@ -145,7 +145,10 @@ async def _stream_pipeline_events(pipeline, state: Compliance_State, task_id: st
             publish({"type": "pipeline_complete", "final_state": final_state})
         except Exception as exc:
             logger.exception("[Pipeline] Graph failed for %s", task_id)
-            publish({"type": "pipeline_error", "message": str(exc)})
+            publish({
+                "type": "pipeline_error",
+                "message": "Compliance evaluation could not be completed. Please try again.",
+            })
 
     threading.Thread(target=run_graph, name=f"compliance-{task_id[:8]}", daemon=True).start()
     while True:
@@ -294,11 +297,27 @@ async def check_compliance(
             content={"error": {"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"}},
         )
 
+    # Input routing
+    if text and not file:
+        media_type = "text"
+        file_path = ""
+        filename = ""
+        summary_text = "Compliance check: Text Content"
+    elif validated_upload:
+        filename = validated_upload.filename
+        media_type = validated_upload.media_type
+        summary_text = f"Compliance check: {filename}"
+    else:
+        media_type = "unknown"
+        filename = ""
+        file_path = ""
+        summary_text = "Compliance check: Unknown"
+
     # Create the task first to get task_id
     try:
         task_row = _supabase_store.create_task(
             project_id=project_id, task_type="compliance",
-            status="pending", summary="Compliance check",
+            status="pending", summary=summary_text,
         )
         task_id = task_row["id"]
     except Exception:
@@ -309,14 +328,7 @@ async def check_compliance(
             content={"error": {"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"}},
         )
 
-    # Input routing
-    if text and not file:
-        media_type = "text"
-        file_path = ""
-        filename = ""
-    elif validated_upload:
-        filename = validated_upload.filename
-        media_type = validated_upload.media_type
+    if validated_upload:
         if not _s3_client:
             remove_temp_file(file_path)
             return JSONResponse(
@@ -424,10 +436,9 @@ async def check_compliance(
               for event in _compliance_runner.pipeline.stream(state, config=config, stream_mode="updates"):
                 for node_name, node_output in event.items():
                     # Emit node status events for the frontend SSE stream.
-                    # NOTE: Do NOT call _tracker here — each pipeline node already
-                    # calls _tracker.start_step() and _tracker.complete_step()
-                    # internally. Calling it again here causes every step to be
-                    # recorded twice in pipeline_progress.
+                    # NOTE: Do NOT call _tracker here: each pipeline node already
+                    # emits its own compatibility log. The SSE stream is the sole
+                    # client-facing progress channel.
                     yield emit({
                         "type": "node_status",
                         "node": node_name,
@@ -699,6 +710,19 @@ def _persist_check_record(
         success = _supabase_store.insert_check(record)
         if success:
             logger.info("[Persist] Inserted compliance_checks for task: %s", task_id)
+            # Keep a small, queryable evidence index alongside the immutable
+            # raw result JSON.  This powers timelines and audit summaries
+            # without asking the UI to parse model output again.
+            violations = _normalize_violations(persist_response)
+            try:
+                _supabase_store.client.table("violations").delete().eq("task_id", task_id).execute()
+                if violations:
+                    _supabase_store.insert_violations(task_id, violations)
+                logger.info("[Persist] Stored %d normalized violations for task=%s", len(violations), task_id)
+            except Exception:
+                # The compliance result remains authoritative even if the
+                # optional query index is temporarily unavailable.
+                logger.exception("[Persist] Failed to index violations for task=%s", task_id)
             # Also update task status to "checked"
             try:
                 _supabase_store.client.table("tasks").update({
@@ -709,3 +733,33 @@ def _persist_check_record(
                 logger.warning("[Persist] Task status update failed for %s: %s", task_id, e)
     except Exception as e:
         logger.warning("[Persist] Failed for %s: %s", task_id, e)
+
+
+def _normalize_violations(result: dict) -> list[dict]:
+    """Create stable audit rows from model indicators and timeline evidence."""
+
+    indicators = [str(item).strip() for item in result.get("high_risk_indicator") or [] if str(item).strip()]
+    timeline = result.get("violations_timeline") or []
+    by_description: dict[str, dict] = {}
+    for item in timeline:
+        if not isinstance(item, dict):
+            continue
+        description = str(item.get("description") or item.get("type") or "").strip()
+        if not description:
+            continue
+        by_description.setdefault(description.casefold(), item)
+
+    risk_level = str(result.get("risk_level") or "moderate").strip().lower()
+    severity = risk_level if risk_level in {"low", "moderate", "high", "critical"} else "moderate"
+    rows: list[dict] = []
+    for index, indicator in enumerate(indicators):
+        evidence = by_description.get(indicator.casefold(), {})
+        rows.append({
+            "violation_index": index,
+            "type": str(evidence.get("type") or "compliance_indicator")[:120],
+            "severity": severity,
+            "description": indicator[:2000],
+            "start_time": evidence.get("start_seconds", evidence.get("start_time")),
+            "end_time": evidence.get("end_seconds", evidence.get("end_time")),
+        })
+    return rows

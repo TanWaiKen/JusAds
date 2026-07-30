@@ -30,13 +30,6 @@ import {
   ShieldCheck,
   Bot,
   Send,
-  Lightbulb,
-  ArrowRight,
-  Clapperboard,
-  Link2,
-  ListChecks,
-  Target,
-  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,14 +41,9 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { createGenerationTask } from "@/services/taskApi";
-import { useAuth } from "@/hooks/useAuth";
+import { createGenerationTask } from "@/services/projectService";
+import { autofillGenerationForm } from "@/services/generationService";
 import { uploadFileToS3 } from "@/services/fileService";
-import { API_BASE, getApiError } from "@/lib/apiConfig";
-import {
-  fetchDailyCreativeIdea,
-  type DailyCreativeIdea,
-} from "@/services/trendsApi";
 
 gsap.registerPlugin(useGSAP);
 
@@ -132,10 +120,6 @@ interface DesignTypeSchema {
     common: string[];
     specific: string[];
   };
-}
-
-interface FormSchemaResponse {
-  design_types: DesignTypeSchema[];
 }
 
 type FormState = Record<string, string>;
@@ -492,13 +476,12 @@ export default function EasyGenerationPage() {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const assistantInputRef = useRef<HTMLTextAreaElement>(null);
-  const { user } = useAuth();
 
   // Step management: 2 = design type picker, 3 = form
   const [step, setStep] = useState<2 | 3>(2);
   const [selectedType, setSelectedType] = useState<DesignTypeSchema | null>(null);
   const [schema, setSchema] = useState<DesignTypeSchema[]>([]);
-  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaLoading] = useState(false);
   const [formState, setFormState] = useState<FormState>({});
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -529,9 +512,6 @@ export default function EasyGenerationPage() {
     },
   ]);
   const [referenceRecommendations, setReferenceRecommendations] = useState<string[]>([]);
-  const [dailyIdea, setDailyIdea] = useState<DailyCreativeIdea | null>(null);
-  const [dailyIdeaLoading, setDailyIdeaLoading] = useState(true);
-  const [dailyIdeaExpanded, setDailyIdeaExpanded] = useState(false);
 
   // GSAP entrance animation for each step
   useGSAP(() => {
@@ -549,24 +529,6 @@ export default function EasyGenerationPage() {
       setSchema(FALLBACK_SCHEMA);
     }
   }, [step, schema.length]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setDailyIdeaLoading(true);
-    fetchDailyCreativeIdea("malaysia")
-      .then((idea) => {
-        if (!cancelled) setDailyIdea(idea);
-      })
-      .catch((error) => {
-        console.warn("Today's creative idea is unavailable:", error);
-      })
-      .finally(() => {
-        if (!cancelled) setDailyIdeaLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Cleanup reference image previews on unmount
   useEffect(() => {
@@ -664,20 +626,11 @@ export default function EasyGenerationPage() {
     setAssistantInput("");
     setAssistantLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/generation/autofill`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_prompt: message,
-          current_design_type: selectedType?.id ?? null,
-          current_values: formState,
-        }),
+      const result = await autofillGenerationForm<AutofillResponse>({
+        user_prompt: message,
+        current_design_type: selectedType?.id ?? null,
+        current_values: formState,
       });
-      if (!response.ok) {
-        throw new Error(await getApiError(response, "The setup assistant could not update the form"));
-      }
-
-      const result = (await response.json()) as AutofillResponse;
       const availableSchema = schema.length > 0 ? schema : FALLBACK_SCHEMA;
       const suggestedType = availableSchema.find(
         (designType) => designType.id === result.selected_design_type,
@@ -739,26 +692,6 @@ export default function EasyGenerationPage() {
     }
   }
 
-  function handleUseDailyIdea() {
-    if (!dailyIdea) return;
-    const prompt = [
-      `Adapt today's creative idea for my product: ${dailyIdea.title}.`,
-      dailyIdea.idea,
-      `Opening hook: ${dailyIdea.hook}`,
-      `Recommended format: ${dailyIdea.format}.`,
-      "Ask me for any important product detail that is still missing before finalising the form.",
-    ].join(" ");
-    setAssistantInput(prompt);
-    setAssistantMessages((current) => [
-      ...current,
-      {
-        role: "assistant",
-        text: `I added "${dailyIdea.title}" to the chat. Add your product or offer, then send it.`,
-      },
-    ]);
-    window.setTimeout(() => assistantInputRef.current?.focus(), 50);
-  }
-
   function isFormValid(): boolean {
     const baseValid = !!(formState.product_name?.trim() && formState.key_message?.trim());
     if (selectedType?.id !== "video_ad") return baseValid && briefConfirmed;
@@ -816,18 +749,12 @@ export default function EasyGenerationPage() {
     try {
       // 1. Upload files to S3
       const uploadedUrls: string[] = [];
-      const email = user?.profile?.email;
-      if (!email) {
-        throw new Error("Your authenticated email is required to upload assets.");
-      }
-
       for (const [slotId, info] of Object.entries(slotFiles)) {
         try {
           const res = await uploadFileToS3(info.file, {
             filename: info.file.name,
             contentType: info.file.type || "application/octet-stream",
             fileSize: info.file.size,
-            username: email,
             projectId,
             assetType: "reference",
           });
@@ -901,129 +828,6 @@ export default function EasyGenerationPage() {
           )}
         </div>
       </div>
-
-      <section
-        aria-label="Today's creative idea"
-        className="mx-auto mb-5 w-full max-w-6xl overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50/90 via-surface-card to-surface-card shadow-sm dark:border-amber-900/60 dark:from-amber-950/25"
-      >
-        {dailyIdeaLoading ? (
-          <div className="flex min-h-24 items-center gap-3 px-5 text-sm text-text-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
-            Finding today&apos;s idea
-          </div>
-        ) : dailyIdea ? (
-          <>
-            <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center">
-              <div className="flex min-w-0 flex-1 items-start gap-3">
-                <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                  <Lightbulb className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700 dark:text-amber-300">
-                      Today&apos;s idea
-                    </p>
-                    <span className="rounded-full bg-surface-card/80 px-2 py-0.5 text-[11px] font-medium text-text-muted">
-                      Malaysia
-                    </span>
-                  </div>
-                  <h3 className="mt-1 line-clamp-2 text-[15px] font-semibold leading-5 text-text-heading">{dailyIdea.title}</h3>
-                  <p className="mt-1 line-clamp-1 text-sm leading-5 text-text-muted">
-                    {dailyIdea.why_today}
-                  </p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDailyIdeaExpanded((expanded) => !expanded)}
-                  aria-expanded={dailyIdeaExpanded}
-                  aria-controls="daily-idea-details"
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-300/80 bg-amber-50/70 px-3 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-900/40"
-                >
-                  {dailyIdeaExpanded ? "Hide brief" : "View brief"}
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${dailyIdeaExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
-                </button>
-                <Button type="button" size="sm" onClick={handleUseDailyIdea}>
-                  Add to chat
-                  <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
-                </Button>
-              </div>
-            </div>
-            {dailyIdeaExpanded && (
-              <div id="daily-idea-details" className="border-t border-amber-200/70 bg-surface-card/55 px-5 py-4 dark:border-amber-900/50">
-              <div className="grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-                <div className="rounded-xl border border-border-default/70 bg-background/65 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
-                    <Target className="h-3.5 w-3.5" aria-hidden="true" />
-                    Creative direction
-                  </div>
-                  <p className="text-sm leading-6 text-text-body">{dailyIdea.idea}</p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                  <div className="rounded-xl border border-border-default/70 bg-background/65 p-4">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700 dark:text-violet-300">
-                      <Lightbulb className="h-3.5 w-3.5" aria-hidden="true" />
-                      Opening hook
-                    </div>
-                    <p className="mt-2 text-sm leading-5 text-text-body">{dailyIdea.hook}</p>
-                  </div>
-                  <div className="rounded-xl border border-border-default/70 bg-background/65 p-4">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-300">
-                      <Clapperboard className="h-3.5 w-3.5" aria-hidden="true" />
-                      Recommended format
-                    </div>
-                    <p className="mt-2 text-sm font-medium text-text-heading">{dailyIdea.format}</p>
-                    {dailyIdea.event_name && (
-                      <p className="mt-1 text-xs text-text-muted">Event context: {dailyIdea.event_name}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-xl border border-border-default/70 bg-background/65 p-4">
-                <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
-                  <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
-                  15-second execution plan
-                </div>
-                <ol className="grid gap-2 md:grid-cols-3">
-                  {dailyIdea.execution_steps.map((step, index) => (
-                    <li key={step} className="flex gap-2 rounded-lg bg-surface-inset/70 px-3 py-2.5 text-xs leading-5 text-text-body">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                        {index + 1}
-                      </span>
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-
-              {dailyIdea.source_urls.length > 0 && (
-                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border-default/60 pt-3">
-                  <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
-                    <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    Trend sources
-                  </span>
-                  {dailyIdea.source_urls.slice(0, 3).map((sourceUrl, index) => (
-                    <a
-                      key={sourceUrl}
-                      href={sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Source {index + 1}
-                    </a>
-                  ))}
-                </div>
-              )}
-              </div>
-            )}
-          </>
-        ) : (
-          <p className="px-5 py-4 text-sm text-text-muted">Today&apos;s idea is temporarily unavailable.</p>
-        )}
-      </section>
 
       <div className="mx-auto grid w-full max-w-6xl items-start gap-7 lg:grid-cols-[340px_minmax(0,1fr)]">
       <section aria-label="Fill the form by chat" className="w-full overflow-hidden rounded-2xl border border-border-default/80 bg-surface-card shadow-[0_10px_35px_rgba(15,23,42,0.06)] lg:sticky lg:top-4">

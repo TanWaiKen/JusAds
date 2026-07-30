@@ -1,21 +1,17 @@
 """
 routes/progress.py
 ──────────────────
-Progress polling endpoint for pipeline execution tracking.
+Retired progress polling endpoint.
 
-Replaces WebSocket-based progress delivery with HTTP polling against
-the `pipeline_progress` Supabase table.
+The pipeline_progress table was retired in favour of task pipeline-state JSON
+and the authenticated compliance SSE stream. This router is not mounted by the
+application; it safely documents the replacement if mounted accidentally.
 """
 
-import logging
 import re
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-
-from shared.clients import supabase
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["progress"])
 
@@ -46,12 +42,7 @@ def compute_is_terminal(steps: list[dict]) -> bool:
 
 @router.get("/api/compliance/{task_id}/progress")
 async def get_progress(task_id: str) -> JSONResponse:
-    """Return all progress rows for a task_id, ordered by created_at ASC.
-
-    Response:
-      - steps: list of {step_name, status, message, created_at}
-      - is_terminal: bool (True if all completed or any error)
-    """
+    """Explain that polling progress has been retired."""
     # Validate task_id format
     if not _is_valid_task_id(task_id):
         return JSONResponse(
@@ -59,39 +50,9 @@ async def get_progress(task_id: str) -> JSONResponse:
             content={"error": "Invalid task_id format"},
         )
 
-    # Query pipeline_progress table
-    try:
-        response = (
-            supabase.table("pipeline_progress")
-            .select("step_name, status, message, created_at")
-            .eq("task_id", task_id)
-            .order("created_at", desc=False)
-            .execute()
-        )
-    except Exception as e:
-        logger.error("[Progress] Database query failed for %s: %s", task_id, e)
-        return JSONResponse(
-            status_code=503,
-            content={"error": "Service temporarily unavailable"},
-        )
-
-    rows = response.data or []
-
-    # Format steps for response
-    steps = [
-        {
-            "step_name": row["step_name"],
-            "status": row["status"],
-            "message": row.get("message") or "",
-            "created_at": row["created_at"],
-        }
-        for row in rows
-    ]
-
     return JSONResponse(
-        status_code=200,
+        status_code=410,
         content={
-            "steps": steps,
-            "is_terminal": compute_is_terminal(steps),
+            "error": "Progress polling was retired; use the compliance event stream instead",
         },
     )

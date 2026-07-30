@@ -23,6 +23,7 @@ async def get_company_hook_references(
     *,
     owner_email: str,
     market: str,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     """Return a 24-hour cached public YouTube Shorts reference set.
 
@@ -44,7 +45,7 @@ async def get_company_hook_references(
         fingerprint = profile_fingerprint(profile, normalized_market)
         cached_response = (
             supabase.table("youtube_hook_reference_cache")
-            .select("results, fetched_at, expires_at")
+            .select("results, query_text, fetched_at, expires_at")
             .eq("owner_email", owner_email)
             .eq("market", normalized_market)
             .eq("profile_fingerprint", fingerprint)
@@ -53,10 +54,11 @@ async def get_company_hook_references(
             .execute()
         )
         cached = cached_response.data or []
-        if cached:
+        if cached and not force_refresh:
             record = cached[0]
             return {
                 "items": record.get("results") or [], "cached": True,
+                "query_text": record.get("query_text") or "",
                 "fetched_at": record.get("fetched_at"), "expires_at": record.get("expires_at"),
             }
 
@@ -65,7 +67,7 @@ async def get_company_hook_references(
         client = YouTubeClient()
         if not client.is_configured:
             raise YouTubeHookReferenceError("youtube unavailable")
-        query = build_hook_query(profile, normalized_market)
+        query = await asyncio.to_thread(build_hook_query, profile, normalized_market)
         videos = await asyncio.to_thread(
             client.search_shorts, query, 8, market_region_code(normalized_market), "viewCount", True
         )
@@ -78,10 +80,23 @@ async def get_company_hook_references(
             "results": items, "fetched_at": now.isoformat(), "expires_at": expires_at.isoformat(),
             "updated_at": now.isoformat(),
         }
-        supabase.table("youtube_hook_reference_cache").upsert(
-            cache_row, on_conflict="owner_email,market,profile_fingerprint"
-        ).execute()
-        return {"items": items, "cached": False, "fetched_at": cache_row["fetched_at"], "expires_at": cache_row["expires_at"]}
+        try:
+            supabase.table("youtube_hook_reference_cache").upsert(
+                cache_row, on_conflict="owner_email,market,profile_fingerprint"
+            ).execute()
+        except Exception as cache_exc:
+            # If RLS prevents writes, log it but don't fail the request.
+            # postgrest.exceptions.APIError might be raised if the anon key is used.
+            import logging
+            logging.getLogger(__name__).warning("Failed to write to youtube hook cache: %s", cache_exc)
+
+        return {
+            "items": items,
+            "cached": False,
+            "query_text": query,
+            "fetched_at": cache_row["fetched_at"],
+            "expires_at": cache_row["expires_at"],
+        }
     except YouTubeHookReferenceError:
         raise
     except Exception as exc:

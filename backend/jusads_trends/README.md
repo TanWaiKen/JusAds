@@ -14,7 +14,7 @@ owns request/response validation and authentication; trend research, cache, and
 analysis rules belong in this package. New trend features must be added here
 rather than to generation or compliance modules.
 
-The trend data model is: `trends_cache`, `creative_trend_signals`,
-`creative_trend_sources`, `daily_creative_ideas`, and
+The trend data model is: `trends_cache`, `creative_trend_signals` (including
+its `evidence_urls` JSON field), `daily_creative_ideas`, and
 `youtube_hook_reference_cache`. These records are creative inspiration only;
 they are not compliance decisions or proof that a public video is a paid ad.

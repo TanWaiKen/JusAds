@@ -10,9 +10,8 @@ import { useState, useRef, useCallback } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { Search, Play, X, Loader2 } from "lucide-react";
-import { searchHookVideos, recordHookPreference } from "@/services/hookSearchApi";
-import type { HookVideoResult } from "@/services/hookSearchApi";
-import { useAuth } from "@/hooks/useAuth";
+import { searchHookVideos, recordHookPreference } from "@/services/hookSearchService";
+import type { HookVideoResult } from "@/models/generation";
 
 gsap.registerPlugin(useGSAP);
 
@@ -33,7 +32,6 @@ export function HookSearchPanel({
   onSelectHook,
   onClose,
 }: HookSearchPanelProps): React.ReactElement {
-  const { user } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<HookVideoResult[]>([]);
@@ -81,12 +79,11 @@ export function HookSearchPanel({
         tags: video.tags,
         creativeStyle,
         productCategory,
-        userEmail: user?.profile?.email,
       });
 
       onSelectHook(video);
     },
-    [creativeStyle, productCategory, user?.profile?.email, onSelectHook]
+    [creativeStyle, productCategory, onSelectHook]
   );
 
   return (

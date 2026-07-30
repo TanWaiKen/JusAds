@@ -102,6 +102,17 @@ Removed verified generated/manual-test artifacts that were not used by the appli
 
 The root `.pytest_cache/` could not be removed because Windows had it locked; it is already ignored by Git and can be deleted after the locking process exits.
 
+### Database Schema Cleanup
+
+The database schema was heavily consolidated (via migration `029_cleanup_and_merge_tables.sql` and `027_private_media_key_canonicalization.sql`) to remove unused features and legacy structures:
+
+- **Merged / Canonicalized**: 
+  - `creative_trend_sources` table was merged into the `creative_trend_signals.evidence_urls` (`jsonb`) column to reduce joins.
+  - `brand_voices.sample_url` was superseded by `brand_voices.sample_s3_key`.
+  - All Media URL columns (e.g., `s3`, `asset`, `clip` keys across `business_profiles`, `compliance_checks`, `violations`, `generated_ads`, `brand_voices`) were canonicalized to store **only the S3 object key**, never the full public URL. The backend generates short-lived presigned URLs at response time.
+- **Dropped Tables**:
+  - The following tables were removed (`DROP TABLE ... CASCADE`) because their features were either deprecated, replaced by new architectures, or never fully integrated into the live application: `creative_trend_sources`, `tavily_usage_log`, `compliance_evaluations`, `remediation_recheck_jobs`, `remediation_versions`, `private_media_url_audit`, `pipeline_progress`, `storyboard_scenes`, `post_statistics_cache`, and `remediation_logs`.
+
 ### Deliberately retained, pending owner decision
 
 - `README (1).md`: reference/API documentation
@@ -122,6 +133,14 @@ Removed 19 dead backend routes across 4 files. Cleaned up orphaned imports. All 
 - `POST /api/compliance/{task_id}/smart-remediate` — experimental AI tool router, never shipped
 - `GET /api/compliance/{task_id}/routing-preview` — preview of smart-remediate
 - `GET /api/compliance/history` — old per-username history, replaced by project/task structure
+
+### 2. ~~Fix YouTube Hook Reference Cache and Queries~~ ✅ DONE
+
+- Bypassed RLS for `youtube_hook_reference_cache` and `hook_preferences` by providing new SQL without `ENABLE ROW LEVEL SECURITY`. This allows the backend to cache requests successfully.
+- Replaced static string concatenation in `youtube_hook_cache.py` with an LLM call to `gemini-2.5-flash` (via `SMALL_TEXT_MODEL`) to generate effective, highly-optimized 4-word YouTube search queries. 
+- Updated `youtube_hook_references.py` to run the AI query generation in `asyncio.to_thread()` to prevent freezing the FastAPI event loop.
+- Updated `backend/shared/config.py` to properly use `"gemini-2.5-flash"` for `SMALL_TEXT_MODEL` without conflicting with `LLM_MODEL_ID`.
+
 - `GET /api/media/{task_id}/{asset_type}` — old presigned URL, replaced by `/api/files/download-url`
 - `GET /api/compliance/{task_id}/progress` — old polling, replaced by SSE streaming in `/check`
 

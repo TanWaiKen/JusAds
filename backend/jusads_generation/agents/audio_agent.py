@@ -387,8 +387,7 @@ async def generate(
         try:
             s3_url = upload_file_public(audio_path, s3_key)
         except Exception as exc:
-            logger.warning("[AudioAgent] S3 upload failed, using fallback URL: %s", exc)
-            s3_url = f"https://mock-bucket.s3.amazonaws.com/{s3_key}"
+            raise RuntimeError("Audio output could not be stored safely.") from exc
 
         metadata = {
             "s3_url": s3_url,

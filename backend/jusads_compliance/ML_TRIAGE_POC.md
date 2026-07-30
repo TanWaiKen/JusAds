@@ -12,7 +12,7 @@ pass, fail, block, route, or publish any asset.
 Run the fixture evaluation from `backend`:
 
 ```powershell
-python scripts/manual/evaluate_demo_ml_triage.py
+python manual_push/ml/evaluate_demo_ml_triage.py
 ```
 
 Any printed metric is only accuracy on the six synthetic examples, not

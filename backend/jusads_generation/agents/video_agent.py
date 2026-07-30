@@ -326,8 +326,7 @@ async def generate(*, brief: str, project_id: str, task_id: str,
         try:
             s3_url = upload_file_public(final_video_path, s3_key)
         except Exception as e:
-            logger.warning("[VideoAgent] S3 upload failed, using fallback URL: %s", e)
-            s3_url = f"https://mock-bucket.s3.amazonaws.com/{s3_key}"
+            raise RuntimeError("Video output could not be stored safely.") from e
 
         # -- Record success (Req 5.4) ------------------------------------------
         ad_id = _record_generated_ad(

@@ -36,6 +36,7 @@ from jusads_compliance.utils import parse_json_res
 from jusads_compliance.progress_tracker import ProgressTracker
 from shared.fallback_queue import fallback_queue
 from jusads_compliance.rules_client import get_rules, get_persona
+from jusads_compliance.localization_assessment import build_localization_assessment
 from jusads_compliance.agents.evidence import media_evidence_agent
 from jusads_compliance.agents.research import grounded_compliance_agent, legal_research_agent
 from jusads_compliance.prompts import (
@@ -47,6 +48,7 @@ from jusads_compliance.prompts import (
     VIDEO_PRESCAN_PROMPT,
     UNIFIED_OUTPUT_TEMPLATE,
     CONTEXT_FRAMEWORK,
+    LOCALIZATION_SCORE_GUIDANCE,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,7 +106,15 @@ class ComplianceAnalysisSchema(BaseModel):
     localization_plan: str = Field(description="Actionable localization advice for the target audience/market.")
     explanation: str = Field(description="Explanation of the findings (max 300 words).")
     suggestion: str = Field(description="Actionable suggestion for fixes/remediation (max 200 words).")
-    cultural_fit_score: int = Field(description="Cultural fit score (0 to 100) based on target persona.")
+    cultural_fit_score: int = Field(
+        ge=0,
+        le=100,
+        description=(
+            "Audience-localization score from 0 to 100: 100 means strong fit for the selected "
+            "market/persona in language, tone and presentation; 0 means poor fit. This is not a legal "
+            "compliance score and must not treat protected characteristics as stereotypes."
+        ),
+    )
     language_compliance: LanguageComplianceSchema = Field(description="Language compliance details.")
     image_review: Optional[ImageReviewSchema] = Field(default=None, description="Image-specific copy, representation, claim and sensitive-content review.")
 
@@ -303,6 +313,7 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 context_framework=CONTEXT_FRAMEWORK,
                 research_context="No live regulatory research available for the initial pass.",
             )
+            prompt += LOCALIZATION_SCORE_GUIDANCE
             response = gemini.models.generate_content(
                 model=_MODEL,
                 contents=prompt,
@@ -338,6 +349,7 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 context_framework=CONTEXT_FRAMEWORK,
                 research_context="No live regulatory research available for the initial pass.",
             )
+            prompt += LOCALIZATION_SCORE_GUIDANCE
             response = gemini.models.generate_content(
                 model=_MODEL,
                 contents=[genai_types.Content(role="user", parts=[
@@ -373,6 +385,7 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 context_framework=CONTEXT_FRAMEWORK,
                 research_context="No live regulatory research available for the initial pass.",
             )
+            prompt += LOCALIZATION_SCORE_GUIDANCE
             response = gemini.models.generate_content(
                 model=_MODEL,
                 contents=[genai_types.Content(role="user", parts=[
@@ -411,6 +424,7 @@ def main_brain_analysis(state: Compliance_State) -> dict:
                 context_framework=CONTEXT_FRAMEWORK,
                 research_context="No live regulatory research available for the initial pass.",
             )
+            prompt += LOCALIZATION_SCORE_GUIDANCE
             response = gemini.models.generate_content(
                 model=_MODEL,
                 contents=[genai_types.Content(role="user", parts=[
@@ -430,6 +444,11 @@ def main_brain_analysis(state: Compliance_State) -> dict:
         # Merge analysis into result, preserving internal fields
         for key, value in analysis.items():
             result[key] = value
+
+        # Keep localization priority reproducible and separate from legal risk.
+        result["localization_assessment"] = build_localization_assessment(
+            result.get("cultural_fit_score")
+        )
 
         risk = result.get("risk_percentage", 0)
         indicators = result.get("high_risk_indicator", [])
@@ -648,8 +667,11 @@ def decision_router_node(state: Compliance_State) -> dict:
         # Clean internal fields from result before persisting
         persist_result = {k: v for k, v in result.items() if not k.startswith("_")}
 
-        # Persist compliance result to compliance_checks table
-        _persist_compliance_result(task_id, decision, risk_percentage, persist_result)
+        # Rechecks write their immutable evidence through RemediationStore, not
+        # this mutable current-check record.  The normal interactive path keeps
+        # its existing persistence behaviour.
+        if state.get("persist_result", True):
+            _persist_compliance_result(task_id, decision, risk_percentage, persist_result)
 
         _tracker.complete_step(
             task_id, step_name,

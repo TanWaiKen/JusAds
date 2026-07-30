@@ -38,12 +38,12 @@ import {
   MEDIA_TYPES,
   publishAd,
   distributeAd,
-  API_BASE,
   type GeneratedAdView,
   type MediaType,
   type ComplianceStatus,
   type ComplianceReasons,
-} from "@/services/generationApi";
+} from "@/services/generationService";
+import { checkComplianceStream } from "@/services/complianceService";
 
 gsap.registerPlugin(useGSAP);
 
@@ -472,44 +472,21 @@ function OutputCard({
       const filename = ad.publicUrl.split("/").pop()?.split("?")[0] ?? `ad_${ad.adId}`;
       const file = new File([blob], filename, { type: blob.type });
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("market", "malaysia");
-      formData.append("ethnicity", "all");
-      formData.append("age_group", "all_ages");
-      formData.append("platform", ad.platform || "general");
-      formData.append("project_id", projectId);
-
-      const res = await fetch(`${API_BASE}/api/compliance/check`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) throw new Error(`Compliance API error: ${res.status}`);
-
-      // Drain the SSE stream to get the final check_id
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
       let checkId: string | null = null;
-      let buf = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          try {
-            const parsed = JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
-            if (parsed.type === "result" && parsed.data) {
-              const data = parsed.data as Record<string, unknown>;
-              if (typeof data.check_id === "string") checkId = data.check_id;
-            }
-          } catch { /* skip malformed lines */ }
-        }
-      }
+      await checkComplianceStream(
+        file,
+        "malaysia",
+        "all",
+        "all_ages",
+        ad.platform || "general",
+        (event) => {
+          if (event.type === "result" && typeof event.data.check_id === "string") {
+            checkId = event.data.check_id;
+          }
+        },
+        undefined,
+        projectId,
+      );
 
       setComplianceCheckPhase("done");
       toast.success("Compliance check complete — opening results");
@@ -685,47 +662,8 @@ function OutputCard({
         )}
 
         {/* Download CapCut Draft — for video ads, allows user to edit in CapCut desktop */}
-        {ad.mediaType === "video" && ad.publicUrl && (
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                toast.info("Generating CapCut draft...", { duration: 3000 });
-                // Ask the backend to create a CapCut draft from the video URL
-                // The backend fetches from S3 internally (no CORS issues)
-                const res = await fetch(`${API_BASE}/api/capcut/generate-draft-from-url`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    video_url: ad.publicUrl,
-                    draft_name: `jusads_${ad.adId.slice(0, 8)}`,
-                  }),
-                });
-                if (!res.ok) {
-                  const err = await res.json().catch(() => ({ detail: "Draft generation failed" }));
-                  toast.error(typeof err.detail === "string" ? err.detail : "CapCut draft generation failed");
-                  return;
-                }
-                const data = await res.json();
-                const downloadUrl = data.download_url;
-                if (downloadUrl) {
-                  // Trigger browser download
-                  const link = document.createElement("a");
-                  link.href = `${API_BASE}${downloadUrl}`;
-                  link.download = `${data.draft_name || "capcut_draft"}.zip`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                  toast.success(
-                    "CapCut draft downloaded! Extract the ZIP into your CapCut Drafts folder, then open CapCut.",
-                    { duration: 8000 }
-                  );
-                }
-              } catch (err) {
-                console.error(err);
-                toast.error("Failed to generate CapCut draft");
-              }
-            }}
+        {/* CapCut editing packages are available from the remediation result only. */}
+        {/*
             className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white dark:bg-[#1f1f1f] px-3 py-2 text-xs font-medium text-[#171717] dark:text-white shadow-[0_0_0_1px_#ebebeb] dark:shadow-[0_0_0_1px_#2e2e2e] hover:bg-gray-50 dark:hover:bg-[#2c2c2c] transition-colors cursor-pointer"
             title="Download CapCut draft ZIP — extract into your CapCut Drafts folder"
           >
@@ -733,6 +671,7 @@ function OutputCard({
             Open in CapCut
           </button>
         )}
+        */}
 
         {/* Run Compliance Check — sends this ad's media through the compliance pipeline */}
         {projectId !== undefined && ad.publicUrl !== null && ad.mediaType !== "text" && (

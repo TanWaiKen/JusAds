@@ -154,7 +154,7 @@ CREATE INDEX IF NOT EXISTS idx_brand_voices_global
 -- ─── 6. Seed cultural_events with Malaysian & global events ──────────────────
 -- 2026 dates (current year). For dynamic event updates, integrate PredictHQ API
 -- or Google Calendar API to refresh this table automatically.
--- CSV backup: backend/data/cultural_events_2026.csv
+-- Operator CSV backups: manual_push/data/
 
 INSERT INTO public.cultural_events (name, market, start_date, end_date, event_type, tags, impact_score)
 VALUES

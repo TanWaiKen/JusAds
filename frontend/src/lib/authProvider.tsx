@@ -19,7 +19,7 @@ export interface AuthContextValue {
   isAuthenticated: boolean;
   picture: string | null;
   loginWithGoogle: () => Promise<void>;
-  loginWithEmail: (email: string) => Promise<void>;
+  loginWithCognito: () => Promise<void>;
   logout: () => Promise<void>;
   handleCallback: () => Promise<User>;
 }
@@ -137,17 +137,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const loginWithEmail = useCallback(async (email: string) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (import.meta.env.DEV && normalizedEmail === DEVELOPMENT_BYPASS_EMAIL) {
-      window.sessionStorage.setItem(DEVELOPMENT_SESSION_KEY, normalizedEmail);
-      setUser(createDevelopmentUser(normalizedEmail));
-      setStatus("authenticated");
-      return;
+  const loginWithCognito = useCallback(async () => {
+    try {
+      await userManager.signinRedirect();
+    } catch {
+      toast.error("Could not reach login service. Please try again.");
     }
-    await userManager.signinRedirect({
-      extraQueryParams: { login_hint: normalizedEmail },
-    });
   }, []);
 
   const logout = useCallback(async () => {
@@ -173,11 +168,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: status === "authenticated",
       picture: getPicture(user),
       loginWithGoogle,
-      loginWithEmail,
+      loginWithCognito,
       logout,
       handleCallback,
     }),
-    [user, status, loginWithGoogle, loginWithEmail, logout, handleCallback]
+    [user, status, loginWithGoogle, loginWithCognito, logout, handleCallback]
   );
 
   return (

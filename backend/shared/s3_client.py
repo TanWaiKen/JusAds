@@ -159,6 +159,22 @@ def upload_file_public(file_path: str, s3_key: str) -> str:
 # --- Delete -------------------------------------------------------------------
 
 
+def delete_object(s3_key: str) -> None:
+    """Delete exactly one validated S3 object key.
+
+    This deliberately does not accept prefixes, globs, or URLs. Callers must
+    authorize the asset record before invoking it.
+    """
+    normalized = normalize_s3_key(s3_key)
+    if not normalized:
+        raise ValueError("delete_object refused an invalid S3 key")
+    try:
+        s3.delete_object(Bucket=BUCKET, Key=normalized)
+    except ClientError as exc:
+        logger.error("S3 delete_object failed for %s: %s", normalized, exc)
+        raise
+
+
 def delete_prefix(prefix: str) -> int:
     """Delete every S3 object under a key prefix. Returns the count deleted.
 

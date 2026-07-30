@@ -25,9 +25,20 @@ from shared.prompts import (
 # -- Unified output template (shared across all compliance checks) -------------
 UNIFIED_OUTPUT_TEMPLATE = """{"risk_percentage": 35, "risk_level": "Moderate", "compliance_verdict": "needs_remediation", "high_risk_indicator": ["flagged item 1", "flagged item 2"], "violations_timeline": null, "localization_plan": "Use appropriate model, translate to target language, target relevant platform", "explanation": "35% risk due to...", "suggestion": "Replace or modify...", "cultural_fit_score": 70, "language_compliance": {"detected_language": "english", "required_language": "malay", "is_compliant": false, "language_note": "Target audience (Malay Baby Boomers) requires Bahasa Melayu"}}"""
 
+# Deliberately separate audience fit from legal/platform risk. This text is
+# appended to each initial analysis prompt in the pipeline.
+LOCALIZATION_SCORE_GUIDANCE = """
+Localization score calibration: cultural_fit_score is 0–100 for the selected
+market, ethnicity and age group. Higher means a better fit of language, tone,
+presentation and non-stereotyped cultural references. Score legal compliance
+separately. A low fit without a documented legal/platform breach must be
+accepted with optional localization guidance, not treated as a violation.
+"""
+
 __all__ = [
     "CONTEXT_FRAMEWORK",
     "UNIFIED_OUTPUT_TEMPLATE",
+    "LOCALIZATION_SCORE_GUIDANCE",
     "IMAGE_PRESCAN_PROMPT",
     "VIDEO_PRESCAN_PROMPT",
     "TEXT_COMPLIANCE_PROMPT",

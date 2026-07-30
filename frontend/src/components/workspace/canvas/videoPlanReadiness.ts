@@ -1,4 +1,4 @@
-import type { VideoPlan, VideoPlanScene } from "@/services/generationApi";
+import type { VideoPlan, VideoPlanScene } from "@/services/generationService";
 
 export interface VideoPlanReadiness {
   durationMismatch: boolean;

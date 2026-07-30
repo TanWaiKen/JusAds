@@ -1,5 +1,5 @@
 import type { ProjectStore, ProjectAction } from "@/types/compliance";
-import { normalizeViolations } from "@/services/complianceApi";
+import { normalizeViolations } from "@/services/complianceService";
 
 /**
  * Initial state for the project store.

@@ -10,14 +10,12 @@ import { useNavigate } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ShieldCheck, Sparkles, Loader2, ArrowLeft } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
-import { API_BASE } from "@/services/complianceApi";
+import { createProject } from "@/services/projectService";
 
 gsap.registerPlugin(useGSAP);
 
 export default function NewProject() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -44,27 +42,11 @@ export default function NewProject() {
   }
 
   async function handleCreate(mediaType: "compliance" | "generation") {
-    const email = user?.profile?.email ?? "user";
     setIsCreating(true);
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/projects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: projectName.trim(),
-          username: email,
-        }),
-      });
-
-      if (!res.ok) {
-        const body = await res.text();
-        console.error("[NewProject] Error body:", body);
-        throw new Error(`Failed to create project (${res.status})`);
-      }
-
-      const data = await res.json();
+      const data = await createProject(projectName.trim());
 
       // Notify sidebar to refresh its project list
       window.dispatchEvent(new CustomEvent("jusads:project-created"));

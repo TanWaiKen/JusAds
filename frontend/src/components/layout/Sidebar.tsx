@@ -14,8 +14,8 @@ import {
   CirclePlus,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { API_BASE } from "@/services/complianceApi";
-import { deleteProject } from "@/services/taskApi";
+import { deleteProject, listProjects } from "@/services/projectService";
+import type { Project as SidebarProject } from "@/models/project";
 import { toast } from "sonner";
 
 gsap.registerPlugin(useGSAP);
@@ -28,14 +28,6 @@ interface NavItem {
   to: string;
   badge?: string;
   end?: boolean;
-}
-
-/** Shape returned by GET /api/projects */
-interface SidebarProject {
-  id: string;
-  name: string;
-  owner_email: string;
-  created_at: string;
 }
 
 export interface SidebarHandle {
@@ -79,7 +71,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
     // ─── Projects State ─────────────────────────────────────────────────────
     const [projects, setProjects] = useState<SidebarProject[]>([]);
     const [projectsLoading, setProjectsLoading] = useState(false);
-    const [showAllProjects, setShowAllProjects] = useState(false);
+    const [showAllOwnedProjects, setShowAllOwnedProjects] = useState(false);
+    const [showAllSharedProjects, setShowAllSharedProjects] = useState(false);
 
     // ─── New Project Modal State ────────────────────────────────────────────
     // (removed — now just navigates to /dashboard/new)
@@ -91,20 +84,13 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
       const controller = new AbortController();
       setProjectsLoading(true);
 
-      fetch(`${API_BASE}/api/projects?username=${encodeURIComponent(email)}`, {
-        signal: controller.signal,
-      })
-        .then((res) => {
-          console.log(`[Sidebar] GET /api/projects?username=${email} → ${res.status}`);
-          if (!res.ok) throw new Error(`Failed to fetch projects (${res.status})`);
-          return res.json();
-        })
-        .then((data: SidebarProject[]) => {
+      listProjects(controller.signal)
+        .then((data) => {
           console.log(`[Sidebar] Loaded ${data.length} projects`, data);
           setProjects(data);
         })
         .catch((err) => {
-          if (err.name !== "AbortError") {
+          if ((err as Error).name !== "AbortError") {
             console.error("[Sidebar] Could not load projects:", err.message);
           }
         })
@@ -120,9 +106,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
       const handler = () => {
         if (!email) return;
         setProjectsLoading(true);
-        fetch(`${API_BASE}/api/projects?username=${encodeURIComponent(email)}`)
-          .then((res) => (res.ok ? res.json() : []))
-          .then((data: SidebarProject[]) => setProjects(data))
+        listProjects()
+          .then((data) => setProjects(data))
           .catch(() => {/* non-fatal */})
           .finally(() => setProjectsLoading(false));
       };
@@ -130,9 +115,16 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
       return () => window.removeEventListener("jusads:project-created", handler);
     }, [email]);
 
-    const visibleProjects = showAllProjects
-      ? projects
-      : projects.slice(0, MAX_VISIBLE_PROJECTS);
+    const ownedProjects = projects.filter((p) => p.owner_email === email);
+    const sharedProjects = projects.filter((p) => p.owner_email !== email);
+
+    const visibleOwnedProjects = showAllOwnedProjects
+      ? ownedProjects
+      : ownedProjects.slice(0, MAX_VISIBLE_PROJECTS);
+      
+    const visibleSharedProjects = showAllSharedProjects
+      ? sharedProjects
+      : sharedProjects.slice(0, MAX_VISIBLE_PROJECTS);
 
     // Desktop: just toggle state, CSS transition handles the slide
     // Mobile: use GSAP for backdrop + slide animation
@@ -300,7 +292,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
 
           {!projectsLoading && projects.length > 0 && (
             <ul className="flex flex-col gap-0.5">
-              {visibleProjects.map((project) => {
+              {visibleOwnedProjects.map((project) => {
                 const isActive = project.id === activeProjectId;
                 const TypeIcon = ShieldCheck;
                 return (
@@ -353,14 +345,82 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(
               })}
             </ul>
           )}
-
-          {!projectsLoading && projects.length > MAX_VISIBLE_PROJECTS && (
+          
+          {!projectsLoading && ownedProjects.length > MAX_VISIBLE_PROJECTS && (
             <button
               type="button"
-              onClick={() => setShowAllProjects((prev) => !prev)}
+              onClick={() => setShowAllOwnedProjects((prev) => !prev)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 mt-1 text-code-xs text-text-caption hover:text-accent-blue transition-colors"
             >
-              {showAllProjects ? (
+              {showAllOwnedProjects ? (
+                <>
+                  <ChevronUp size={12} />
+                  <span>Show less</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={12} />
+                  <span>Show more</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {!projectsLoading && sharedProjects.length > 0 && (
+            <>
+              <div className="flex items-center justify-between px-2 pt-6 pb-2">
+                <p className="font-bold text-body-md tracking-tight text-text-primary dark:text-white">
+                  Shared with you
+                </p>
+              </div>
+              <ul className="flex flex-col gap-0.5">
+                {visibleSharedProjects.map((project) => {
+                  const isActive = project.id === activeProjectId;
+                  const TypeIcon = ShieldCheck;
+                  return (
+                    <li key={project.id}>
+                      <div
+                        className={[
+                          "flex items-center gap-2.5 w-full rounded-lg px-2.5 py-2 text-left transition-colors group",
+                          isActive
+                            ? "bg-accent-blue/10 text-accent-blue"
+                            : "hover:bg-surface-inset",
+                        ].join(" ")}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigate(`/dashboard/project/${project.id}`);
+                            if (!isDesktop) handleClose();
+                          }}
+                          className="flex flex-col items-start flex-1 min-w-0"
+                          title={`${project.name} (Owned by ${project.owner_email})`}
+                        >
+                          <div className="flex items-center gap-2 w-full">
+                            <TypeIcon size={15} className={`shrink-0 ${isActive ? "text-accent-blue" : "text-text-caption group-hover:text-text-body"}`} />
+                            <span className={`text-code-sm truncate ${isActive ? "text-accent-blue font-semibold" : "text-text-body group-hover:text-text-heading"}`}>
+                              {project.name}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-text-caption pl-6 truncate w-full">
+                            by {project.owner_email}
+                          </span>
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+          
+          {!projectsLoading && sharedProjects.length > MAX_VISIBLE_PROJECTS && (
+            <button
+              type="button"
+              onClick={() => setShowAllSharedProjects((prev) => !prev)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 mt-1 text-code-xs text-text-caption hover:text-accent-blue transition-colors"
+            >
+              {showAllSharedProjects ? (
                 <>
                   <ChevronUp size={12} />
                   <span>Show less</span>

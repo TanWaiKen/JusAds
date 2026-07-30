@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import type { NodeStatus } from "@/services/complianceApi";
+import type { NodeStatus } from "@/services/complianceService";
 import { Button } from "@/components/ui/button";
 
 gsap.registerPlugin(useGSAP);

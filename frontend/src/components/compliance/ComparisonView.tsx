@@ -1,7 +1,7 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import type { ComplianceResult, Violation } from "@/services/complianceApi";
+import { getCapCutPackageDownload, type ComplianceResult, type Violation } from "@/services/complianceService";
 import { ViolationClipPlayer } from "@/components/compliance/ViolationClipPlayer";
 import { Button } from "@/components/ui/button";
 
@@ -84,6 +84,7 @@ function getRemixScore(remixResult: unknown): number | null {
  */
 export function ComparisonView({ originalResult, remixResult, mediaType, onRegenerate }: ComparisonViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [capCutDownloadState, setCapCutDownloadState] = useState<"idle" | "loading" | "error">("idle");
 
   useGSAP(() => {
     gsap.from(".original-panel", { x: -50, opacity: 0, duration: 0.5, ease: "power2.out" });
@@ -320,22 +321,45 @@ export function ComparisonView({ originalResult, remixResult, mediaType, onRegen
 
               {mediaType === "video" && (() => {
                 const draft = res?.capcut_draft as Record<string, unknown> | undefined;
-                const draftFolder = typeof draft?.draft_folder === "string" ? draft.draft_folder : null;
-                const draftName = typeof draft?.draft_name === "string" ? draft.draft_name : null;
-                if (!draftFolder || !draftName) return null;
+                const versionId = typeof res?.version_id === "string" ? res.version_id : null;
+                const fileName = typeof draft?.file_name === "string" ? draft.file_name : "CapCut editing package";
+                if (draft?.available !== true || !versionId) return null;
                 return (
                   <div className="mb-4 rounded-lg border border-indigo-500/25 bg-indigo-500/5 p-3">
                     <div className="mb-1 flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
                       <span className="material-symbols-outlined text-[18px]">movie_edit</span>
-                      <p className="text-[12px] font-semibold">Editable CapCut draft ready</p>
+                      <p className="text-[12px] font-semibold">Editable CapCut package ready</p>
                     </div>
                     <p className="text-[12px] leading-relaxed text-text-body">
-                      In CapCut Desktop, set the Draft Location to the folder below, then open <strong>{draftName}</strong>.
-                      The timeline keeps the safe source clips and Omni-edited clips separate for manual adjustment.
+                      Download the project and its scene clips. In CapCut Desktop, copy the project into your draft location; if prompted, relink the extracted media folder.
+                      Manual changes must be rechecked before publishing.
                     </p>
-                    <code className="mt-2 block break-all rounded bg-surface-inset px-2 py-1 text-[10px] text-text-muted">
-                      {draftFolder}
-                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      disabled={capCutDownloadState === "loading"}
+                      onClick={async () => {
+                        setCapCutDownloadState("loading");
+                        try {
+                          const download = await getCapCutPackageDownload(originalResult.check_id, versionId);
+                          const link = document.createElement("a");
+                          link.href = download.download_url;
+                          link.download = download.file_name;
+                          document.body.appendChild(link);
+                          link.click();
+                          link.remove();
+                          setCapCutDownloadState("idle");
+                        } catch {
+                          setCapCutDownloadState("error");
+                        }
+                      }}
+                    >
+                      {capCutDownloadState === "loading" ? "Preparing download…" : `Download ${fileName}`}
+                    </Button>
+                    {capCutDownloadState === "error" && (
+                      <p className="mt-2 text-[11px] text-error">The editing package could not be downloaded. Please try again.</p>
+                    )}
                   </div>
                 );
               })()}

@@ -4,7 +4,7 @@
  * upload form, error handling, and the project-based workflow.
  */
 
-import type { ComplianceResult } from "@/services/complianceApi";
+import type { ComplianceResult } from "@/services/complianceService";
 
 export interface ViolationFlag {
   category: string;

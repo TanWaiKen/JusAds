@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { VideoPlanScene } from "@/services/generationApi";
+import type { VideoPlanScene } from "@/services/generationService";
 import { evaluateVideoPlanReadiness } from "./videoPlanReadiness";
 
 function scene(overrides: Partial<VideoPlanScene> = {}): VideoPlanScene {

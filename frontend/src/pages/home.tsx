@@ -5,10 +5,11 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { PromptRecommendations } from "@/components/prompt-search/PromptRecommendations";
 import { toast } from "sonner";
-import { fetchPostStatistics } from "@/services/statisticsApi";
-import type { StatsResponse } from "@/services/statisticsApi";
-import { createGenerationTask } from "@/services/taskApi";
-import { setPrefill } from "@/services/session";
+import { fetchPostStatistics } from "@/services/analyticsService";
+import type { StatsResponse } from "@/services/analyticsService";
+import { createGenerationTask, createProject } from "@/services/projectService";
+import { setPrefill } from "@/lib/sessionStorage";
+import { getBusinessProfile } from "@/services/accountService";
 import {
   Eye,
   Users,
@@ -23,8 +24,6 @@ import {
 } from "lucide-react";
 
 gsap.registerPlugin(useGSAP);
-
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,8 +50,7 @@ export default function DashboardHome() {
   useEffect(() => {
     const email = user?.profile?.email;
     if (!email) return;
-    fetch(`${API_BASE}/api/profile/${email}`)
-      .then((res) => (res.ok ? res.json() : null))
+    getBusinessProfile()
       .then((data) => {
         if (data) {
           setProfile({
@@ -72,7 +70,7 @@ export default function DashboardHome() {
     if (!user?.profile?.email) return;
     setStatsLoading(true);
     setStatsError(null);
-    fetchPostStatistics(undefined, { email: user.profile.email })
+    fetchPostStatistics()
       .then(setStats)
       .catch((e) => {
         setStats(null);
@@ -303,48 +301,39 @@ export default function DashboardHome() {
         {/* Left 2 cols: Prompt Recommendations */}
         <div className="lg:col-span-2 space-y-6">
           <div className="sentiment-panel bg-surface-card border border-border-default p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300">
-            <PromptRecommendations
-              profile={profile}
-              onUse={async (prompt, suggestion) => {
-                const loadingToast = toast.loading("Initializing generation workspace...");
-                try {
-                  const email = user?.profile?.email ?? "demo_user";
+            {!statsLoading && (
+              <PromptRecommendations
+                profile={profile}
+                onUse={async (prompt, suggestion) => {
+                  const loadingToast = toast.loading("Initializing generation workspace...");
+                  try {
+                    // 1. Create a new "Untitled" project
+                    const project = await createProject("Untitled");
+                    const projectId = project.id;
 
-                  // 1. Create a new "Untitled" project
-                  const createRes = await fetch(`${API_BASE}/api/projects`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      name: "Untitled",
-                      username: email,
-                    }),
-                  });
-                  if (!createRes.ok) throw new Error("Failed to create project");
-                  const project = await createRes.json();
-                  const projectId = project.id;
+                    // 2. Create a generation task
+                    const task = await createGenerationTask(projectId);
 
-                  // 2. Create a generation task
-                  const task = await createGenerationTask(projectId);
+                    // 3. Store prefill data in sessionStorage
+                    setPrefill({
+                      prompt,
+                      referenceImageUrl: suggestion.sourceMedia || undefined,
+                      referenceImageLabel: suggestion.title || "Reference Image",
+                    });
 
-                  // 3. Store prefill data in sessionStorage
-                  setPrefill({
-                    prompt,
-                    referenceImageUrl: suggestion.sourceMedia || undefined,
-                    referenceImageLabel: suggestion.title || "Reference Image",
-                  });
-
-                  // 4. Navigate to Advanced Mode
-                  toast.dismiss(loadingToast);
-                  navigate(`/dashboard/project/${projectId}/${task.id}`);
-                  toast.success("Workspace ready — prompt prefilled.");
-                } catch (err) {
-                  toast.dismiss(loadingToast);
-                  toast.error("Could not load workspace. Prompt copied to clipboard instead.");
-                  navigator.clipboard.writeText(prompt);
-                }
-              }}
-              maxCards={3}
-            />
+                    // 4. Navigate to Advanced Mode
+                    toast.dismiss(loadingToast);
+                    navigate(`/dashboard/project/${projectId}/${task.id}`);
+                    toast.success("Workspace ready — prompt prefilled.");
+                  } catch (err) {
+                    toast.dismiss(loadingToast);
+                    toast.error("Could not load workspace. Prompt copied to clipboard instead.");
+                    navigator.clipboard.writeText(prompt);
+                  }
+                }}
+                maxCards={3}
+              />
+            )}
           </div>
         </div>
 

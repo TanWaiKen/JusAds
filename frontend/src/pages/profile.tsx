@@ -4,17 +4,15 @@ import { Mail, User as UserIcon, Shield, Globe, Calendar, LogOut, Building2, Pac
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 
-import { API_BASE } from "@/lib/apiConfig";
+import {
+  disconnectZernioConnection,
+  getBusinessProfile,
+  getZernioConnection,
+  saveZernioConnection,
+} from "@/services/accountService";
+import type { BusinessProfile, ZernioConnection } from "@/models/account";
 
 gsap.registerPlugin(useGSAP);
-
-interface BusinessProfile {
-  company_name: string;
-  product_category: string;
-  product_description: string;
-  target_platforms: string[];
-  target_markets: string[];
-}
 
 export default function DashboardProfile() {
   const { user, picture, logout } = useAuth();
@@ -39,13 +37,7 @@ export default function DashboardProfile() {
 
   // Zernio API Key state
   const [zernioKeyInput, setZernioKeyInput] = useState("");
-  const [zernioStatus, setZernioStatus] = useState<{
-    has_key: boolean;
-    masked_key: string;
-    connected: boolean;
-    accounts: { name: string; icon: string; status: string }[];
-    message: string;
-  }>({
+  const [zernioStatus, setZernioStatus] = useState<ZernioConnection>({
     has_key: false,
     masked_key: "",
     connected: false,
@@ -59,10 +51,7 @@ export default function DashboardProfile() {
     if (!email) return;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/profile/${encodeURIComponent(email)}`);
-        if (res.ok) {
-          setBusinessProfile(await res.json());
-        }
+        setBusinessProfile(await getBusinessProfile());
       } catch {
         // Non-fatal
       } finally {
@@ -72,14 +61,8 @@ export default function DashboardProfile() {
   }, [email]);
 
   const fetchZernioStatus = async () => {
-    if (!email) return;
     try {
-      const res = await fetch(`${API_BASE}/api/user/${encodeURIComponent(email)}/zernio`);
-      if (res.ok) {
-        const data = await res.json();
-        console.log("[Zernio API Response - Status]", data);
-        setZernioStatus(data);
-      }
+      setZernioStatus(await getZernioConnection());
     } catch {
       // Non-fatal
     } finally {
@@ -88,26 +71,22 @@ export default function DashboardProfile() {
   };
 
   useEffect(() => {
-    fetchZernioStatus();
+    if (!email) return;
+    // Defer the stateful request until after this render commits.  Calling a
+    // state-changing helper synchronously from an effect causes a cascading
+    // render and is flagged by React's hooks lint rule.
+    const timer = window.setTimeout(() => {
+      void fetchZernioStatus();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [email]);
 
   const handleSaveZernioKey = async () => {
-    if (!email || !zernioKeyInput.trim()) return;
+    if (!zernioKeyInput.trim()) return;
     setSavingZernioKey(true);
     try {
-      const res = await fetch(`${API_BASE}/api/user/${encodeURIComponent(email)}/zernio`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: zernioKeyInput.trim() }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        console.log("[Zernio API Response - Save Key]", data);
-        setZernioStatus(data);
-        setZernioKeyInput("");
-      } else {
-        alert("Failed to save Zernio API Key");
-      }
+      setZernioStatus(await saveZernioConnection(zernioKeyInput.trim()));
+      setZernioKeyInput("");
     } catch {
       alert("Network error saving Zernio API Key");
     } finally {
@@ -116,20 +95,16 @@ export default function DashboardProfile() {
   };
 
   const handleDisconnectZernio = async () => {
-    if (!email || !confirm("Disconnect your Zernio account?")) return;
+    if (!confirm("Disconnect your Zernio account?")) return;
     try {
-      const res = await fetch(`${API_BASE}/api/user/${encodeURIComponent(email)}/zernio`, {
-        method: "DELETE",
+      await disconnectZernioConnection();
+      setZernioStatus({
+        has_key: false,
+        masked_key: "",
+        connected: false,
+        accounts: [],
+        message: "Zernio account disconnected.",
       });
-      if (res.ok) {
-        setZernioStatus({
-          has_key: false,
-          masked_key: "",
-          connected: false,
-          accounts: [],
-          message: "Zernio account disconnected.",
-        });
-      }
     } catch {
       // Non-fatal
     }

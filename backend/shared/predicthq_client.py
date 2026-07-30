@@ -44,7 +44,7 @@ def map_category(categories: list[str]) -> str:
 
 async def fetch_predicthq_events(
     country_code: Optional[str] = None,
-    days_ahead: int = 30,
+    days_ahead: int = 120,
 ) -> list[dict[str, Any]]:
     """Fetch real events for the requested country and future date window."""
     if not PREDICTHQ_API_KEY.strip():
@@ -90,17 +90,23 @@ async def fetch_predicthq_events(
     results = payload.get("results", []) if isinstance(payload, dict) else []
     mapped_events: list[dict[str, Any]] = []
     for result in results:
-        if not isinstance(result, dict):
+        if not isinstance(result, dict) or not result.get("id"):
             continue
-        categories = result.get("category", [])
+        raw_category = result.get("category", [])
+        categories = raw_category if isinstance(raw_category, list) else [raw_category]
         mapped_events.append({
             "name": result.get("title", "Unknown Event"),
             "market": country_code.lower() if country_code else "global",
             "start_date": str(result.get("start", start_date))[:10],
             "end_date": str(result.get("end", end_date))[:10],
-            "event_type": map_category(categories if isinstance(categories, list) else []),
+            "event_type": map_category([str(category) for category in categories if category]),
             "tags": result.get("labels", []),
             "impact_score": result.get("rank", 50),
+            "source": "predicthq",
+            "source_event_id": str(result["id"]),
+            "source_updated_at": result.get("updated") or None,
+            "source_payload": result,
+            "last_synced_at": now.isoformat(),
         })
 
     logger.info("[PredictHQ] Fetched %d live events", len(mapped_events))

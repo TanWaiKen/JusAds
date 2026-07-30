@@ -9,9 +9,11 @@
 
 import { useCallback, useRef, useState } from "react";
 import { Upload, X, RefreshCw, AlertCircle } from "lucide-react";
-import { API_BASE } from "@/lib/apiConfig";
+import { uploadProjectReference } from "@/services/mediaService";
 
 interface ReferenceUploadProps {
+  /** A project is required because uploads are owned and authorised server-side. */
+  projectId?: string;
   referenceUrls: string[];
   onAddUrl: (url: string) => void;
   onRemoveUrl: (index: number) => void;
@@ -32,41 +34,8 @@ interface UploadItem {
  * 2. Uploads the file directly to S3
  * 3. Returns the public URL for the uploaded asset
  */
-async function uploadToS3(file: File): Promise<string> {
-  const res = await fetch(`${API_BASE}/api/files/upload-url`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      filename: file.name,
-      content_type: file.type || "image/png",
-      file_size: file.size,
-      username: "easy-mode",
-      project_id: "reference",
-      asset_type: "reference",
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Failed to get upload URL" }));
-    throw new Error(err.error ?? `Upload URL request failed (${res.status})`);
-  }
-
-  const data = await res.json();
-
-  const uploadRes = await fetch(data.upload_url, {
-    method: "PUT",
-    headers: { "Content-Type": file.type || "image/png" },
-    body: file,
-  });
-
-  if (!uploadRes.ok) {
-    throw new Error(`S3 upload failed (${uploadRes.status})`);
-  }
-
-  return data.public_url;
-}
-
 export function ReferenceUpload({
+  projectId,
   referenceUrls,
   onAddUrl,
   onRemoveUrl,
@@ -91,7 +60,8 @@ export function ReferenceUpload({
 
       for (const item of newItems) {
         try {
-          const publicUrl = await uploadToS3(item.file);
+          if (!projectId) throw new Error("Create a project before uploading references.");
+          const { publicUrl } = await uploadProjectReference(item.file, projectId);
           onAddUrl(publicUrl);
           setPendingUploads((prev) => prev.filter((p) => p.id !== item.id));
           URL.revokeObjectURL(item.previewUrl);
@@ -108,7 +78,7 @@ export function ReferenceUpload({
         }
       }
     },
-    [onAddUrl]
+    [onAddUrl, projectId]
   );
 
   const handleRetry = useCallback(
@@ -120,7 +90,8 @@ export function ReferenceUpload({
       );
 
       try {
-        const publicUrl = await uploadToS3(item.file);
+        if (!projectId) throw new Error("Create a project before uploading references.");
+        const { publicUrl } = await uploadProjectReference(item.file, projectId);
         onAddUrl(publicUrl);
         setPendingUploads((prev) => prev.filter((p) => p.id !== item.id));
         URL.revokeObjectURL(item.previewUrl);
@@ -136,7 +107,7 @@ export function ReferenceUpload({
         );
       }
     },
-    [onAddUrl]
+    [onAddUrl, projectId]
   );
 
   const handleDrop = useCallback(
@@ -193,6 +164,9 @@ export function ReferenceUpload({
 
   return (
     <div className="space-y-3">
+      <p className="text-xs text-muted-foreground" role="status">
+        Storage allowance: 5 GB per account. Each upload is limited to 100 MB.
+      </p>
       <label className="text-sm font-medium text-foreground">
         Reference Images
       </label>

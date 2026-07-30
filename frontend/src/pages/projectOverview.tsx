@@ -9,13 +9,11 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import { Filter, Download, Pencil, Check, X, Plus, ShieldCheck, Sparkles } from "lucide-react";
+import { Pencil, Check, X, Plus, ShieldCheck, Sparkles, Share } from "lucide-react";
 import { toast } from "sonner";
-import { listTasks, updateProjectName, deleteTask } from "@/services/taskApi";
-import type { TaskSummary } from "@/services/taskApi";
-import { API_BASE } from "@/services/taskApi";
+import { listProjects, listTasks, updateProjectName, deleteTask, shareProject, listProjectMembers, removeProjectMember, type ProjectMember } from "@/services/projectService";
+import type { Project as ProjectMeta, TaskSummary } from "@/models/project";
 import { useAuth } from "@/hooks/useAuth";
-import { authenticatedFetch } from "@/lib/apiAuth";
 import {
   RecordStats,
   TaskTable,
@@ -27,14 +25,6 @@ import type {
 } from "@/components/projects";
 
 gsap.registerPlugin(useGSAP);
-
-interface ProjectMeta {
-  id: string;
-  name: string;
-  owner_email: string;
-  description: string | null;
-  created_at: string;
-}
 
 /** Maps a TaskSummary from the API to the UI's TaskExecution shape. */
 function mapTaskToExecution(task: TaskSummary): TaskExecution {
@@ -97,6 +87,13 @@ export default function ProjectOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Share project state
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
+  const [isSharing, setIsSharing] = useState(false);
+  const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [removingMember, setRemovingMember] = useState<string | null>(null);
+
   // Inline edit state
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -141,11 +138,7 @@ export default function ProjectOverviewPage() {
     }
 
     try {
-      const projectRes = await authenticatedFetch(
-        `${API_BASE}/api/projects?username=${encodeURIComponent(email)}`
-      );
-      if (!projectRes.ok) throw new Error("Failed to fetch projects");
-      const projects: ProjectMeta[] = await projectRes.json();
+      const projects = await listProjects();
       const proj = projects.find((p) => p.id === projectId);
 
       if (!proj) {
@@ -157,20 +150,12 @@ export default function ProjectOverviewPage() {
         return;
       }
 
-      if (proj.owner_email && proj.owner_email !== email) {
-        navigate("/not-found", {
-          replace: true,
-          state: { type: "unauthorized", message: "This project belongs to another account." },
-        });
-        return;
-      }
-
       setProject(proj);
       setEditName(proj.name);
 
       // Fetch tasks
       try {
-        const taskList = await listTasks(projectId, email);
+        const taskList = await listTasks(projectId);
         setTasks(taskList.map(mapTaskToExecution));
       } catch (err) {
         if (err instanceof Error && err.message.includes("403")) {
@@ -221,6 +206,41 @@ export default function ProjectOverviewPage() {
       navigate(`/dashboard/project/${projectId}/${task.realId}`);
     }
   }, [tasks, projectId, navigate]);
+
+  const handleShareSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shareEmail || !projectId) return;
+
+    setIsSharing(true);
+    try {
+      await shareProject(projectId, shareEmail);
+      toast.success(`Project shared with ${shareEmail}`);
+      setShareEmail("");
+      setMembers(await listProjectMembers(projectId));
+    } catch (err: any) {
+      toast.error(err.message || "Failed to share project");
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const openShareModal = async () => {
+    if (!projectId) return;
+    setIsShareModalOpen(true);
+    try { setMembers(await listProjectMembers(projectId)); }
+    catch { toast.error("Could not load shared members"); }
+  };
+
+  const handleRemoveMember = async (email: string) => {
+    if (!projectId) return;
+    setRemovingMember(email);
+    try {
+      await removeProjectMember(projectId, email);
+      setMembers((current) => current.filter((member) => member.email !== email));
+      toast.success(`Removed ${email}`);
+    } catch (err: any) { toast.error(err.message || "Could not remove member"); }
+    finally { setRemovingMember(null); }
+  };
 
   const handleDeleteTask = useCallback(async (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
@@ -276,6 +296,71 @@ export default function ProjectOverviewPage() {
 
   return (
       <div ref={containerRef} className="flex-1 p-8 max-w-[1200px] mx-auto w-full">
+        {/* Modals and Overlays */}
+      {isShareModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-surface-card p-6 shadow-2xl border border-border-default">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-text-heading">Share Project</h3>
+              <button onClick={() => setIsShareModalOpen(false)} className="text-text-caption hover:text-text-heading">
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-text-body mb-4">
+              Invite a team member to collaborate on this project. They will have access to the task history and generated media.
+            </p>
+            <form onSubmit={handleShareSubmit}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-text-heading mb-1">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={shareEmail}
+                  onChange={(e) => setShareEmail(e.target.value)}
+                  placeholder="colleague@example.com"
+                  className="w-full rounded-lg border border-border-default bg-surface-inset px-3 py-2 text-text-heading focus:border-accent-blue focus:outline-none focus:ring-1 focus:ring-accent-blue"
+                  disabled={isSharing}
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsShareModalOpen(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-text-body hover:bg-surface-inset transition-colors"
+                  disabled={isSharing}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  disabled={isSharing || !shareEmail}
+                >
+                  {isSharing ? "Sharing..." : "Share Project"}
+                </button>
+              </div>
+            </form>
+            <div className="mt-5 border-t border-border-default pt-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-caption">People with access</p>
+              {members.length === 0 ? (
+                <p className="text-sm text-text-caption">Only you have access.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {members.map((member) => (
+                    <li key={member.email} className="flex items-center justify-between gap-3 text-sm text-text-body">
+                      <span className="truncate">{member.email}</span>
+                      <button type="button" onClick={() => handleRemoveMember(member.email)} disabled={removingMember === member.email} className="text-accent-error hover:underline disabled:opacity-50">
+                        {removingMember === member.email ? "Removing..." : "Remove"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
         {/* Page Header */}
         <div className="page-header mb-10">
           <div className="flex justify-between items-end mb-8">
@@ -340,6 +425,13 @@ export default function ProjectOverviewPage() {
               </p>
             </div>
             <div className="flex gap-2">
+              <button
+                onClick={openShareModal}
+                className="flex items-center gap-2 rounded-lg bg-surface-inset px-4 py-2 text-label-ui font-medium text-text-heading hover:bg-border-subtle transition-colors"
+              >
+                <Share size={16} />
+                Share
+              </button>
               <div className="relative">
                 <button
                   onClick={() => setIsNewTaskOpen(!isNewTaskOpen)}
@@ -373,14 +465,6 @@ export default function ProjectOverviewPage() {
                   </div>
                 )}
               </div>
-              <button className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-card px-4 py-2 text-label-ui font-medium hover:bg-surface-inset transition-colors">
-                <Filter size={16} />
-                Filter
-              </button>
-              <button className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-card px-4 py-2 text-label-ui font-medium hover:bg-surface-inset transition-colors">
-                <Download size={16} />
-                Export
-              </button>
             </div>
           </div>
 

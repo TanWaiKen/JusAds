@@ -123,6 +123,7 @@ def triage_decide(
     platform: str,
     market: str,
     confidence: str = "high",
+    localization_needs_adaptation: bool = False,
 ) -> TriageResult:
     """Determine remix outcome without calling AI models.
 
@@ -144,6 +145,9 @@ def triage_decide(
         platform: One of {"tiktok", "meta", "instagram", "general"}.
         market: One of {"malaysia", "singapore"}.
         confidence: AI confidence level — one of {"high", "medium", "low"}.
+        localization_needs_adaptation: A deterministic audience-fit flag. It is
+            separate from legal/platform risk and permits a remix even when
+            there are no compliance violations.
 
     Returns:
         TriageResult with outcome, reasoning, guidance, and platform_ban fields.
@@ -211,7 +215,19 @@ def triage_decide(
             platform_ban=False,
         )
 
-    # -- Step 5: High risk score -> not compliant ---------------------------
+    # -- Step 5: Localization-only adjustment -----------------------------
+    # A creative can be legally acceptable while still needing audience-fit
+    # edits. Do not label this a compliance violation, but allow the same
+    # remediation pipeline to apply its saved localization plan.
+    if localization_needs_adaptation:
+        return TriageResult(
+            outcome=TriageOutcome.EDIT,
+            reasoning="Audience localization needs adaptation",
+            guidance="",
+            platform_ban=False,
+        )
+
+    # -- Step 6: High risk score -> not compliant ---------------------------
     if risk_percentage >= 40:
         return TriageResult(
             outcome=TriageOutcome.EDIT,
@@ -220,7 +236,7 @@ def triage_decide(
             platform_ban=False,
         )
 
-    # -- Step 6: Low risk, no violations, high confidence -> COMPLIANT -----
+    # -- Step 7: Low risk, no violations, high confidence -> COMPLIANT -----
     return TriageResult(
         outcome=TriageOutcome.COMPLIANT,
         reasoning="Risk below threshold with no violations and high confidence",

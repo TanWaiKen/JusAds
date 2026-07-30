@@ -100,17 +100,48 @@ def create_project(user_id: str, name: str) -> dict:
 
 def list_projects(user_id: str) -> list[dict]:
     """List all projects for a user (newest first)."""
-    response = (
+    # Fetch owned projects
+    owned_resp = (
         supabase.table("projects")
         .select("*")
         .eq("owner_email", user_id)
         .order("created_at", desc=True)
         .execute()
     )
-    rows = response.data or []
-    for row in rows:
+    owned_rows = owned_resp.data or []
+
+    shared_rows = []
+    # A stale relationship or a temporarily unavailable membership query must
+    # never hide the caller's owned projects.  Shared workspaces are optional;
+    # return the verified owned rows and record the degraded capability.
+    try:
+        shared_resp = (
+            supabase.table("project_members")
+            .select("projects(*)")
+            .eq("email", user_id)
+            .execute()
+        )
+        if shared_resp.data:
+            for row in shared_resp.data:
+                if row.get("projects"):
+                    shared_rows.append(row["projects"])
+    except Exception:
+        logger.exception("Unable to load shared projects for authenticated user")
+
+    # Combine and deduplicate
+    all_projects = {}
+    for p in owned_rows + shared_rows:
+        all_projects[str(p["id"])] = p
+
+    sorted_projects = sorted(
+        all_projects.values(),
+        key=lambda x: x.get("created_at", ""),
+        reverse=True
+    )
+
+    for row in sorted_projects:
         row["id"] = str(row["id"])
-    return rows
+    return sorted_projects
 
 
 def update_project(project_id: str, name: Optional[str] = None, description: Optional[str] = None) -> dict:
@@ -409,14 +440,12 @@ def get_task(project_id: str, task_id: str) -> dict | None:
 
         if task["type"] == "compliance":
             task["compliance"] = _get_compliance_enrichment(task_id)
-            # Expose S3 URLs at top level for frontend convenience
+            # Route handlers turn private keys into temporary URLs only after
+            # authenticated project access has been checked.
             task["s3_upload_key"] = task["compliance"].get("s3_upload_key")
             task["s3_segmented_key"] = task["compliance"].get("s3_segmented_key")
             task["s3_remix_key"] = task["compliance"].get("s3_remix_key")
-            logger.info(
-                f"[get_task] task={task_id} | s3_upload_key={task['s3_upload_key']} | "
-                f"s3_segmented_key={task['s3_segmented_key']} | s3_remix_key={task['s3_remix_key']}"
-            )
+            logger.info("[get_task] loaded compliance media metadata task=%s", task_id)
 
         return task
     except Exception as e:

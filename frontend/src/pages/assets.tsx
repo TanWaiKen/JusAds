@@ -17,13 +17,14 @@ import {
   Loader2,
   ExternalLink,
   Download,
+  Trash2,
   Sparkles,
   UploadCloud,
 } from "lucide-react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import { API_BASE } from "@/services/generationApi";
 import { getAssetDownloadUrl } from "@/services/fileService";
+import { deleteUserAsset, getUserAssets } from "@/services/mediaService";
 import { useAuth } from "@/hooks/useAuth";
 
 gsap.registerPlugin(useGSAP);
@@ -78,24 +79,18 @@ export default function DashboardAssets() {
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [downloadingAssetId, setDownloadingAssetId] = useState<string | null>(null);
+  const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Fetch user assets from all user projects (cached — only fetches once per mount).
   useEffect(() => {
-    const email = user?.profile?.email;
-    if (!email) return;
+    if (!user?.profile?.email) return;
     if (assets.length > 0) return;
     setLoadingAssets(true);
-    fetch(`${API_BASE}/api/user-assets?user_email=${encodeURIComponent(email)}&limit=100`)
-      .then((res) => (res.ok ? res.json() : { assets: [] }))
-      .then((data: unknown) => {
-        if (typeof data !== "object" || data === null) return;
-        const raw = (data as Record<string, unknown>).assets;
-        if (!Array.isArray(raw)) return;
-        setAssets(raw.map(toUserAsset).filter((asset): asset is UserAsset => asset !== null));
-      })
+    getUserAssets(100)
+      .then((raw) => setAssets(raw.map(toUserAsset).filter((asset): asset is UserAsset => asset !== null)))
       .catch(() => setAssets([]))
       .finally(() => setLoadingAssets(false));
   }, [user?.profile?.email]);
@@ -158,6 +153,19 @@ export default function DashboardAssets() {
       setDownloadError(error instanceof Error ? error.message : "Could not download this asset.");
     } finally {
       setDownloadingAssetId(null);
+    }
+  };
+
+  const handleDelete = async (asset: UserAsset): Promise<void> => {
+    if (!confirm(`Permanently delete ${asset.filename || "this asset"}? This cannot be undone.`)) return;
+    setDeletingAssetId(asset.id);
+    try {
+      await deleteUserAsset(asset.id);
+      setAssets((current) => current.filter((item) => item.id !== asset.id));
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Could not delete this asset.");
+    } finally {
+      setDeletingAssetId(null);
     }
   };
 
@@ -358,6 +366,15 @@ export default function DashboardAssets() {
                             ? <Loader2 size={9} className="animate-spin" />
                             : <Download size={9} />}
                           Download
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(asset)}
+                          disabled={deletingAssetId === asset.id}
+                          className="inline-flex items-center gap-1 text-[9px] font-medium text-destructive hover:underline disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {deletingAssetId === asset.id ? <Loader2 size={9} className="animate-spin" /> : <Trash2 size={9} />}
+                          Delete
                         </button>
                       </div>
                     </div>

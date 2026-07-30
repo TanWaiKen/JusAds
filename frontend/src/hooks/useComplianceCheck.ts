@@ -3,8 +3,8 @@ import type { UploadParams } from "@/types/compliance";
 import type {
   NodeStatus,
   ComplianceResult,
-} from "@/services/complianceApi";
-import { API_BASE } from "@/services/complianceApi";
+} from "@/services/complianceService";
+import { API_BASE } from "@/services/complianceService";
 import { authenticatedFetch, toApiRequestError } from "@/lib/apiAuth";
 
 export interface UseComplianceCheckReturn {
@@ -67,13 +67,6 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
       if (params.projectId) {
         formData.append("project_id", params.projectId);
       }
-      console.log("[ComplianceCheck] Submitting compliance check (SSE)", {
-        hasFile: !!params.file,
-        hasText: !!params.text,
-        market: params.market,
-        projectId: params.projectId,
-      });
-
       try {
         const res = await authenticatedFetch(`${API_BASE}/api/compliance/check`, {
           method: "POST",
@@ -116,7 +109,6 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
               switch (event.type) {
                 case "initiated":
                   taskId = event.task_id;
-                  console.log("[ComplianceCheck] Initiated:", event);
                   setNodeStatuses([{
                     type: "node_status",
                     node: "upload",
@@ -153,7 +145,6 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
                     check_id: taskId || event.data.task_id,
                     market: event.data.market,
                   };
-                  console.log("[ComplianceCheck] ✅ Result received:", finalResult);
                   break;
 
                 case "error":

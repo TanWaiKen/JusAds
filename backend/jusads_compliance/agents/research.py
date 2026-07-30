@@ -14,6 +14,7 @@ from typing import Any
 from google.genai import types as genai_types
 
 from jusads_compliance.progress_tracker import ProgressTracker
+from jusads_compliance.localization_assessment import build_localization_assessment
 from jusads_compliance.rules_client import get_persona, get_rules
 from jusads_compliance.utils import parse_json_res
 from shared.clients import gemini
@@ -249,6 +250,9 @@ def grounded_compliance_agent(state: Compliance_State) -> dict:
         ):
             if key in adjudicated:
                 result[key] = adjudicated[key]
+        result["localization_assessment"] = build_localization_assessment(
+            result.get("cultural_fit_score")
+        )
         result["verification"] = {
             "research_report": result.get("_research_context", ""),
             "sources": sources,

@@ -1,4 +1,4 @@
-import type { RemixNodeStatus, RemixCannotFixEvent, RemixImageEditEvent, RemixEditFailedEvent } from "@/services/remix";
+import type { RemixNodeStatus, RemixCannotFixEvent, RemixImageEditEvent, RemixEditFailedEvent } from "@/services/complianceService";
 import type { RemixOutcome } from "@/hooks/useComplianceRemix";
 import { CheckStep } from "@/components/compliance/CheckStep";
 import { Button } from "@/components/ui/button";

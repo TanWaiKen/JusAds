@@ -212,8 +212,12 @@ def _saved_inputs(market: str, today: date) -> dict[str, list[dict[str, Any]]]:
             .data
             or []
         )
+        # Campaign Planner uses only high-relevance moments.  The 0-100 score
+        # is the normalized provider/manual event rank, not an LLM confidence.
         inputs["events"] = [
-            event for event in inputs["events"] if _event_date_is_plausible(event, market)
+            event for event in inputs["events"]
+            if _event_date_is_plausible(event, market)
+            and int(event.get("impact_score") or 0) >= 70
         ]
     except Exception as exc:
         logger.warning("[DailyIdea] Cultural-event cache unavailable: %s", exc)
@@ -223,7 +227,7 @@ def _saved_inputs(market: str, today: date) -> dict[str, list[dict[str, Any]]]:
             .select(
                 "title,summary,why_trending,how_it_works,suggested_adaptation,"
                 "do_not_do,target_platforms,momentum,confidence,detected_at,"
-                "creative_trend_sources(url)"
+                "evidence_urls"
             )
             .eq("market", market)
             .is_("owner_email", "null")
@@ -257,9 +261,8 @@ def _source_urls(inputs: dict[str, list[dict[str, Any]]]) -> list[str]:
     for trend in inputs["trends"]:
         candidates.append(_plain_text(trend.get("url"), 2000))
     for signal in inputs["signals"]:
-        for source in signal.get("creative_trend_sources") or []:
-            if isinstance(source, dict):
-                candidates.append(_plain_text(source.get("url"), 2000))
+        for url in signal.get("evidence_urls") or []:
+            candidates.append(_plain_text(url, 2000))
     return _valid_urls(candidates)
 
 
