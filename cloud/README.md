@@ -133,6 +133,12 @@ cp .env.production.template .env.production
 nano .env.production   # Fill in real API keys from your local backend/.env
 ```
 
+> **Important (Vertex AI on AWS):** Because Vertex AI requires Google Cloud Application Default Credentials (ADC) and this is an AWS server, you must provide a Google Cloud Service Account key:
+> 1. Create a Service Account in Google Cloud (with Vertex AI User role)
+> 2. Generate and download a JSON key
+> 3. Upload the key to the server as `/opt/jusads/FYP/cloud/service_account.json`
+> 4. Ensure `GOOGLE_APPLICATION_CREDENTIALS=/app/service_account.json` is set in `.env.production`
+
 ### 8. Get HTTPS Certificate
 
 ```bash
