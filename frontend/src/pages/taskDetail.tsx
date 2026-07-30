@@ -11,11 +11,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
-import { getTask } from "@/services/taskApi";
-import type { TaskDetail } from "@/services/taskApi";
+import { getTask } from "@/services/projectService";
+import type { TaskDetail } from "@/models/project";
 import { GenerationCanvas } from "@/components/workspace/canvas/GenerationCanvas";
 import { deserializePipeline } from "@/components/workspace/canvas/graphModel";
-import { streamGuidedGeneration } from "@/services/generationApi";
+import { streamGuidedGeneration } from "@/services/generationService";
 import type { PipelineState } from "@/components/workspace/canvas/graphModel";
 
 export default function TaskDetailPage() {

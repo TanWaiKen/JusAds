@@ -1,8 +1,8 @@
 """
 pipeline_runner.py
 ──────────────────
-Runs LangGraph pipelines (Compliance and Remediation) and persists real-time
-progress to the pipeline_progress Supabase table via ProgressTracker.
+Runs LangGraph pipelines (Compliance and Remediation) and emits real-time
+progress through the SSE stream. Legacy ProgressTracker calls are log-only.
 
 Responsibilities:
   - Stream pipeline execution node-by-node

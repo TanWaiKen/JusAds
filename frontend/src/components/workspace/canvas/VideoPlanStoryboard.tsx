@@ -26,7 +26,7 @@ import {
   Volume2,
   WalletCards,
 } from "lucide-react";
-import type { VideoPlan } from "@/services/generationApi";
+import type { VideoPlan } from "@/services/generationService";
 import { evaluateVideoPlanReadiness } from "./videoPlanReadiness";
 
 gsap.registerPlugin(useGSAP);

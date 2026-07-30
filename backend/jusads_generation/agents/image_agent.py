@@ -369,8 +369,7 @@ async def generate(
         try:
             s3_url = upload_file_public(generated_path, s3_key)
         except Exception as e:
-            logger.warning("[ImageAgent] S3 upload failed, using fallback: %s", e)
-            s3_url = f"https://mock-bucket.s3.amazonaws.com/{s3_key}"
+            raise RuntimeError("Image output could not be stored safely.") from e
 
         ad_id = _record_row(
             project_id=project_id,

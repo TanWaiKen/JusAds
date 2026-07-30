@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { API_BASE } from "@/services/taskApi";
-import { consumePrefill } from "@/services/session";
+import { consumePrefill } from "@/lib/sessionStorage";
+import { searchPromptLibrary, uploadProjectReference } from "@/services/mediaService";
 import {
   streamChat,
   getChatHistory,
@@ -16,7 +16,7 @@ import {
   type MediaType,
   type VideoPlan,
   type GenerationOptions,
-} from "@/services/generationApi";
+} from "@/services/generationService";
 import type { PipelineState, NodeType } from "@/components/workspace/canvas/graphModel";
 import {
   Send,
@@ -346,25 +346,15 @@ export function ChatbotPanel({
   const uploadFile = async (file: File) => {
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch(
-        `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/upload`,
-        { method: "POST", body: formData }
-      );
-
-      if (!res.ok) throw new Error("Upload failed");
-
-      const data = await res.json();
+      const data = await uploadProjectReference(file, projectId, taskId);
       // If canvas is managing references, notify parent to create a reference node.
       // Otherwise fall back to local reference state (Easy Mode / no canvas).
       if (onReferenceUploaded) {
-        onReferenceUploaded(file.name, data.public_url as string);
+        onReferenceUploaded(file.name, data.publicUrl);
       } else {
-        setReferences((prev) => [...prev, { filename: file.name, url: data.public_url }]);
+        setReferences((prev) => [...prev, { filename: file.name, url: data.publicUrl }]);
         // Auto-select newly uploaded reference
-        setSelectedRefUrls((prev) => new Set([...prev, data.public_url as string]));
+        setSelectedRefUrls((prev) => new Set([...prev, data.publicUrl]));
       }
       toast.success(`Reference "${file.name}" uploaded`);
     } catch (err) {
@@ -848,13 +838,7 @@ export function ChatbotPanel({
                     const query = (e.target as HTMLInputElement).value.trim();
                     if (!query) return;
                     try {
-                      const res = await fetch(
-                        `${API_BASE}/api/prompt-suggestions?query=${encodeURIComponent(query)}&top_k=5`
-                      );
-                      if (res.ok) {
-                        const data = (await res.json()) as { suggestions?: { title: string; content: string }[] };
-                        setAutoSuggestions((data.suggestions || []).slice(0, 5));
-                      }
+                      setAutoSuggestions((await searchPromptLibrary(query, 5)).slice(0, 5));
                     } catch { /* silent */ }
                   }
                 }}

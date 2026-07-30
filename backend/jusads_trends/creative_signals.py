@@ -172,6 +172,7 @@ def _to_record(signal: CreativeTrendSignal, market: str, owner_email: str) -> di
         "language": signal["language"],
         "momentum": signal["momentum"],
         "confidence": signal["confidence"],
+        "evidence_urls": signal["evidence_urls"],
         "detected_at": signal["detected_at"],
     }
 
@@ -209,11 +210,9 @@ async def research_creative_signals(market: str, platform: str, owner_email: str
         supabase.table("creative_trend_signals").insert(
             [_to_record(signal, market, owner_email) for signal in signals]
         ).execute()
-        source_rows = [
-            {"signal_id": signal["id"], "url": url, "source_title": "Grounded research evidence"}
-            for signal in signals for url in signal["evidence_urls"]
-        ]
-        supabase.table("creative_trend_sources").insert(source_rows).execute()
+        # Evidence URLs are stored directly on creative_trend_signals.evidence_urls.
+        # creative_trend_sources was deliberately retired in migration 029; writing
+        # to it made a successful cache save look like a persistence failure.
     except Exception:
         # The migration may not be applied yet, or storage may be temporarily
         # unavailable. The grounded signals remain useful for this request, but
@@ -228,9 +227,7 @@ def fetch_creative_signals(market: str, platform: str, owner_email: str, limit: 
     if supabase is None:
         raise CreativeSignalError("Creative trend storage is unavailable")
     try:
-        query = supabase.table("creative_trend_signals").select(
-            "*, creative_trend_sources(url)"
-        ).eq("market", market)
+        query = supabase.table("creative_trend_signals").select("*").eq("market", market)
         query = query.eq("owner_email", owner_email) if owner_email else query.is_("owner_email", "null")
         if platform:
             query = query.contains("target_platforms", [platform])
@@ -240,7 +237,7 @@ def fetch_creative_signals(market: str, platform: str, owner_email: str, limit: 
         raise CreativeSignalError("Creative signal storage is unavailable") from exc
     signals: list[CreativeTrendSignal] = []
     for row in rows:
-        sources = row.get("creative_trend_sources") or []
+        sources = [{"url": url, "source_title": "Grounded research evidence"} for url in (row.get("evidence_urls") or [])]
         signals.append({
             "id": _text(row.get("id")), "signal_type": _text(row.get("signal_type")),
             "title": _text(row.get("title")), "summary": _text(row.get("summary")),

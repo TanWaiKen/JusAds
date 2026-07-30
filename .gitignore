@@ -48,13 +48,17 @@ weights/
 
 # Media & binary assets (runtime data)
 backend/assets/
+assets/results/
 *.mp4
 *.mp3
 *.wav
 
-# Data files (runtime / scraped)
-backend/data/
+# Operator datasets (not deployed with the application)
+manual_push/data/
+!manual_push/data/
+!manual_push/data/demo_ml_triage_dataset.jsonl
 backend/dustbin/
+backend/data/daily_creative_ideas.json
 
 # Cloud secrets (only template is committed)
 cloud/.env.production
@@ -68,3 +72,4 @@ diagram/*.png
 
 .agents
 .kiro
+.tmp/

@@ -5,10 +5,11 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { PromptRecommendations } from "@/components/prompt-search/PromptRecommendations";
 import { toast } from "sonner";
-import { fetchPostStatistics } from "@/services/statisticsApi";
-import type { StatsResponse } from "@/services/statisticsApi";
-import { createGenerationTask } from "@/services/taskApi";
-import { setPrefill } from "@/services/session";
+import { fetchPostStatistics } from "@/services/analyticsService";
+import type { StatsResponse } from "@/services/analyticsService";
+import { createGenerationTask, createProject } from "@/services/projectService";
+import { setPrefill } from "@/lib/sessionStorage";
+import { getBusinessProfile } from "@/services/accountService";
 import {
   Eye,
   Users,
@@ -23,8 +24,6 @@ import {
 } from "lucide-react";
 
 gsap.registerPlugin(useGSAP);
-
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,8 +50,7 @@ export default function DashboardHome() {
   useEffect(() => {
     const email = user?.profile?.email;
     if (!email) return;
-    fetch(`${API_BASE}/api/profile/${email}`)
-      .then((res) => (res.ok ? res.json() : null))
+    getBusinessProfile()
       .then((data) => {
         if (data) {
           setProfile({
@@ -72,7 +70,7 @@ export default function DashboardHome() {
     if (!user?.profile?.email) return;
     setStatsLoading(true);
     setStatsError(null);
-    fetchPostStatistics(undefined, { email: user.profile.email })
+    fetchPostStatistics()
       .then(setStats)
       .catch((e) => {
         setStats(null);
@@ -207,13 +205,13 @@ export default function DashboardHome() {
           <div className="w-12 h-12 bg-accent-blue/10 rounded-full flex items-center justify-center mb-4">
             <Settings className="text-accent-blue w-6 h-6" />
           </div>
-          <h3 className="text-text-heading font-bold text-[18px] mb-2">Connect Zernio to view live statistics</h3>
-          <p className="text-text-caption py-2 text-[14px] max-w-[400px] mb-1">
+          <h3 className="text-text-heading font-bold text-body-lg mb-2">Connect Zernio to view live statistics</h3>
+          <p className="text-text-caption py-2 text-label-ui max-w-100 mb-1">
             You need to provide your Zernio API key to fetch real-time social media analytics and distribute generated posts.
           </p>
           <button
             onClick={() => navigate("/dashboard/profile")}
-            className="inline-flex h-10 px-6 items-center justify-center gap-1.5 rounded-md bg-[#171717] text-[13px] font-semibold text-white hover:bg-[#333] transition-colors cursor-pointer"
+            className="inline-flex h-10 px-6 items-center justify-center gap-1.5 rounded-md bg-text-primary text-code-sm font-semibold text-white hover:bg-[#333] transition-colors cursor-pointer"
           >
             Go to Profile Settings
           </button>
@@ -239,7 +237,7 @@ export default function DashboardHome() {
                       </span>
                     </div>
                     <div
-                      className="stat-number text-[32px] font-bold tracking-tight text-text-heading font-mono"
+                      className="stat-number text-headline-md font-bold tracking-tight text-text-heading font-mono"
                       data-value={card.value}
                     >
                       0
@@ -253,7 +251,7 @@ export default function DashboardHome() {
           {!statsLoading && platformEntries.length > 0 && (
             <div className="promo-card bg-surface-card border border-border-default rounded-2xl p-6 retina-border shadow-xs">
               <div className="flex items-center justify-between mb-5">
-                <h3 className="font-bold text-[16px] text-text-heading flex items-center gap-2">
+                <h3 className="font-bold text-body-md text-text-heading flex items-center gap-2">
                   <Globe size={16} className="text-accent-blue" />
                   Platform Breakdown
                 </h3>
@@ -271,22 +269,22 @@ export default function DashboardHome() {
                       className="flex items-center justify-between p-4 rounded-xl bg-surface-inset border border-border-subtle"
                     >
                       <div className="flex items-center gap-3">
-                        <span className={`p-2 rounded-lg text-[13px] font-bold ${platformColor}`}>
+                        <span className={`p-2 rounded-lg text-code-sm font-bold ${platformColor}`}>
                           {label}
                         </span>
                       </div>
                       <div className="flex gap-6 text-right">
                         <div>
                           <span className="block text-[10px] uppercase font-bold text-text-caption/60">Reach</span>
-                          <span className="font-mono text-[14px] font-bold text-text-heading">{formatCount(data.reach)}</span>
+                          <span className="font-mono text-label-ui font-bold text-text-heading">{formatCount(data.reach)}</span>
                         </div>
                         <div>
                           <span className="block text-[10px] uppercase font-bold text-text-caption/60">Likes</span>
-                          <span className="font-mono text-[14px] font-bold text-text-heading">{formatCount(data.likes)}</span>
+                          <span className="font-mono text-label-ui font-bold text-text-heading">{formatCount(data.likes)}</span>
                         </div>
                         <div>
                           <span className="block text-[10px] uppercase font-bold text-text-caption/60">Posts</span>
-                          <span className="font-mono text-[14px] font-bold text-text-heading">{data.posts}</span>
+                          <span className="font-mono text-label-ui font-bold text-text-heading">{data.posts}</span>
                         </div>
                       </div>
                     </div>
@@ -303,48 +301,39 @@ export default function DashboardHome() {
         {/* Left 2 cols: Prompt Recommendations */}
         <div className="lg:col-span-2 space-y-6">
           <div className="sentiment-panel bg-surface-card border border-border-default p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300">
-            <PromptRecommendations
-              profile={profile}
-              onUse={async (prompt, suggestion) => {
-                const loadingToast = toast.loading("Initializing generation workspace...");
-                try {
-                  const email = user?.profile?.email ?? "demo_user";
+            {!statsLoading && (
+              <PromptRecommendations
+                profile={profile}
+                onUse={async (prompt, suggestion) => {
+                  const loadingToast = toast.loading("Initializing generation workspace...");
+                  try {
+                    // 1. Create a new "Untitled" project
+                    const project = await createProject("Untitled");
+                    const projectId = project.id;
 
-                  // 1. Create a new "Untitled" project
-                  const createRes = await fetch(`${API_BASE}/api/projects`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      name: "Untitled",
-                      username: email,
-                    }),
-                  });
-                  if (!createRes.ok) throw new Error("Failed to create project");
-                  const project = await createRes.json();
-                  const projectId = project.id;
+                    // 2. Create a generation task
+                    const task = await createGenerationTask(projectId);
 
-                  // 2. Create a generation task
-                  const task = await createGenerationTask(projectId);
+                    // 3. Store prefill data in sessionStorage
+                    setPrefill({
+                      prompt,
+                      referenceImageUrl: suggestion.sourceMedia || undefined,
+                      referenceImageLabel: suggestion.title || "Reference Image",
+                    });
 
-                  // 3. Store prefill data in sessionStorage
-                  setPrefill({
-                    prompt,
-                    referenceImageUrl: suggestion.sourceMedia || undefined,
-                    referenceImageLabel: suggestion.title || "Reference Image",
-                  });
-
-                  // 4. Navigate to Advanced Mode
-                  toast.dismiss(loadingToast);
-                  navigate(`/dashboard/project/${projectId}/${task.id}`);
-                  toast.success("Workspace ready — prompt prefilled.");
-                } catch (err) {
-                  toast.dismiss(loadingToast);
-                  toast.error("Could not load workspace. Prompt copied to clipboard instead.");
-                  navigator.clipboard.writeText(prompt);
-                }
-              }}
-              maxCards={3}
-            />
+                    // 4. Navigate to Advanced Mode
+                    toast.dismiss(loadingToast);
+                    navigate(`/dashboard/project/${projectId}/${task.id}`);
+                    toast.success("Workspace ready — prompt prefilled.");
+                  } catch (err) {
+                    toast.dismiss(loadingToast);
+                    toast.error("Could not load workspace. Prompt copied to clipboard instead.");
+                    navigator.clipboard.writeText(prompt);
+                  }
+                }}
+                maxCards={3}
+              />
+            )}
           </div>
         </div>
 
@@ -360,7 +349,7 @@ export default function DashboardHome() {
           {!statsLoading && organicPosts.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <Globe size={28} className="text-text-caption/30 mb-2" />
-              <p className="text-[13px] text-text-caption">No posts yet.</p>
+              <p className="text-code-sm text-text-caption">No posts yet.</p>
               <p className="text-[12px] text-text-caption/60 mt-1">
                 Connect accounts in Social Media.
               </p>

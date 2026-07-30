@@ -1,8 +1,8 @@
 import { useRef, useState, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import type { ComplianceResult } from "@/services/complianceApi";
-import { normalizeViolations } from "@/services/complianceApi";
+import type { ComplianceResult } from "@/services/complianceService";
+import { normalizeViolations } from "@/services/complianceService";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, ShieldCheck, Globe, FileText } from "lucide-react";
 
@@ -30,6 +30,28 @@ function getRiskBarColor(percentage: number): string {
   if (percentage >= 50) return "bg-amber-500";
   if (percentage >= 25) return "bg-orange-400";
   return "bg-emerald-500";
+}
+
+function getLocalizationAssessment(result: ComplianceResult) {
+  if (result.localization_assessment) return result.localization_assessment;
+  const score = result.cultural_fit_score;
+  if (typeof score !== "number") {
+    return { score: null, priority: "not_assessed", label: "Not assessed", description: "Localization fit was not available for this review." } as const;
+  }
+  if (score >= 85) return { score, priority: "low", label: "Strong fit", description: "The assessed language, tone, and presentation fit the selected audience well." } as const;
+  if (score >= 70) return { score, priority: "advisory", label: "Minor localization review", description: "The creative is broadly suitable, with minor language, tone, or presentation improvements worth considering." } as const;
+  if (score >= 45) return { score, priority: "moderate", label: "Needs localization", description: "Adapt language, tone, or presentation before relying on this creative for the selected audience." } as const;
+  return { score, priority: "high", label: "High localization mismatch", description: "The creative is a poor fit for the selected audience and should be substantially adapted or replaced." } as const;
+}
+
+function getLocalizationPriorityColor(priority: string): string {
+  switch (priority) {
+    case "low": return "text-emerald-600 bg-emerald-500/10 border-emerald-500/30";
+    case "advisory": return "text-blue-600 bg-blue-500/10 border-blue-500/30";
+    case "moderate": return "text-amber-600 bg-amber-500/10 border-amber-500/30";
+    case "high": return "text-red-600 bg-red-500/10 border-red-500/30";
+    default: return "text-text-muted bg-surface-inset border-border-default";
+  }
 }
 
 function formatSeconds(s: number): string {
@@ -88,8 +110,6 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
   const defaultTab: ImageTab = segmentedUrl ? "segmented" : "original";
   const [activeTab, setActiveTab] = useState<ImageTab>(defaultTab);
 
-  console.log("[ReviewStep] result:", result);
-
   // Derive common values
   const riskPercentage = result.risk_percentage ?? (result.score != null ? 100 - result.score : 0);
   const riskLevel = result.risk_level ?? result.risk_band ?? "Unknown";
@@ -97,6 +117,8 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
   const suggestion = result.suggestion;
   const highRiskIndicators = result.high_risk_indicator ?? result.high_risk_indicators;
   const localizationPlan = result.localization_plan;
+  const localizationAssessment = getLocalizationAssessment(result);
+  const needsLocalizationRemix = localizationAssessment.priority === "moderate" || localizationAssessment.priority === "high";
   const imageReview = result.image_review;
   const requiresNewCreative = result.compliance_verdict === "rejected"
     || riskLevel === "Critical"
@@ -115,6 +137,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
   // Normalized violations
   const violations = normalizeViolations(result);
   const hasViolations = violations.length > 0 || (highRiskIndicators && highRiskIndicators.length > 0);
+  const shouldOfferRemix = hasViolations || needsLocalizationRemix || requiresNewCreative;
 
   useGSAP(
     () => {
@@ -206,7 +229,31 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
       </div>
 
       {/* ═══ Decision summary — keep the actionable results above evidence ═══ */}
-      {hasViolations && (
+      {/* Localization is an audience-fit recommendation, not a legal verdict. */}
+      <div className="result-card rounded-xl border border-accent-blue/20 bg-accent-blue/5 p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">Localization fit</h3>
+            <p className="mt-1 text-[13px] leading-relaxed text-text-muted">
+              How well the language, tone, and presentation fit the selected audience. This is not a legal-compliance score or a judgement about any culture.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {localizationAssessment.score !== null && (
+              <span className="text-2xl font-semibold text-text-primary">{localizationAssessment.score}<span className="text-sm text-text-muted">/100</span></span>
+            )}
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getLocalizationPriorityColor(localizationAssessment.priority)}`}>
+              {localizationAssessment.label}
+            </span>
+          </div>
+        </div>
+        <p className="mt-3 text-[13px] leading-relaxed text-text-muted">{localizationAssessment.description}</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-text-caption">
+          Score bands: 85–100 strong fit; 70–84 minor review; 45–69 needs localization; 0–44 high mismatch.
+        </p>
+      </div>
+
+      {shouldOfferRemix && (
         <div className={`result-card rounded-xl border p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] ${
           requiresNewCreative
             ? "border-red-500/30 bg-red-500/5"
@@ -233,14 +280,18 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
           ) : isRemixAvailable ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-text-primary">Ready for AI remediation</h3>
+                <h3 className="text-sm font-semibold text-text-primary">Ready for AI remix</h3>
                 <p className="mt-1 text-[13px] leading-relaxed text-text-muted">
-                  Generate a localized compliant version while preserving the remediable parts of this asset.
+                  {hasViolations && needsLocalizationRemix
+                    ? "Fix the reported compliance findings and apply the localization plan in one remixed version."
+                    : hasViolations
+                      ? "Fix the reported compliance findings while preserving the remediable parts of this asset."
+                      : "No legal violation was found, but this creative needs localization for the selected audience. The remix will apply the localization plan."}
                 </p>
               </div>
               <Button variant="default" size="lg" onClick={onStartRemix} className="shrink-0 gap-2">
                 <span className="material-symbols-outlined text-[18px]">auto_fix_high</span>
-                Auto-Remix
+                Create remix
               </Button>
             </div>
           ) : null}
@@ -541,7 +592,7 @@ export function ReviewStep({ result, onStartRemix, isRemixAvailable, mediaType }
       )}
 
       {/* ═══ No Issues ═══ */}
-      {!hasViolations && (
+      {!hasViolations && !needsLocalizationRemix && !requiresNewCreative && (
         <div className="result-card bg-surface-card rounded-xl p-8 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] flex flex-col items-center justify-center text-center gap-3">
           <div className="h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
             <svg className="h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

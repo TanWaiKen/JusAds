@@ -188,20 +188,6 @@ def _log_usage(
     results_count: int,
     search_depth: str,
 ) -> None:
-    """Record Tavily usage to the tavily_usage_log table (fire-and-forget).
-
-    Never raises — logging failures are swallowed to avoid blocking the pipeline.
-    """
-    try:
-        supabase.table("tavily_usage_log").insert({
-            "task_id": task_id,
-            "query": query[:500],  # Truncate long queries
-            "results_count": results_count,
-            "search_depth": search_depth,
-        }).execute()
-    except Exception as e:
-        logger.warning(
-            "[TavilyGuard] Failed to log usage for task_id=%s: %s",
-            task_id, e,
-        )
+    """Legacy usage logging (table dropped)."""
+    pass
 

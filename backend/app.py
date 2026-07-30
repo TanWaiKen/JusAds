@@ -7,9 +7,11 @@ Usage:
   uvicorn app:app --reload --port 8000
 """
 
+import asyncio
 import logging
 import os
 import sys
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -50,6 +52,56 @@ verify_required_secrets()
 
 # -- App -----------------------------------------------------------------------
 app = FastAPI(title="JusAds Compliance API")
+_recheck_worker_task: asyncio.Task | None = None
+
+
+async def _run_remediation_recheck_loop() -> None:
+    """Keep the durable remediation outbox moving without blocking API requests.
+
+    The database claim RPC uses row locks, so multiple API replicas can run this
+    loop safely.  Each actual model evaluation executes in a worker thread.
+    """
+    from jusads_compliance.remediation_recheck_worker import WORKER_POLL_SECONDS, run_once
+
+    while True:
+        try:
+            await asyncio.to_thread(run_once)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("[RemediationRecheck] Background worker iteration failed")
+        await asyncio.sleep(WORKER_POLL_SECONDS)
+
+
+@app.on_event("startup")
+async def start_remediation_recheck_worker() -> None:
+    global _recheck_worker_task
+    if os.environ.get("REMEDIATION_RECHECK_WORKER_ENABLED", "true").strip().lower() in {"1", "true", "yes"}:
+        _recheck_worker_task = asyncio.create_task(_run_remediation_recheck_loop())
+        logger.info("[RemediationRecheck] Background worker enabled")
+
+
+@app.on_event("shutdown")
+async def stop_remediation_recheck_worker() -> None:
+    global _recheck_worker_task
+    if _recheck_worker_task:
+        _recheck_worker_task.cancel()
+        try:
+            await _recheck_worker_task
+        except asyncio.CancelledError:
+            pass
+        _recheck_worker_task = None
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Attach a stable correlation id without trusting arbitrary client values."""
+    supplied = request.headers.get("X-Request-ID", "").strip()
+    request_id = supplied if supplied and len(supplied) <= 128 else str(uuid.uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 if ENVIRONMENT == "production" and not CORS_ORIGINS:
     logger.warning("[Init] No CORS origins configured; only same-origin requests are expected")

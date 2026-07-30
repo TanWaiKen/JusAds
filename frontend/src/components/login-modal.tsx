@@ -9,21 +9,17 @@ interface LoginModalProps {
 }
 
 export function LoginModal({ isOpen, onClose }: LoginModalProps) {
-  const { loginWithGoogle, loginWithEmail } = useAuth();
+  const { loginWithGoogle, loginWithCognito } = useAuth();
   const navigate = useNavigate();
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
   useEffect(() => {
     if (!isOpen) return;
 
     previousFocusRef.current = document.activeElement as HTMLElement | null;
-    const focusTimer = window.setTimeout(() => emailRef.current?.focus(), 0);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -51,7 +47,6 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", handleKeyDown);
       previousFocusRef.current?.focus();
     };
@@ -70,12 +65,11 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     }
   };
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCognitoLogin = async () => {
     setLoginError(null);
     setIsLoading(true);
     try {
-      await loginWithEmail(email);
+      await loginWithCognito();
       onClose();
       navigate("/dashboard");
     } catch {
@@ -142,34 +136,19 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
           <div className="relative flex py-5 items-center w-full">
             <div className="grow border-t border-gray-100 dark:border-white/5"></div>
             <span className="shrink mx-4 text-gray-400 dark:text-gray-500 text-[10px] font-bold uppercase tracking-widest">
-              Or continue with email
+              Or
             </span>
             <div className="grow border-t border-gray-100 dark:border-white/5"></div>
           </div>
 
-          <form onSubmit={handleEmailLogin} className="w-full space-y-3">
-            <label htmlFor="login-email" className="block text-left text-sm font-semibold text-gray-800 dark:text-text-heading">
-              Email address
-            </label>
-            <input
-              ref={emailRef}
-              id="login-email"
-              type="email"
-              required
-              autoComplete="email"
-              placeholder="you@company.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full min-h-12 text-base bg-transparent border border-gray-300 dark:border-border-default rounded-[8px] px-3.5 py-2.5 outline-hidden text-gray-900 dark:text-text-heading placeholder:text-gray-400 dark:placeholder:text-text-caption focus:border-[#0080FF] focus:ring-2 focus:ring-[#0080FF]/20 transition-all"
-            />
-            <button
-              type="submit"
-              disabled={isLoading || !isEmailValid}
-              className="w-full min-h-12 bg-[#171717] dark:bg-white text-white dark:text-[#171717] font-semibold py-2.5 px-4 rounded-[8px] text-base hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {isLoading ? "Redirecting..." : "Continue with Email"}
-            </button>
-          </form>
+          <button
+            type="button"
+            onClick={handleCognitoLogin}
+            disabled={isLoading}
+            className="w-full min-h-12 bg-[#171717] dark:bg-white text-white dark:text-[#171717] font-semibold py-2.5 px-4 rounded-[8px] text-base hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isLoading ? "Redirecting..." : "Continue with Email & Password"}
+          </button>
 
           {/* Inline error message */}
           {loginError && (

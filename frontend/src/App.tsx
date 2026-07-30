@@ -15,7 +15,6 @@ import DashboardCompliance from "./pages/compliance";
 import ProjectOverviewPage from "./pages/projectOverview";
 import TaskDetailPage from "./pages/taskDetail";
 import NotFoundPage from "./pages/notFound";
-import CapcutDraftPage from "./pages/capcut-draft";
 import EasyGenerationPage from "./pages/easy-generation";
 import EasyResultsPage from "./pages/easy-results";
 
@@ -30,9 +29,6 @@ function App() {
 
             {/* Cognito OAuth callback — must match redirect_uri in cognito.ts */}
             <Route path="/callback" element={<CallbackHandler />} />
-
-            {/* CapCut Draft Test Page (unprotected for easy testing) */}
-            <Route path="/capcut-draft" element={<CapcutDraftPage />} />
 
             {/* Dashboard (Protected under ProtectedRoute) */}
             <Route

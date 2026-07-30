@@ -6,7 +6,7 @@ import { Menu, Loader2 } from "lucide-react";
 import { Sidebar, SIDEBAR_WIDTH } from "@/components/layout/Sidebar";
 import type { SidebarHandle } from "@/components/layout/Sidebar";
 import { useAuth } from "@/hooks/useAuth";
-import { API_BASE } from "@/lib/apiConfig";
+import { getOnboardingStatus } from "@/services/accountService";
 
 gsap.registerPlugin(useGSAP);
 
@@ -63,9 +63,8 @@ export default function DashboardShell() {
 
     const checkStatus = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/profile/${email}/onboarding-status`);
-        if (res.ok) {
-          const data = await res.json();
+        {
+          const data = await getOnboardingStatus();
           const isOnboardingPath = location.pathname === "/dashboard/onboarding";
           
           if (!data.onboarding_complete) {

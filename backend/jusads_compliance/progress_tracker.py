@@ -1,90 +1,49 @@
 """
 progress_tracker.py
 ───────────────────
-Persists pipeline step progress to the pipeline_progress Supabase table.
+Compatibility progress tracker for legacy pipeline components.
 
-Replaces the old WebSocket-based progress.py with a fire-and-forget
-pattern: all methods catch exceptions and never raise, ensuring
-pipeline execution is never blocked by progress tracking failures.
+The pipeline_progress table was intentionally retired. Current user-facing
+progress is delivered by the pipeline SSE stream and task pipeline_state JSON,
+so this class records structured application logs only. It remains deliberately
+non-blocking while old pipeline agents are migrated away from this interface.
 """
 
 import logging
-from datetime import datetime, timezone
-
-from shared.clients import supabase
-
 logger = logging.getLogger(__name__)
 
 
 class ProgressTracker:
-    """Persists pipeline step progress to the pipeline_progress Supabase table.
-
-    All methods are fire-and-forget: failures are logged but never raised.
-    """
+    """Non-blocking compatibility layer; does not persist a duplicate tracker."""
 
     def start_step(self, task_id: str, step_name: str) -> None:
-        """Insert a 'running' row for a pipeline step.
+        """Log a pipeline step start.
 
         Args:
             task_id: The compliance task identifier.
             step_name: Name of the pipeline step being started.
         """
-        try:
-            supabase.table("pipeline_progress").insert({
-                "task_id": task_id,
-                "step_name": step_name,
-                "status": "running",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
-            logger.info("[ProgressTracker] Started step '%s' for task_id=%s", step_name, task_id)
-        except Exception as e:
-            logger.error(
-                "[ProgressTracker] Failed to start step '%s' for task_id=%s: %s",
-                step_name, task_id, e,
-            )
+        logger.info("[ProgressTracker] Started step '%s' for task_id=%s", step_name, task_id)
 
     def complete_step(self, task_id: str, step_name: str, message: str = "") -> None:
-        """Update step row to 'completed' with truncated message.
+        """Log a completed pipeline step.
 
         Args:
             task_id: The compliance task identifier.
             step_name: Name of the pipeline step that completed.
             message: Optional outcome summary (truncated to 500 chars).
         """
-        try:
-            supabase.table("pipeline_progress").update({
-                "status": "completed",
-                "message": self._truncate(message),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("task_id", task_id).eq("step_name", step_name).execute()
-            logger.info("[ProgressTracker] Completed step '%s' for task_id=%s", step_name, task_id)
-        except Exception as e:
-            logger.error(
-                "[ProgressTracker] Failed to complete step '%s' for task_id=%s: %s",
-                step_name, task_id, e,
-            )
+        logger.info("[ProgressTracker] Completed step '%s' for task_id=%s: %s", step_name, task_id, self._truncate(message))
 
     def fail_step(self, task_id: str, step_name: str, error_message: str = "") -> None:
-        """Update step row to 'error' with truncated error message.
+        """Log a failed pipeline step.
 
         Args:
             task_id: The compliance task identifier.
             step_name: Name of the pipeline step that failed.
             error_message: Error description (truncated to 500 chars).
         """
-        try:
-            supabase.table("pipeline_progress").update({
-                "status": "error",
-                "message": self._truncate(error_message),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("task_id", task_id).eq("step_name", step_name).execute()
-            logger.info("[ProgressTracker] Failed step '%s' for task_id=%s", step_name, task_id)
-        except Exception as e:
-            logger.error(
-                "[ProgressTracker] Failed to record error for step '%s' task_id=%s: %s",
-                step_name, task_id, e,
-            )
+        logger.error("[ProgressTracker] Failed step '%s' for task_id=%s: %s", step_name, task_id, self._truncate(error_message))
 
     def _truncate(self, text: str, max_length: int = 500) -> str:
         """Truncate text to max_length characters.

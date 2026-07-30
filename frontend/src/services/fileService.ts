@@ -8,6 +8,7 @@
  */
 
 import { API_BASE, getApiError } from "@/lib/apiConfig";
+import { authenticatedFetch } from "@/lib/apiAuth";
 
 interface UploadUrlResponse {
   upload_url: string;
@@ -25,7 +26,6 @@ interface UploadOptions {
   filename: string;
   contentType: string;
   fileSize: number;
-  username: string;
   projectId: string;
   assetType?: "upload" | "reference" | "generated";
 }
@@ -48,14 +48,13 @@ export async function uploadFileToS3(
   options: UploadOptions
 ): Promise<UploadUrlResponse> {
   // Step 1: Get pre-signed upload URL from backend
-  const urlRes = await fetch(`${API_BASE}/api/files/upload-url`, {
+  const urlRes = await authenticatedFetch(`${API_BASE}/api/files/upload-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       filename: options.filename,
       content_type: options.contentType,
       file_size: options.fileSize,
-      username: options.username,
       project_id: options.projectId,
       asset_type: options.assetType ?? "upload",
     }),
@@ -79,7 +78,7 @@ export async function uploadFileToS3(
   }
 
   if (options.assetType === "reference") {
-    const completeRes = await fetch(`${API_BASE}/api/files/upload-complete`, {
+    const completeRes = await authenticatedFetch(`${API_BASE}/api/files/upload-complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -98,11 +97,11 @@ export async function uploadFileToS3(
   return data;
 }
 
-export async function getAssetDownloadUrl(assetId: string, userEmail: string): Promise<AssetDownloadUrlResponse> {
-  const res = await fetch(`${API_BASE}/api/files/asset-download-url`, {
+export async function getAssetDownloadUrl(assetId: string, _userEmail?: string): Promise<AssetDownloadUrlResponse> {
+  const res = await authenticatedFetch(`${API_BASE}/api/files/asset-download-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ asset_id: assetId, user_email: userEmail }),
+    body: JSON.stringify({ asset_id: assetId }),
   });
 
   if (!res.ok) {
@@ -116,11 +115,11 @@ export async function getAssetDownloadUrl(assetId: string, userEmail: string): P
  * Prefer getAssetDownloadUrl for asset-library downloads because it validates
  * the asset record and project ownership before signing.
  */
-export async function getDownloadUrl(s3Key: string): Promise<string> {
-  const res = await fetch(`${API_BASE}/api/files/download-url`, {
+export async function getDownloadUrl(s3Key: string, projectId: string): Promise<string> {
+  const res = await authenticatedFetch(`${API_BASE}/api/files/download-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ s3_key: s3Key }),
+    body: JSON.stringify({ s3_key: s3Key, project_id: projectId }),
   });
 
   if (!res.ok) {
@@ -138,14 +137,12 @@ export async function getDownloadUrl(s3Key: string): Promise<string> {
 export async function uploadReferenceAsset(
   file: File,
   projectId: string,
-  _taskId: string,
-  username: string
+  _taskId?: string,
 ): Promise<{ publicUrl: string; s3Key: string }> {
   const result = await uploadFileToS3(file, {
     filename: file.name,
     contentType: file.type || "application/octet-stream",
     fileSize: file.size,
-    username,
     projectId,
     assetType: "reference",
   });

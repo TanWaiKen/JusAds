@@ -1,12 +1,12 @@
 /**
  * usePipelineRunner — React hook driving the pure pipeline run logic.
- * Updates node statuses and persists pipeline state via taskApi.
+ * Updates node statuses and persists pipeline state via projectService.
  */
 
 import { useState, useCallback } from "react";
 import type { PipelineState, CanvasNode } from "@/components/workspace/canvas/graphModel";
 import { runPipeline } from "@/components/workspace/canvas/pipelineRunner";
-import { savePipeline } from "@/services/taskApi";
+import { savePipeline } from "@/services/projectService";
 
 interface UsePipelineRunnerOptions {
   projectId: string;

@@ -21,6 +21,10 @@ const TYPE_OPTIONS: { label: string; value: TaskType | "all" }[] = [
 const STATUS_OPTIONS: { label: string; value: TaskStatus | "all" }[] = [
   { label: "All Status", value: "all" },
   { label: "Completed", value: "completed" },
+  { label: "Verified compliant", value: "verified_compliant" },
+  { label: "Recheck pending", value: "pending_recheck" },
+  { label: "Rechecking", value: "rechecking" },
+  { label: "Not compliant", value: "verified_non_compliant" },
   { label: "Failed", value: "failed" },
   { label: "Processing", value: "processing" },
 ];

@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Upload, X, ImageIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { API_BASE } from "@/services/taskApi";
+import { uploadProjectReference } from "@/services/mediaService";
 import type { CanvasNode } from "@/components/workspace/canvas/graphModel";
 
 interface InspectorPanelProps {
@@ -58,15 +58,8 @@ function ReferenceUrlsEditor({ projectId, taskId, value, onChange }: ReferenceUr
     if (!file) return;
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch(
-        `${API_BASE}/api/projects/${projectId}/tasks/${taskId}/upload`,
-        { method: "POST", body: formData }
-      );
-      if (!res.ok) throw new Error("Upload failed");
-      const data = await res.json() as { public_url: string };
-      const next = [...urls, data.public_url].join(",");
+      const data = await uploadProjectReference(file, projectId, taskId);
+      const next = [...urls, data.publicUrl].join(",");
       onChange(next);
       toast.success(`Reference "${file.name}" added`);
     } catch {

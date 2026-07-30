@@ -13,7 +13,7 @@ This avoids routing large files through the API server.
 
 import uuid
 import logging
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -23,7 +23,11 @@ from shared.s3_client import (
     generate_presigned_url,
     get_public_url,
     normalize_s3_key,
+    opaque_user_prefix,
 )
+from shared.auth import Principal, get_current_principal
+from shared.authorization import require_project_access
+from shared.supabase_client import SupabaseComplianceStore
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +42,14 @@ class UploadUrlRequest(BaseModel):
     filename: str
     content_type: str = "application/octet-stream"
     file_size: int = 0
-    username: str
     project_id: str
     asset_type: str = "upload"  # "upload" | "reference" | "generated"
 
 
 class DownloadUrlRequest(BaseModel):
-    """Request body for generating a pre-signed download URL."""
+    """Request a project-scoped pre-signed download URL."""
     s3_key: str
+    project_id: str
 
 
 class CompleteUploadRequest(BaseModel):
@@ -60,25 +64,43 @@ class CompleteUploadRequest(BaseModel):
 class AssetDownloadRequest(BaseModel):
     """Request an asset download after validating the requesting project owner."""
     asset_id: str
-    user_email: str
+
+
+def _is_owned_project_key(s3_key: str, project_id: str, principal: Principal) -> bool:
+    """Return whether a key belongs to the current project/user scope.
+
+    Pre-signed URLs are bearer access to S3.  A client-provided key alone is
+    never sufficient authorization, even when the caller is authenticated.
+    """
+    key = normalize_s3_key(s3_key)
+    if not key:
+        return False
+    subject = opaque_user_prefix(principal.subject)
+    return key.startswith(f"generated_ads/{project_id}/") or key.startswith(
+        f"private/uploads/{subject}/{project_id}/"
+    )
+
+
+_store = SupabaseComplianceStore()
 
 
 # --- Upload URL ---------------------------------------------------------------
 
 
 @router.post("/upload-url")
-async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
+async def get_upload_url(body: UploadUrlRequest, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Generate a pre-signed PUT URL for direct-to-S3 upload.
 
     Flow:
-      1. Frontend calls this with filename, content_type, size, username, project_id.
+      1. Frontend calls this with filename, content_type, size, and project_id.
       2. Backend checks quota, generates a unique S3 key, returns presigned PUT URL.
       3. Frontend uploads directly to S3 using the URL.
       4. Frontend uses the returned s3_key/public_url as needed.
     """
+    require_project_access(_store, body.project_id, principal, write=True)
     # Quota check (5 GB default)
     if body.file_size > 0:
-        within_quota = check_quota(body.username, body.file_size)
+        within_quota = check_quota(principal.email, body.file_size)
         if not within_quota:
             return JSONResponse(
                 status_code=413,
@@ -96,13 +118,18 @@ async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
     unique_id = uuid.uuid4().hex[:8]
     safe_filename = body.filename.replace(" ", "_")
 
-    prefix_map = {
-        "upload": "uploads",
-        "reference": "generated_ads",
-        "generated": "generated_ads",
-    }
-    prefix = prefix_map.get(body.asset_type, "uploads")
-    s3_key = f"{prefix}/{body.username}/{body.project_id}/{unique_id}_{safe_filename}"
+    if body.asset_type == "reference":
+        # The generation worker can access project media, but raw email
+        # addresses must never be embedded in object keys.
+        s3_key = (
+            f"generated_ads/{body.project_id}/references/"
+            f"{opaque_user_prefix(principal.subject)}/{unique_id}_{safe_filename}"
+        )
+    else:
+        s3_key = (
+            f"private/uploads/{opaque_user_prefix(principal.subject)}/"
+            f"{body.project_id}/{unique_id}_{safe_filename}"
+        )
 
     try:
         upload_url = generate_presigned_upload_url(s3_key, body.content_type)
@@ -128,14 +155,21 @@ async def get_upload_url(body: UploadUrlRequest) -> JSONResponse:
 
 
 @router.post("/upload-complete")
-async def complete_upload(body: CompleteUploadRequest) -> JSONResponse:
+async def complete_upload(body: CompleteUploadRequest, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Record a completed direct reference upload in the user's asset library."""
     if body.asset_type != "reference":
         return JSONResponse(content={"recorded": False})
+    require_project_access(_store, body.project_id, principal, write=True)
 
     s3_key = normalize_s3_key(body.s3_key)
     if not s3_key:
         return JSONResponse(status_code=400, content={"error": "Invalid S3 object key"})
+    reference_prefix = (
+        f"generated_ads/{body.project_id}/references/"
+        f"{opaque_user_prefix(principal.subject)}/"
+    )
+    if not s3_key.startswith(reference_prefix):
+        return JSONResponse(status_code=400, content={"error": "Upload does not belong to this project"})
 
     try:
         from shared.supabase_client import supabase as sb
@@ -182,12 +216,11 @@ async def complete_upload(body: CompleteUploadRequest) -> JSONResponse:
 
 
 @router.post("/asset-download-url")
-async def get_asset_download_url(body: AssetDownloadRequest) -> JSONResponse:
+async def get_asset_download_url(body: AssetDownloadRequest, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Return a download URL for an asset owned by the requesting user's project."""
     asset_id = body.asset_id.strip()
-    user_email = body.user_email.strip().lower()
-    if not asset_id or not user_email:
-        return JSONResponse(status_code=400, content={"error": "asset_id and user_email are required"})
+    if not asset_id:
+        return JSONResponse(status_code=400, content={"error": "asset_id is required"})
 
     try:
         from shared.supabase_client import supabase as sb
@@ -204,9 +237,7 @@ async def get_asset_download_url(body: AssetDownloadRequest) -> JSONResponse:
             return JSONResponse(status_code=404, content={"error": "Asset not found"})
 
         asset = rows[0]
-        project = asset.get("projects") or {}
-        if project.get("owner_email", "").strip().lower() != user_email:
-            return JSONResponse(status_code=403, content={"error": "Access denied"})
+        require_project_access(_store, str(asset.get("project_id") or ""), principal)
 
         s3_key = normalize_s3_key(str(asset.get("s3_media_key") or ""))
         if not s3_key:
@@ -221,6 +252,8 @@ async def get_asset_download_url(body: AssetDownloadRequest) -> JSONResponse:
         )
         logger.info("[Files] Generated asset download URL for %s", asset_id)
         return JSONResponse(content={"download_url": download_url, "filename": filename})
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("[Files] Failed to generate owned asset download URL")
         return JSONResponse(
@@ -230,21 +263,29 @@ async def get_asset_download_url(body: AssetDownloadRequest) -> JSONResponse:
 
 
 @router.post("/download-url")
-async def get_download_url(body: DownloadUrlRequest) -> JSONResponse:
+async def get_download_url(
+    body: DownloadUrlRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
     """Generate a pre-signed GET URL for downloading a file from S3.
 
     Returns a temporary URL (expires in 1 hour) for the frontend to
     download or display the file directly from S3.
     """
-    if not body.s3_key:
+    if not body.s3_key or not body.project_id:
         return JSONResponse(status_code=400, content={"error": "s3_key is required"})
 
+    require_project_access(_store, body.project_id, principal)
+    s3_key = normalize_s3_key(body.s3_key)
+    if not _is_owned_project_key(s3_key, body.project_id, principal):
+        return JSONResponse(status_code=404, content={"error": "File not found"})
+
     try:
-        download_url = generate_presigned_url(body.s3_key, expiry_seconds=3600)
-        logger.info("[Files] Generated download URL for %s", body.s3_key)
+        download_url = generate_presigned_url(s3_key, expiry_seconds=3600)
+        logger.info("[Files] Generated scoped download URL for project %s", body.project_id)
         return JSONResponse(content={
             "download_url": download_url,
-            "s3_key": body.s3_key,
+            "s3_key": s3_key,
         })
     except Exception:
         logger.exception("[Files] Failed to generate download URL")

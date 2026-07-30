@@ -22,8 +22,10 @@ load_dotenv()
 
 from jusads_generation.prompt_search.qdrant_store import ingest_prompts_csv
 
-# Default CSV path (backend/data/).
-CSV_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "nano-banana-pro-prompts-20260701.csv"
+# Operator-managed prompt corpus.  It deliberately lives outside backend/ so
+# deployment artifacts do not quietly grow with CSV backups or seed datasets.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+CSV_PATH = PROJECT_ROOT / "manual_push" / "data" / "nano-banana-pro-prompts-20260701.csv"
 
 
 def main():
@@ -32,7 +34,7 @@ def main():
     csv_path = CSV_PATH
     if not csv_path.exists():
         print(f"ERROR: CSV not found at {csv_path}")
-        print("Place nano-banana-pro-prompts-20260701.csv in the project root.")
+        print("Place nano-banana-pro-prompts-20260701.csv in manual_push/data/.")
         sys.exit(1)
 
     print(f"{'RECREATING' if recreate else 'UPSERTING INTO'} collection...")

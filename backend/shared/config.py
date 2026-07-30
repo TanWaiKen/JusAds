@@ -7,6 +7,8 @@ All secrets are read from environment variables.
 
 import logging
 import os
+import base64
+import json
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,6 +27,20 @@ CORS_ORIGINS: tuple[str, ...] = tuple(
     if origin.strip()
 )
 
+# -- Authentication -----------------------------------------------------------
+# Cognito issuer/client identifiers are public configuration, not secrets.  The
+# defaults match the checked-in frontend development configuration so local and
+# deployed token validation use the same trust boundary unless explicitly
+# overridden.
+COGNITO_ISSUER = os.environ.get(
+    "COGNITO_ISSUER",
+    "https://cognito-idp.ap-southeast-1.amazonaws.com/ap-southeast-1_8hAosB1se",
+).strip().rstrip("/")
+COGNITO_CLIENT_ID = os.environ.get(
+    "COGNITO_CLIENT_ID",
+    "41rfef3ni43sfr2v9lnjk0prj5",
+).strip()
+
 # -- Google Vertex AI / Gemini -------------------------------------------------
 VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
@@ -32,7 +48,7 @@ VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
 # must be a bucket in the configured Vertex project; Omni cannot read the
 # application's AWS S3 URLs directly.
 VERTEX_GCS_BUCKET = os.environ.get("VERTEX_GCS_BUCKET", "")
-SMALL_TEXT_MODEL = os.environ.get("LLM_MODEL_ID", "gemini-2.5-flash")
+SMALL_TEXT_MODEL = os.environ.get("SMALL_TEXT_MODEL", "gemini-2.5-flash")
 
 # -- Model Registry (centralised model IDs) ------------------------------------
 # Chat Model (Cheaper)
@@ -57,6 +73,9 @@ PREDICTHQ_API_KEY = os.environ.get("PREDICTHQ_API_KEY", "")
 # -- Tavily Control ------------------------------------------------------------
 TAVILY_ENABLED = os.environ.get("TAVILY_ENABLED", "true").lower() == "true"
 
+# Disabled proof of concept: advisory metadata only, never a compliance verdict.
+ML_TRIAGE_ADVISORY_ENABLED = os.environ.get("ML_TRIAGE_ADVISORY_ENABLED", "false").lower() == "true"
+
 # -- AWS Credentials & S3 ------------------------------------------------------
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
@@ -68,6 +87,10 @@ ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 FLUXAI_API_KEY = os.environ.get("FLUXAI_API_KEY", "")
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
+# A Fernet key generated and stored in the deployment secret manager.  It is
+# deliberately separate from SUPABASE_KEY: database credentials must never be
+# repurposed as application encryption material.
+ZERNIO_KEY_ENCRYPTION_KEY = os.environ.get("ZERNIO_KEY_ENCRYPTION_KEY", "")
 
 # -- Supabase ------------------------------------------------------------------
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
@@ -177,3 +200,34 @@ def verify_required_secrets(required: tuple[str, ...] = REQUIRED_SECRETS) -> Non
         "[Config] Startup secret check passed (%d required secret(s) present)",
         len(required),
     )
+    _verify_supabase_server_key()
+
+
+def _verify_supabase_server_key() -> None:
+    """Reject browser-facing Supabase keys in the trusted backend process.
+
+    The backend uses service-role access so it can enforce authorization in one
+    place.  A publishable/anon key is intentionally blocked by RLS and turns
+    normal operations into misleading 500 errors.
+    """
+    key = SUPABASE_KEY.strip()
+    if key.startswith("sb_publishable_"):
+        raise MissingSecretError(
+            "SUPABASE_KEY must be a server-only Supabase secret/service-role key; "
+            "a publishable key is not valid for the backend."
+        )
+
+    # Legacy keys are JWTs.  Check their role without logging or returning the
+    # key itself.  New `sb_secret_...` keys are opaque and are accepted.
+    parts = key.split(".")
+    if len(parts) == 3:
+        try:
+            payload = parts[1] + "=" * (-len(parts[1]) % 4)
+            role = json.loads(base64.urlsafe_b64decode(payload)).get("role")
+        except (ValueError, json.JSONDecodeError):
+            role = None
+        if role != "service_role":
+            raise MissingSecretError(
+                "SUPABASE_KEY must be a server-only Supabase service-role key; "
+                "the configured JWT does not have the service_role role."
+            )

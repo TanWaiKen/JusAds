@@ -3,8 +3,9 @@ import type { UploadParams } from "@/types/compliance";
 import type {
   NodeStatus,
   ComplianceResult,
-} from "@/services/complianceApi";
-import { API_BASE } from "@/services/complianceApi";
+} from "@/services/complianceService";
+import { API_BASE } from "@/services/complianceService";
+import { authenticatedFetch, toApiRequestError } from "@/lib/apiAuth";
 
 export interface UseComplianceCheckReturn {
   submit: (params: UploadParams & { projectId?: string }) => Promise<ComplianceResult>;
@@ -66,30 +67,17 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
       if (params.projectId) {
         formData.append("project_id", params.projectId);
       }
-      const username = (params as unknown as Record<string, unknown>).username as string | undefined;
-      if (username) {
-        formData.append("username", username);
-      }
-
-      console.log("[ComplianceCheck] Submitting compliance check (SSE)", {
-        hasFile: !!params.file,
-        hasText: !!params.text,
-        market: params.market,
-        projectId: params.projectId,
-      });
-
       try {
-        const res = await fetch(`${API_BASE}/api/compliance/check`, {
+        const res = await authenticatedFetch(`${API_BASE}/api/compliance/check`, {
           method: "POST",
           body: formData,
           signal: abortRef.current.signal,
         });
 
         if (!res.ok) {
-          const retryable = res.status >= 500;
-          const message = res.status === 400
-            ? "Validation error: please provide a file or text"
-            : `Server error (${res.status})`;
+          const requestError = await toApiRequestError(res, "Compliance check could not be started.");
+          const retryable = res.status >= 500 || res.status === 429;
+          const message = requestError.message;
           setError({ message, retryable });
           setIsStreaming(false);
           throw new Error(message);
@@ -121,7 +109,6 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
               switch (event.type) {
                 case "initiated":
                   taskId = event.task_id;
-                  console.log("[ComplianceCheck] Initiated:", event);
                   setNodeStatuses([{
                     type: "node_status",
                     node: "upload",
@@ -158,7 +145,6 @@ export function useComplianceCheck(): UseComplianceCheckReturn {
                     check_id: taskId || event.data.task_id,
                     market: event.data.market,
                   };
-                  console.log("[ComplianceCheck] ✅ Result received:", finalResult);
                   break;
 
                 case "error":

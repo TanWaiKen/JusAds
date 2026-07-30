@@ -1,7 +1,7 @@
 /**
  * PromptSearchBox — Vector-powered prompt template search.
  *
- * Queries the backend `/api/prompt-suggestions?query=...` endpoint (backed by
+ * Queries the backend `/api/search-prompt?query=...` endpoint (backed by
  * Qdrant + Titan v2 embeddings) and displays ranked template suggestions.
  * Can be used in the Assets page (browse prompts) or the Generation canvas
  * (find a starting template for your ad).
@@ -11,18 +11,12 @@ import React, { useRef, useState, useCallback } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { Search, Sparkles, Copy, ExternalLink, Loader2 } from "lucide-react";
-import { API_BASE } from "@/services/generationApi";
+import { searchPromptLibrary } from "@/services/mediaService";
+import type { PromptSuggestion } from "@/models/generation";
+
+export type { PromptSuggestion } from "@/models/generation";
 
 gsap.registerPlugin(useGSAP);
-
-export interface PromptSuggestion {
-  title: string;
-  description: string;
-  content: string;
-  score: number;
-  sourceMedia: string;
-  sourceLink: string;
-}
 
 interface PromptSearchBoxProps {
   /** Called when the user clicks "Use" on a prompt suggestion. */
@@ -31,31 +25,6 @@ interface PromptSearchBoxProps {
   placeholder?: string;
   /** Maximum results to show. */
   maxResults?: number;
-}
-
-async function searchPrompts(query: string, topK: number): Promise<PromptSuggestion[]> {
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/prompt-suggestions?query=${encodeURIComponent(query)}&top_k=${topK}`
-    );
-    if (!res.ok) return [];
-    const data = (await res.json()) as { suggestions?: unknown[] };
-    if (!Array.isArray(data.suggestions)) return [];
-
-    return data.suggestions.map((s) => {
-      const item = s as Record<string, unknown>;
-      return {
-        title: typeof item.title === "string" ? item.title : "",
-        description: typeof item.description === "string" ? item.description : "",
-        content: typeof item.content === "string" ? item.content : "",
-        score: typeof item.score === "number" ? item.score : 0,
-        sourceMedia: typeof item.source_media === "string" ? item.source_media : "",
-        sourceLink: typeof item.source_link === "string" ? item.source_link : "",
-      };
-    });
-  } catch {
-    return [];
-  }
 }
 
 export function PromptSearchBox({
@@ -98,8 +67,11 @@ export function PromptSearchBox({
 
       debounceRef.current = setTimeout(async () => {
         setLoading(true);
-        const suggestions = await searchPrompts(value.trim(), maxResults);
-        setResults(suggestions);
+        try {
+          setResults(await searchPromptLibrary(value.trim(), maxResults));
+        } catch {
+          setResults([]);
+        }
         setSearched(true);
         setLoading(false);
       }, 400);

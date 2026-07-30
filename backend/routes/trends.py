@@ -9,18 +9,20 @@ Also provides a manual refresh trigger for admins.
 Requirements: 9.1, 9.2, 9.3, 9.4, 9.5
 """
 
+import asyncio
 import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from shared.clients import supabase
 from shared.predicthq_client import PredictHQServiceError, fetch_predicthq_events
+from shared.auth import Principal, get_current_principal
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,7 @@ class CreativeSignalResearchRequest(BaseModel):
 
 
 @router.get("/daily-idea")
-async def get_daily_idea(market: str = "malaysia") -> JSONResponse:
+async def get_daily_idea(market: str = "malaysia", principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Return one market-wide creative idea that stays fixed for the local day."""
     from jusads_trends.daily_idea import get_daily_creative_idea
 
@@ -99,12 +101,42 @@ def _group_trends(items: list[dict[str, Any]]) -> tuple[dict[str, list[dict[str,
     return grouped, last_refresh
 
 
+@router.get("/youtube-hook-references")
+async def get_youtube_hook_references(
+    market: str = "malaysia",
+    force_refresh: bool = False,
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
+    """Return cached, company-context YouTube Shorts for hook inspiration.
+
+    A cache miss calls YouTube once, then stores a 24-hour result keyed by the
+    verified account and the saved business-profile fingerprint. Results are
+    creative references, not verified paid advertisements or compliance advice.
+    """
+    from jusads_trends.youtube_hook_references import (
+        YouTubeHookReferenceError,
+        get_company_hook_references,
+    )
+
+    try:
+        result = await get_company_hook_references(
+            supabase, owner_email=principal.email, market=market, force_refresh=force_refresh,
+        )
+        return JSONResponse(content={
+            **result,
+            "disclaimer": "Public YouTube hook references, not verified paid ads or compliance guidance.",
+        })
+    except YouTubeHookReferenceError:
+        logger.exception("[TrendsAPI] YouTube hook reference lookup failed subject=%s", principal.subject)
+        return JSONResponse(status_code=502, content={"error": {"code": "YOUTUBE_REFERENCE_FAILED", "message": "YouTube hook references are temporarily unavailable."}})
+
+
 @router.get("/signals")
 async def get_creative_signals(
     market: str = "malaysia",
     platform: str = "",
-    owner_email: str = "",
     limit: int = 30,
+    principal: Principal = Depends(get_current_principal),
 ) -> JSONResponse:
     """Return persisted evidence-backed Creative Trend Signals."""
     from jusads_trends.creative_signals import CreativeSignalError, fetch_creative_signals
@@ -113,16 +145,24 @@ async def get_creative_signals(
         signals = fetch_creative_signals(
             market=(market or "malaysia").strip().lower(),
             platform=platform.strip().lower(),
-            owner_email=owner_email.strip().lower(),
+            owner_email=principal.email,
             limit=max(1, min(limit, 50)),
         )
         return JSONResponse(content={"signals": signals, "count": len(signals)})
     except CreativeSignalError as exc:
-        return JSONResponse(status_code=503, content={"error": str(exc), "signals": [], "count": 0})
+        logger.warning("[TrendsAPI] Creative signals unavailable: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "Creative signals are temporarily unavailable.",
+                "signals": [],
+                "count": 0,
+            },
+        )
 
 
 @router.post("/signals/research")
-async def research_creative_signals(body: CreativeSignalResearchRequest) -> JSONResponse:
+async def research_creative_signals(body: CreativeSignalResearchRequest, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Research and persist only evidence-backed creative patterns for campaign ideation."""
     from jusads_trends.creative_signals import CreativeSignalError, research_creative_signals
 
@@ -130,7 +170,7 @@ async def research_creative_signals(body: CreativeSignalResearchRequest) -> JSON
         signals = await research_creative_signals(
             market=(body.market or "malaysia").strip().lower(),
             platform=body.platform.strip().lower(),
-            owner_email=body.owner_email.strip().lower(),
+            owner_email=principal.email,
         )
         return JSONResponse(content={
             "signals": signals,
@@ -139,20 +179,32 @@ async def research_creative_signals(body: CreativeSignalResearchRequest) -> JSON
             "message": "Signals are returned for this session. Apply migration 021 to save them for later.",
         })
     except CreativeSignalError as exc:
-        message = str(exc)
-        if message.startswith("No evidence-backed creative trend signals"):
+        internal_message = str(exc)
+        if internal_message.startswith("No evidence-backed creative trend signals"):
             logger.info("[TrendsAPI] Creative signal research produced no verified signals")
-            return JSONResponse(content={"signals": [], "count": 0, "freshness": "unavailable", "message": message})
+            return JSONResponse(content={
+                "signals": [],
+                "count": 0,
+                "freshness": "unavailable",
+                "message": "No verified creative trend signals are currently available.",
+            })
         logger.warning("[TrendsAPI] Creative signal research unavailable: %s", exc)
-        return JSONResponse(status_code=503, content={"error": message, "signals": [], "count": 0})
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "Creative signal research is temporarily unavailable.",
+                "signals": [],
+                "count": 0,
+            },
+        )
 
 
 @router.post("/research", response_model=TrendResearchResponse)
-async def research_trends(body: TrendResearchRequest) -> JSONResponse:
+async def research_trends(body: TrendResearchRequest, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Research personalized trends with Google grounding and safely cache the result."""
     market = (body.market or "malaysia").strip().lower()
     platform = (body.platform or "").strip().lower()
-    owner_email = body.owner_email.strip().lower()
+    owner_email = principal.email
     limit = max(1, min(body.limit, 50))
     provider = "none"
     sources: list[dict[str, str]] = []
@@ -307,12 +359,11 @@ Return only a JSON array of up to 5 items."""
         })
 
 @router.get("")
-@router.get("/")
 async def get_trends(
     platform: Optional[str] = None,
     market: Optional[str] = None,
-    owner_email: Optional[str] = None,
     limit: int = 50,
+    principal: Principal = Depends(get_current_principal),
 ) -> JSONResponse:
     """Fetch scoped cached trending content, grouped by platform."""
     try:
@@ -322,10 +373,7 @@ async def get_trends(
             query = query.eq("platform", platform)
         if market:
             query = query.eq("market", market)
-        if owner_email:
-            query = query.eq("owner_email", owner_email.strip().lower())
-        else:
-            query = query.is_("owner_email", "null")
+        query = query.eq("owner_email", principal.email)
 
         query = query.order("scraped_at", desc=True).limit(limit)
         response = query.execute()
@@ -358,6 +406,7 @@ async def get_cultural_events(
     market: Optional[str] = None,
     country: Optional[str] = None,
     window_days: int = 60,
+    principal: Principal = Depends(get_current_principal),
 ) -> JSONResponse:
     """Fetch upcoming events with country-based filtering.
 
@@ -418,6 +467,21 @@ async def get_cultural_events(
         all_markets = sorted(set(
             e.get("market", "") for e in all_events if e.get("market") != "global"
         ))
+        source_counts: dict[str, int] = {}
+        for event in filtered_events:
+            source = str(event.get("source") or "manual")
+            source_counts[source] = source_counts.get(source, 0) + 1
+        latest_sync_response = (
+            supabase.table("cultural_events")
+            .select("last_synced_at")
+            .eq("source", "predicthq")
+            .not_.is_("last_synced_at", "null")
+            .order("last_synced_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        latest_sync_rows = latest_sync_response.data or []
+        latest_predicthq_sync = latest_sync_rows[0].get("last_synced_at") if latest_sync_rows else None
 
         return JSONResponse(content={
             "global_events": global_events,
@@ -428,6 +492,8 @@ async def get_cultural_events(
             "available_markets": all_markets,
             "window_days": window_days,
             "count": len(filtered_events),
+            "source_counts": source_counts,
+            "latest_predicthq_sync": latest_predicthq_sync,
         })
 
     except Exception:
@@ -444,71 +510,24 @@ async def get_cultural_events(
 
 
 @router.post("/events/sync")
-async def sync_cultural_events() -> JSONResponse:
-    """Synchronize local database events with PredictHQ API for the next 30 days."""
-    try:
-        logger.info("[TrendsAPI] Starting PredictHQ event sync...")
-
-        # Fetch Malaysia events and global events
-        my_events = await fetch_predicthq_events(country_code="MY", days_ahead=30)
-        global_events = await fetch_predicthq_events(country_code=None, days_ahead=30)
-
-        all_fetched = my_events + global_events
-
-        # Deduplicate
-        seen = set()
-        deduped = []
-        for e in all_fetched:
-            key = (e["name"], e["start_date"], e["market"])
-            if key not in seen:
-                seen.add(key)
-                deduped.append(e)
-
-        # Query existing events in DB to avoid duplicating or overwriting pre-seeded ones
-        response = supabase.table("cultural_events").select("name, start_date").execute()
-        existing = {(r["name"].lower(), str(r["start_date"])) for r in (response.data or [])}
-
-        # Filter out already existing events
-        to_insert = []
-        for e in deduped:
-            key = (e["name"].lower(), str(e["start_date"]))
-            if key not in existing:
-                to_insert.append(e)
-
-        # Insert only the genuinely new events
-        if to_insert:
-            supabase.table("cultural_events").insert(to_insert).execute()
-
-        logger.info("[TrendsAPI] PredictHQ event sync complete. Added %d new events.", len(to_insert))
-        return JSONResponse(content={
-            "status": "success",
-            "message": f"Successfully synchronized {len(to_insert)} new events from PredictHQ.",
-            "count": len(to_insert),
-        })
-
-    except PredictHQServiceError as exc:
-        logger.warning("[TrendsAPI] PredictHQ sync unavailable: %s", exc)
-        return JSONResponse(
-            status_code=503 if exc.not_configured else 502,
-            content={
-                "error": str(exc),
-                "code": "predicthq_not_configured" if exc.not_configured else "predicthq_unavailable",
-            },
-        )
-    except Exception:
-        logger.exception("[TrendsAPI] PredictHQ sync failed")
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Unable to synchronize cultural events."},
-        )
+async def sync_cultural_events(principal: Principal = Depends(get_current_principal)) -> JSONResponse:
+    """Retired: event imports are an operator-controlled costed workflow."""
+    return JSONResponse(
+        status_code=410,
+        content={
+            "error": "Live PredictHQ sync is retired. Run manual_push/predicthq/refresh_events.py instead.",
+            "code": "PREDICTHQ_SYNC_MANUAL_ONLY",
+        },
+    )
 
 
 @router.post("/refresh")
 async def trigger_refresh(
     owner_email: str = "",
     market: str = "malaysia",
+    principal: Principal = Depends(get_current_principal),
 ) -> JSONResponse:
-    """Manually refresh a scoped trend cache using Gemini GoogleSearch."""
+    """Manually refresh the caller's scoped trend cache using Gemini GoogleSearch."""
     import asyncio
     import uuid
     import json
@@ -520,11 +539,16 @@ async def trigger_refresh(
     try:
         # For now, fetch for requested market and scope writes to this owner.
         market = (market or "malaysia").strip().lower()
-        owner_email = owner_email.strip().lower()
+        # Client email is never authority. A verified Cognito identity owns
+        # every personalised cache row, preventing cross-account refreshes.
+        owner_email = principal.email.strip().lower()
         batch_id = str(uuid.uuid4())
         all_items = []
 
-        platforms = ["tiktok", "instagram", "youtube"]
+        # YouTube is owned by the dedicated company-context hook reference
+        # service below. Keeping it out of generic grounding avoids duplicate
+        # research, inconsistent source cards, and unnecessary API cost.
+        platforms = ["tiktok", "instagram"]
 
         for platform in platforms:
             try:
@@ -633,3 +657,51 @@ async def trigger_refresh(
             status_code=500,
             content={"error": "Unable to refresh trends.", "status": "failed"},
         )
+
+
+@router.post("/refresh-research")
+async def refresh_research(
+    market: str = "malaysia",
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
+    """Refresh the two source layers visible to the user, independently.
+
+    Trend grounding and public YouTube references use different providers. A
+    partial result is useful, so one provider failure must not hide the other.
+    Campaign idea generation deliberately remains an explicit separate action.
+    """
+    normalized_market = (market or "malaysia").strip().lower()
+    sections: dict[str, dict[str, Any]] = {}
+    try:
+        trends_response = await trigger_refresh(
+            owner_email=principal.email, market=normalized_market, principal=principal,
+        )
+        trends_payload = json.loads(trends_response.body)
+        sections["trends"] = {
+            "status": trends_payload.get("status", "failed"),
+            "items_count": trends_payload.get("items_count", 0),
+            "message": trends_payload.get("message", "Trend refresh failed."),
+        }
+    except Exception:
+        logger.exception("[TrendsAPI] Combined trend refresh failed subject=%s", principal.subject)
+        sections["trends"] = {"status": "failed", "items_count": 0, "message": "Trend research is temporarily unavailable."}
+
+    try:
+        from jusads_trends.youtube_hook_references import get_company_hook_references
+        hooks = await get_company_hook_references(
+            supabase, owner_email=principal.email, market=normalized_market, force_refresh=True,
+        )
+        sections["youtube_hooks"] = {
+            "status": "completed", "items_count": len(hooks.get("items") or []),
+            "message": "YouTube/Reels hook references refreshed.",
+        }
+    except Exception:
+        logger.exception("[TrendsAPI] Combined YouTube refresh failed subject=%s", principal.subject)
+        sections["youtube_hooks"] = {"status": "failed", "items_count": 0, "message": "YouTube/Reels hook references are temporarily unavailable."}
+
+    failed = [name for name, result in sections.items() if result["status"] != "completed"]
+    return JSONResponse(content={
+        "status": "partial" if failed else "completed",
+        "sections": sections,
+        "message": "Some sources could not be refreshed." if failed else "Research and hook references refreshed.",
+    })

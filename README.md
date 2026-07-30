@@ -89,7 +89,7 @@ External calls are wrapped with graceful-degradation paths where practical. A pr
 │   ├── jusads_compliance/             # Compliance and remediation graphs
 │   ├── shared/                        # Config, clients, storage, runtime prompts
 │   ├── migrations/                    # Supabase schema and seed data
-│   ├── scripts/manual/                # Explicit data-refresh utilities
+│   ├── ...                             # Application runtime only
 │   └── tests/                         # pytest suites
 ├── frontend/
 │   ├── src/pages/                     # Route-level React pages

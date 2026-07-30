@@ -186,8 +186,7 @@ async def generate(*, brief: str,
         try:
             s3_url = upload_file_public(tmp_path, s3_key)
         except Exception as e:
-            logger.warning("[TextAgent] S3 upload failed, using fallback URL: %s", e)
-            s3_url = f"https://mock-bucket.s3.amazonaws.com/{s3_key}"
+            raise RuntimeError("Text output could not be stored safely.") from e
 
         ad_id = _record_row(
             project_id=project_id,

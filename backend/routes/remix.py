@@ -11,18 +11,26 @@ New integrations should use the /remediate endpoint + progress polling instead.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
+import mimetypes
 import os
 import re
+import tempfile
 import time as _time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from shared.supabase_client import SupabaseComplianceStore
+from shared.auth import Principal, get_current_principal
+from shared.authorization import get_authorized_compliance_check
+from shared.s3_client import build_s3_key, generate_presigned_url, upload_file
+from jusads_compliance.capcut_artifact import CapCutArtifactError, build_capcut_editing_package
+from jusads_compliance.remediation_store import RemediationStore
 
 logger = logging.getLogger(__name__)
 
@@ -38,22 +46,52 @@ def init_remix(supabase_store: SupabaseComplianceStore | None) -> None:
     _supabase_store = supabase_store
 
 
-def _publish_remediated_asset(output_path: str, check: dict, task_id: str) -> str:
-    """Upload one generated remediation asset and return its public URL."""
+def _publish_remediated_asset(
+    output_path: str, check: dict, task_id: str, subject: str,
+) -> tuple[str, str, int]:
+    """Upload one generated remediation asset and return its private key + hash."""
     if not output_path or not os.path.isfile(output_path):
         raise FileNotFoundError(f"Remediated asset was not created: {output_path}")
-
-    from shared.s3_client import build_s3_key, upload_file_public
 
     project_id = str(check.get("project_id") or "remediation")
     s3_key = build_s3_key(
         "remixed",
-        "remediation",
+        subject,
         project_id,
         task_id,
         os.path.basename(output_path),
     )
-    return upload_file_public(output_path, s3_key)
+    upload_file(output_path, s3_key)
+    digest = hashlib.sha256()
+    with open(output_path, "rb") as asset:
+        for chunk in iter(lambda: asset.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return s3_key, digest.hexdigest(), os.path.getsize(output_path)
+
+
+def _publish_capcut_package(
+    package: dict, check: dict, task_id: str, subject: str, version_id: str,
+) -> dict:
+    """Upload a private editing package and return only durable metadata."""
+    archive_path = str(package["archive_path"])
+    filename = f"capcut-{version_id}.zip"
+    key = build_s3_key(
+        "remixed", subject, str(check.get("project_id") or "remediation"), task_id, filename,
+    )
+    try:
+        upload_file(archive_path, key)
+    finally:
+        if os.path.exists(archive_path):
+            os.remove(archive_path)
+    return {
+        "available": True,
+        "key": key,
+        "file_name": package["file_name"],
+        "sha256": package["sha256"],
+        "size_bytes": package["size_bytes"],
+        "format": package["format"],
+        "relink_media_if_prompted": package["relink_media_if_prompted"],
+    }
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -62,7 +100,11 @@ def _publish_remediated_asset(output_path: str, check: dict, task_id: str) -> st
 
 
 @router.post("/api/compliance/{task_id}/remix")
-async def remix_compliance(task_id: str):
+async def remix_compliance(
+    task_id: str,
+    principal: Principal = Depends(get_current_principal),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
     """Run AI remediation for a compliance check. Returns SSE stream.
 
     Routes to the appropriate remix strategy based on media type:
@@ -72,27 +114,40 @@ async def remix_compliance(task_id: str):
     - video: Timeline-aware media remediation and publish
     """
     if not _supabase_store:
-        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+        return JSONResponse(status_code=503, content={"error": {"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"}})
 
     try:
-        response = _supabase_store.client.table("compliance_checks").select(
-            "task_id, media_type, market, ethnicity, age_group, platform, "
-            "result_json, s3_upload_key, project_id"
-        ).eq("task_id", task_id).execute()
-        rows = response.data or []
-        if not rows:
-            return JSONResponse(status_code=404, content={"error": "Check not found"})
-    except Exception as e:
-        logger.error("[Remix] Failed to fetch check %s: %s", task_id, e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-    check = rows[0]
+        check = get_authorized_compliance_check(
+            _supabase_store, task_id, principal, write=True,
+            fields="task_id, media_type, market, ethnicity, age_group, platform, result_json, s3_upload_key, project_id",
+        ).record
+        version = RemediationStore(_supabase_store.client).begin_version(
+            task_id=task_id,
+            idempotency_key=(idempotency_key or str(uuid.uuid4()))[:200],
+            media_type=str(check.get("media_type") or "text"),
+            source_asset_key=check.get("s3_upload_key"),
+            created_by_subject=principal.subject,
+            agent_strategy="legacy_remix_adapter",
+            policy_version="current",
+            rule_version="current",
+            model_provider="jusads",
+            prompt_template_version="remix-v1",
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("[Remix] Failed to prepare remediation task_id=%s", task_id)
+        return JSONResponse(status_code=503, content={"error": {"code": "REMEDIATION_UNAVAILABLE", "message": "Remediation is temporarily unavailable"}})
     media_type = check["media_type"]
     result_json = check.get("result_json") or {}
     market = check.get("market", "malaysia")
     ethnicity = check.get("ethnicity", "malay")
     age_group = check.get("age_group", "all_ages")
     platform = check.get("platform", "general")
+    # Legacy remediation helpers still accept a URL. The durable record keeps
+    # only the private object key; this short-lived URL never reaches clients.
+    if check.get("s3_upload_key"):
+        check["s3_upload_key"] = generate_presigned_url(check["s3_upload_key"], 300)
 
     async def generate_events():
         def emit(event: dict) -> str:
@@ -155,58 +210,95 @@ async def remix_compliance(task_id: str):
             # asset URL, but audio/image generated files do.
             output_path = (
                 remix_result_data.pop("audio_output_path", None)
+                or remix_result_data.pop("image_output_path", None)
                 or remix_result_data.pop("video_output_path", None)
             )
+            if not output_path and media_type == "text":
+                rewritten = str(remix_result_data.get("rewritten_text") or "")
+                if not rewritten:
+                    raise RuntimeError("No remediated text was produced")
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".txt", delete=False) as text_asset:
+                    text_asset.write(rewritten)
+                    output_path = text_asset.name
             if output_path:
                 yield emit({"type": "node_status", "node": "upload_remediated_asset", "status": "running", "description": "Uploading remediated media"})
                 try:
-                    s3_remix_url = _publish_remediated_asset(output_path, check, task_id)
-                    remix_result_data["s3_remix_url"] = s3_remix_url
-                    logger.info("[Remix] Published remediated asset: %s", s3_remix_url)
+                    package = None
+                    if media_type == "video":
+                        try:
+                            package = build_capcut_editing_package(
+                                remix_result_data.get("capcut_draft"), task_id=task_id,
+                            )
+                        except CapCutArtifactError as exc:
+                            # An editable package is optional, but never claim a
+                            # broken local draft is a downloadable user result.
+                            logger.warning("[Remix] CapCut package unavailable task_id=%s: %s", task_id, exc)
+                        except Exception:
+                            logger.exception("[Remix] CapCut package build failed task_id=%s", task_id)
+
+                    asset_key, asset_hash, asset_size = _publish_remediated_asset(
+                        output_path, check, task_id, principal.subject,
+                    )
+                    capcut_metadata = None
+                    if package:
+                        try:
+                            capcut_metadata = _publish_capcut_package(
+                                package, check, task_id, principal.subject, str(version["id"]),
+                            )
+                        except Exception:
+                            logger.exception("[Remix] CapCut package upload failed task_id=%s", task_id)
+                    generation_metadata = {"media_type": media_type}
+                    if capcut_metadata:
+                        generation_metadata["capcut_draft"] = capcut_metadata
+                    RemediationStore(_supabase_store.client).mark_generated(
+                        version_id=str(version["id"]),
+                        asset_key=asset_key,
+                        asset_sha256=asset_hash,
+                        asset_size_bytes=asset_size,
+                        content_type=(
+                            "text/plain"
+                            if media_type == "text"
+                            else mimetypes.guess_type(output_path)[0]
+                        ),
+                        generation_metadata=generation_metadata,
+                    )
+                    remix_result_data["remediation_status"] = "pending_recheck"
+                    remix_result_data["s3_remix_url"] = generate_presigned_url(asset_key, 300)
+                    remix_result_data["capcut_draft"] = (
+                        {key: value for key, value in capcut_metadata.items() if key != "key"}
+                        if capcut_metadata
+                        else {"available": False}
+                    )
+                    logger.info("[Remix] Private remediation uploaded task_id=%s", task_id)
                 finally:
-                    # TTS output is temporary; only the S3 URL is retained.
+                    # Generated files are transient; only the private S3 key is retained.
                     if output_path and os.path.exists(output_path):
                         os.remove(output_path)
+                    if package and os.path.exists(str(package.get("archive_path") or "")):
+                        os.remove(str(package["archive_path"]))
                 yield emit({"type": "node_status", "node": "upload_remediated_asset", "status": "completed", "description": "Remediated media uploaded"})
+            else:
+                raise RuntimeError("Remediation did not produce a private asset")
 
             duration_ms = int((_time.time() - start_t) * 1000)
-            yield emit({"type": "node_status", "node": "generate_remediation", "status": "completed", "description": "Compliant remediation generated", "duration_ms": duration_ms})
-
-            existing_versions = result_json.get("remix_versions", [])
-            if not isinstance(existing_versions, list):
-                existing_versions = []
-            version = {
-                "id": str(uuid.uuid4()),
-                "number": len(existing_versions) + 1,
-                "media_type": media_type,
-                "asset_url": remix_result_data.get("s3_remix_url"),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            remix_result_data["version"] = version
-            remix_versions = [*existing_versions, version]
-
-            # Persist remix result
-            try:
-                persisted_fields = {"result_json": {**result_json, "remix": remix_result_data, "remix_versions": remix_versions}}
-                if remix_result_data.get("s3_remix_url"):
-                    persisted_fields["s3_remix_key"] = remix_result_data["s3_remix_url"]
-                _supabase_store.update_check_status(
-                    task_id,
-                    "remediated",
-                    **persisted_fields,
-                )
-            except Exception as e:
-                logger.warning("[Remix] Persist failed: %s", e)
+            yield emit({"type": "node_status", "node": "generate_remediation", "status": "completed", "description": "Remediation generated; compliance recheck is pending", "duration_ms": duration_ms})
+            remix_result_data["version_id"] = str(version["id"])
+            remix_result_data["verification_status"] = "pending_recheck"
 
             yield emit({"type": "remix_result", "data": remix_result_data})
 
-        except Exception as e:
-            logger.error("[Remix] Error for %s: %s", task_id, e, exc_info=True)
+        except Exception:
+            logger.exception("[Remix] Error for task_id=%s", task_id)
+            try:
+                RemediationStore(_supabase_store.client).mark_generation_failed(
+                    version_id=str(version["id"]), error_code="REMEDIATION_GENERATION_FAILED",
+                )
+            except Exception:
+                logger.exception("[Remix] Failed to record remediation failure task_id=%s", task_id)
             yield emit({
-                "type": "node_status",
-                "node": "error",
-                "status": "error",
-                "description": "Remix could not be completed. Please try again.",
+                "type": "error",
+                "code": "REMEDIATION_GENERATION_FAILED",
+                "message": "Remediation could not be completed. Please try again.",
             })
 
     return StreamingResponse(
@@ -214,6 +306,47 @@ async def remix_compliance(task_id: str):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/api/compliance/{task_id}/remediation-versions/{version_id}/capcut-package")
+async def get_capcut_editing_package(
+    task_id: str,
+    version_id: str,
+    principal: Principal = Depends(get_current_principal),
+):
+    """Authorize a single remediation-version editing package download."""
+    if not _supabase_store:
+        raise HTTPException(status_code=503, detail={"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"})
+    authorized = get_authorized_compliance_check(
+        _supabase_store, task_id, principal, write=False, fields="task_id, project_id",
+    )
+    try:
+        response = (
+            _supabase_store.client.table("remediation_versions")
+            .select("id, task_id, generation_metadata")
+            .eq("id", version_id)
+            .eq("task_id", authorized.record["task_id"])
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            raise HTTPException(status_code=404, detail={"code": "RESOURCE_NOT_FOUND", "message": "Resource not found"})
+        draft = (rows[0].get("generation_metadata") or {}).get("capcut_draft") or {}
+        key = draft.get("key") if isinstance(draft, dict) else None
+        filename = draft.get("file_name") if isinstance(draft, dict) else None
+        if not isinstance(key, str) or not key.startswith("private/") or not isinstance(filename, str):
+            raise HTTPException(status_code=404, detail={"code": "CAPCUT_PACKAGE_UNAVAILABLE", "message": "No editable package is available for this version"})
+        return {
+            "download_url": generate_presigned_url(key, 300, attachment_filename=filename),
+            "file_name": filename,
+            "expires_in_seconds": 300,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("[Remix] CapCut package lookup failed task_id=%s version_id=%s", task_id, version_id)
+        raise HTTPException(status_code=503, detail={"code": "CAPCUT_PACKAGE_UNAVAILABLE", "message": "Editing package is temporarily unavailable"})
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -499,6 +632,17 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
             f"Required script: {localization['required_script']}. Tone: {localization['tone']}."
         )
         segmentation = result_json.get("segmentation")
+        localization_assessment = result_json.get("localization_assessment") or {}
+        localization_priority = (
+            localization_assessment.get("priority", "")
+            if isinstance(localization_assessment, dict)
+            else ""
+        )
+        cultural_fit_score = result_json.get("cultural_fit_score")
+        try:
+            localization_needs_adaptation = localization_priority in {"moderate", "high"} or int(cultural_fit_score) < 70
+        except (TypeError, ValueError):
+            localization_needs_adaptation = localization_priority in {"moderate", "high"}
 
         triage = triage_decide(
             risk_percentage=risk_percentage,
@@ -508,6 +652,7 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
             platform=platform,
             market=market,
             confidence=result_json.get("overall_confidence", "high"),
+            localization_needs_adaptation=localization_needs_adaptation,
         )
 
         logger.info("[Remix] Triage: %s — %s", triage["outcome"], triage["reasoning"])
@@ -577,24 +722,17 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
             output_path = edit_result.get("output_path", "")
             quality_score = edit_result.get("quality_score", 0)
 
-            # edit_image owns publishing and persistence.  Reuse its URL so an
-            # image remix is not uploaded and written to Supabase twice.
-            s3_remix_url = edit_result.get("s3_url")
-            uploaded_by_agent = bool(s3_remix_url)
-            if not s3_remix_url and output_path:
-                try:
-                    s3_remix_url = _publish_remediated_asset(output_path, check, task_id)
-                    logger.info("[Remix] Published fallback remix asset: %s", s3_remix_url)
-                except Exception as e:
-                    logger.warning("[Remix] Fallback S3 upload failed: %s", e)
-
-            # The fallback route upload needs its own DB update; the standard
-            # agent path has already persisted this URL.
-            if s3_remix_url and not uploaded_by_agent and _supabase_store:
-                try:
-                    _supabase_store.update_check_status(task_id, "remediated", s3_remix_key=s3_remix_url)
-                except Exception as e:
-                    logger.warning("[Remix] DB update failed: %s", e)
+            # The route owns publishing/persistence so every media type enters
+            # the same private, versioned remediation state machine.  Do not
+            # reuse an agent-provided URL: it may be public and it cannot prove
+            # that a durable private asset was recorded.
+            if not output_path or not os.path.isfile(output_path):
+                yield {
+                    "type": "edit_failed",
+                    "fallback_guidance": "The edited image could not be persisted safely.",
+                    "error": "Image remediation did not produce a local output file.",
+                }
+                return
 
             # Step 4: Lightweight bias check (non-blocking)
             bias_check = None
@@ -618,7 +756,9 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
             # Build the final result — never include S3 keys or local paths
             image_edit_event = {
                 "type": "image_edit",
-                "s3_remix_url": s3_remix_url,
+                # Consumed by remix_compliance before the terminal SSE event;
+                # never expose a filesystem path or S3 key to the browser.
+                "image_output_path": output_path,
                 "quality_score": quality_score,
                 "edit_mode": edit_result.get("edit_mode", ""),
                 "localization_verified": edit_result.get("localization_verified", True),
@@ -647,4 +787,3 @@ async def _remix_image_stream(check, task_id, violations, suggestion, result_jso
     except Exception as e:
         logger.error("[Remix] Unhandled error for %s: %s", task_id, e, exc_info=True)
         yield emit({"type": "error", "message": "An unexpected error occurred during image remix. Please try again."})
-

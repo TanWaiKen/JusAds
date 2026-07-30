@@ -18,12 +18,14 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from shared.supabase_client import SupabaseComplianceStore
-from shared.s3_client import get_public_url, normalize_s3_key
+from shared.s3_client import delete_object, get_public_url, normalize_s3_key
+from shared.auth import Principal, get_current_principal
+from shared.authorization import require_project_access
 from jusads_generation import run_generation, run_video_plan_execution
 from jusads_generation.video_plan_validation import is_usable_v3_plan
 from jusads_generation.chat_store import (
@@ -41,7 +43,6 @@ from jusads_generation.distribution import (
     distribute_ad,
     DistributionError,
     AccountNotConfiguredError,
-    configured_distribution_accounts,
 )
 from jusads_generation.caption_agent import (
     generate_platform_caption,
@@ -57,6 +58,34 @@ from shared.config import MODEL_TEXT
 # ─── Video-plan continuation detection ────────────────────────────────────────
 
 import re as _re
+
+def _sync_pipeline_nodes_to_generated_ads(pipeline_state: dict):
+    """Synchronize pipeline node outputs into generated_ads relational table."""
+    if not pipeline_state:
+        return
+    nodes = pipeline_state.get("nodes")
+    if not isinstance(nodes, list):
+        return
+    
+    from shared.clients import supabase as sb
+    
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        output_url = node.get("output")
+        ad_id = node.get("props", {}).get("ad_id")
+        if isinstance(output_url, str) and ad_id:
+            try:
+                row_resp = sb.table("generated_ads").select("metadata").eq("id", ad_id).limit(1).execute()
+                rows = row_resp.data or []
+                if rows:
+                    metadata = rows[0].get("metadata") or {}
+                    if metadata.get("s3_url") != output_url:
+                        metadata["s3_url"] = output_url
+                        sb.table("generated_ads").update({"metadata": metadata}).eq("id", ad_id).execute()
+                        logger.info("[Generation] Synced output URL to generated_ads for ad_id=%s", ad_id)
+            except Exception as e:
+                logger.error("[Generation] Sync to generated_ads failed for ad_id=%s: %s", ad_id, e)
 
 _CONTINUATION_PHRASES: set[str] = {
     "continue",
@@ -152,7 +181,7 @@ _run_complete: dict[str, bool] = {}
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/chat")
-async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRequest) -> StreamingResponse:
+async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRequest, principal: Principal = Depends(get_current_principal)) -> StreamingResponse:
     """Send a message to the AI generation agent, streaming response text and returning the final state.
 
     The generation runs as a BACKGROUND TASK — if the client disconnects mid-stream,
@@ -161,6 +190,7 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
     """
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+    require_project_access(_store, project_id, principal, write=True)
 
     task = _store.get_task_detail(project_id=project_id, task_id=task_id)
     if not task:
@@ -226,6 +256,7 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                             data = json.loads(chunk.replace("data: ", "").strip())
                             if "pipeline_state" in data:
                                 final_state = data["pipeline_state"]
+                                _sync_pipeline_nodes_to_generated_ads(final_state)
                                 _store.update_task_pipeline(
                                     project_id=project_id,
                                     task_id=task_id,
@@ -368,7 +399,11 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                 body.revision_instruction is not None,
             )
         except ValueError as ve:
-            return JSONResponse(status_code=422, content={"error": str(ve)})
+            logger.warning("[Generation] Invalid Easy Mode request: %s", ve)
+            return JSONResponse(
+                status_code=422,
+                content={"error": "The guided campaign inputs are invalid. Please review the form and try again."},
+            )
     elif body.guided_mode and body.design_type and body.guided_inputs:
         try:
             from jusads_generation.guided_prompts import assemble_guided_message, DESIGN_TYPE_TO_MEDIA
@@ -376,7 +411,11 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
             effective_message = assemble_guided_message(body.design_type, body.guided_inputs)
             forced_media = DESIGN_TYPE_TO_MEDIA.get(body.design_type)
         except ValueError as ve:
-            return JSONResponse(status_code=422, content={"error": str(ve)})
+            logger.warning("[Generation] Invalid guided request: %s", ve)
+            return JSONResponse(
+                status_code=422,
+                content={"error": "The guided campaign inputs are invalid. Please review the form and try again."},
+            )
     else:
         effective_message = body.message
         forced_media = None
@@ -452,6 +491,7 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                         data = json.loads(clean_json)
                         if "pipeline_state" in data:
                             final_state = data["pipeline_state"]
+                            _sync_pipeline_nodes_to_generated_ads(final_state)
                             # Save intermediate state to DB
                             _store.update_task_pipeline(
                                 project_id=project_id,
@@ -462,9 +502,11 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
                     except Exception as pe:
                         logger.warning("[BG] Error parsing/persisting state chunk: %s", pe)
 
-        except Exception as err:
-            logger.error("[BG] Generation background task error: %s", err)
-            await queue.put(f"data: {json.dumps({'error': str(err)})}\n\n")
+        except Exception:
+            logger.exception("[BG] Generation background task failed task=%s", task_id)
+            await queue.put(
+                f"data: {json.dumps({'error': 'Generation failed. Please try again.'})}\n\n"
+            )
 
         # Final persistence — mark as completed
         if final_state:
@@ -579,7 +621,10 @@ async def chat_with_generation_agent(project_id: str, task_id: str, body: ChatRe
 
 @router.post("/projects/{project_id}/tasks/{task_id}/execute-video-plan")
 async def execute_video_plan_endpoint(
-    project_id: str, task_id: str, body: ExecuteVideoPlanRequest
+    project_id: str,
+    task_id: str,
+    body: ExecuteVideoPlanRequest,
+    principal: Principal = Depends(get_current_principal),
 ) -> StreamingResponse:
     """Render an approved, complete V3 storyboard plan into a final video (SSE).
 
@@ -587,6 +632,7 @@ async def execute_video_plan_endpoint(
     """
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+    require_project_access(_store, project_id, principal, write=True)
 
     task = _store.get_task_detail(project_id=project_id, task_id=task_id)
     if not task:
@@ -629,15 +675,18 @@ async def execute_video_plan_endpoint(
                         data = json.loads(chunk.replace("data: ", "").strip())
                         if "pipeline_state" in data:
                             final_state = data["pipeline_state"]
+                            _sync_pipeline_nodes_to_generated_ads(final_state)
                             _store.update_task_pipeline(
                                 project_id=project_id, task_id=task_id,
                                 status="in_progress", pipeline_state=final_state,
                             )
                     except Exception as pe:
                         logger.warning("[BG-V3] Error parsing/persisting state: %s", pe)
-        except Exception as err:
-            logger.error("[BG-V3] Video production error: %s", err)
-            await queue.put(f"data: {json.dumps({'error': str(err)})}\n\n")
+        except Exception:
+            logger.exception("[BG-V3] Video production failed task=%s", task_id)
+            await queue.put(
+                f"data: {json.dumps({'error': 'Video production failed. Please try again.'})}\n\n"
+            )
 
         if final_state:
             try:
@@ -679,10 +728,13 @@ async def execute_video_plan_endpoint(
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/generated-ads")
-async def get_generated_ads(project_id: str, task_id: str) -> JSONResponse:
+async def get_generated_ads(project_id: str, task_id: str, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Return all generated ads for a task (newest first) so the UI can repopulate on reload."""
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+    require_project_access(_store, project_id, principal)
+    if not _store.get_task_detail(project_id=project_id, task_id=task_id):
+        return JSONResponse(status_code=404, content={"error": "Task not found"})
 
     try:
         from shared.clients import supabase as sb
@@ -701,12 +753,24 @@ async def get_generated_ads(project_id: str, task_id: str) -> JSONResponse:
         ads = []
         for row in rows:
             metadata = row.get("metadata") or {}
+            s3_media_key = row.get("s3_media_key")
+            public_url = metadata.get("s3_url")
+
+            # Fallback if s3_url is missing in metadata but we have a media key
+            if not public_url and s3_media_key:
+                try:
+                    from config import S3_BUCKET_NAME, AWS_REGION
+                    if S3_BUCKET_NAME and AWS_REGION:
+                        public_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_media_key}"
+                except ImportError:
+                    pass
+
             ads.append({
                 "ad_id": str(row.get("id", "")),
                 "media_type": row.get("media_type", ""),
                 "platform": row.get("platform", ""),
-                "s3_media_key": row.get("s3_media_key"),
-                "public_url": metadata.get("s3_url"),
+                "s3_media_key": s3_media_key,
+                "public_url": public_url,
                 "aspect_ratio": metadata.get("aspect_ratio"),
                 "caption": row.get("caption") or (row.get("prompt_used") if row.get("media_type") == "text" else None),
                 "gen_status": row.get("status", "completed"),
@@ -715,16 +779,17 @@ async def get_generated_ads(project_id: str, task_id: str) -> JSONResponse:
                 "revision_edit": metadata.get("revision_edit"),
             })
         return JSONResponse(content={"ads": ads})
-    except Exception as e:
-        logger.error("Failed to fetch generated ads for task %s: %s", task_id, e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception:
+        logger.exception("Failed to fetch generated ads for task %s", task_id)
+        return JSONResponse(status_code=503, content={"error": "Generated ads are temporarily unavailable"})
 
 
 @router.get("/projects/{project_id}/easy-results")
-async def get_easy_results(project_id: str) -> JSONResponse:
+async def get_easy_results(project_id: str, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Return recent output-bearing tasks so Easy Mode can resume a specific run."""
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+    require_project_access(_store, project_id, principal)
 
     try:
         from shared.clients import supabase as sb
@@ -745,13 +810,13 @@ async def get_easy_results(project_id: str) -> JSONResponse:
             if task_id and task_id not in latest_by_task:
                 latest_by_task[str(task_id)] = row
         return JSONResponse(content={"results": list(latest_by_task.values())[:6]})
-    except Exception as e:
-        logger.error("Failed to fetch Easy Mode results for project %s: %s", project_id, e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception:
+        logger.exception("Failed to fetch Easy Mode results for project %s", project_id)
+        return JSONResponse(status_code=503, content={"error": "Easy Mode results are temporarily unavailable"})
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/chat-history")
-async def get_chat_history(project_id: str, task_id: str) -> JSONResponse:
+async def get_chat_history(project_id: str, task_id: str, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Return the full ordered Chat_History for a task (Req 11.5).
 
     Responds with 200 ``{messages: [...]}`` (oldest → newest) on success, 404 when the
@@ -760,6 +825,7 @@ async def get_chat_history(project_id: str, task_id: str) -> JSONResponse:
     """
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+    require_project_access(_store, project_id, principal)
 
     task = _store.get_task_detail(project_id=project_id, task_id=task_id)
     if not task:
@@ -770,7 +836,7 @@ async def get_chat_history(project_id: str, task_id: str) -> JSONResponse:
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/ads/{ad_id}/publish")
-async def publish_generated_ad(project_id: str, task_id: str, ad_id: str) -> JSONResponse:
+async def publish_generated_ad(project_id: str, task_id: str, ad_id: str, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Approve and publish a Generated_Ad — the human-in-the-loop gate (§ 4).
 
     Flips ``generated_ads.status`` to ``published`` once the owner has reviewed
@@ -780,18 +846,40 @@ async def publish_generated_ad(project_id: str, task_id: str, ad_id: str) -> JSO
     """
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+    require_project_access(_store, project_id, principal, write=True)
+
+    if not _store.get_task_detail(project_id=project_id, task_id=task_id):
+        return JSONResponse(status_code=404, content={"error": "Task not found"})
+
+    try:
+        from shared.clients import supabase as sb
+
+        ad_response = (
+            sb.table("generated_ads")
+            .select("id")
+            .eq("id", ad_id)
+            .eq("project_id", project_id)
+            .eq("task_id", task_id)
+            .limit(1)
+            .execute()
+        )
+        if not ad_response.data:
+            return JSONResponse(status_code=404, content={"error": "Generated ad not found"})
+    except Exception:
+        logger.exception("[Publish] Could not verify ad scope project=%s task=%s", project_id, task_id)
+        return JSONResponse(status_code=503, content={"error": "Publishing is temporarily unavailable"})
 
     try:
         result = publish_ad(project_id, ad_id)
     except AdNotFoundError as e:
         logger.info("[Publish] %s", e)
-        return JSONResponse(status_code=404, content={"error": str(e)})
+        return JSONResponse(status_code=404, content={"error": "Generated ad not found"})
     except CompliancePublishBlockedError as e:
         logger.warning("[Publish] Blocked: %s", e)
-        return JSONResponse(status_code=409, content={"error": str(e)})
+        return JSONResponse(status_code=409, content={"error": "Ad failed compliance review and cannot be published"})
     except PublishError as e:
         logger.error("[Publish] Store error: %s", e)
-        return JSONResponse(status_code=503, content={"error": str(e)})
+        return JSONResponse(status_code=503, content={"error": "Publishing is temporarily unavailable"})
 
     # Publishing is also where a shareable caption is created. This avoids ever
     # treating the internal image-generation prompt as platform post content.
@@ -834,39 +922,56 @@ class DistributionTarget(BaseModel):
     account_id: Optional[str] = None
 
 
+def _normalize_distribution_accounts(payload: dict) -> list[dict]:
+    """Map Zernio's documented account response to the picker contract."""
+    raw_accounts = payload.get("accounts") or payload.get("data") or []
+    if isinstance(raw_accounts, dict):
+        raw_accounts = raw_accounts.get("accounts") or raw_accounts.get("data") or []
+
+    accounts: list[dict] = []
+    for raw in raw_accounts if isinstance(raw_accounts, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        platform = raw.get("platform")
+        account_id = raw.get("_id")
+        if not isinstance(platform, str) or not isinstance(account_id, str) or not account_id:
+            logger.warning(
+                "[Distribution] Skipping a Zernio account with a missing documented _id or platform."
+            )
+            continue
+        username = raw.get("username")
+        accounts.append({
+            "id": account_id,
+            "platform": platform.lower(),
+            "label": f"@{username}" if isinstance(username, str) and username else f"{platform.title()} account",
+        })
+    return accounts
+
+
 @router.get("/distribution/accounts")
-async def list_distribution_accounts(email: str = Query(...)) -> JSONResponse:
+async def list_distribution_accounts(
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
     """Return normalized connected Zernio accounts for multi-account posting."""
     try:
         from shared.zernio_client import get_connected_accounts
         from routes.profile import _get_stored_user_zernio_key
 
-        api_key = _get_stored_user_zernio_key(email)
+        # A connected social account is private to the authenticated person.
+        # Never accept an email query parameter here: it allowed account discovery
+        # against another user's stored Zernio key.
+        api_key = _get_stored_user_zernio_key(principal.email)
+        if not api_key:
+            return JSONResponse(content={"accounts": [], "message": "Connect your Zernio account in Profile before distributing."})
         payload = await get_connected_accounts(api_key=api_key)
-        raw_accounts = payload.get("accounts") or payload.get("data") or []
-        if isinstance(raw_accounts, dict):
-            raw_accounts = raw_accounts.get("accounts") or raw_accounts.get("data") or []
-        accounts: list[dict] = []
-        for raw in raw_accounts if isinstance(raw_accounts, list) else []:
-            if not isinstance(raw, dict):
-                continue
-            raw_platform = raw.get("platform")
-            platform = raw_platform.get("value") if isinstance(raw_platform, dict) else raw_platform
-            account_id = raw.get("id") or raw.get("_id") or raw.get("accountId")
-            if not isinstance(platform, str) or not account_id:
-                continue
-            username = raw.get("username") or raw.get("handle") or raw.get("name")
-            accounts.append({
-                "id": str(account_id),
-                "platform": platform.lower(),
-                "label": f"@{username}" if username else f"{platform.title()} account",
-            })
-        if not accounts:
-            accounts = configured_distribution_accounts()
-        return JSONResponse(content={"accounts": accounts})
+        accounts = _normalize_distribution_accounts(payload)
+        return JSONResponse(content={
+            "accounts": accounts,
+            "message": None if accounts else "No active social accounts were returned by Zernio. Check the connection in Profile.",
+        })
     except Exception as exc:
-        logger.warning("[Distribution] Account discovery failed: %s", exc)
-        return JSONResponse(content={"accounts": configured_distribution_accounts()})
+        logger.warning("[Distribution] Account discovery failed subject=%s: %s", principal.subject, exc)
+        return JSONResponse(status_code=503, content={"error": "Connected accounts are temporarily unavailable."})
 
 
 class DistributeRequest(BaseModel):
@@ -880,7 +985,11 @@ class DistributeRequest(BaseModel):
 
 @router.post("/projects/{project_id}/tasks/{task_id}/ads/{ad_id}/distribute")
 async def distribute_generated_ad(
-    project_id: str, task_id: str, ad_id: str, body: DistributeRequest
+    project_id: str,
+    task_id: str,
+    ad_id: str,
+    body: DistributeRequest,
+    principal: Principal = Depends(get_current_principal),
 ) -> JSONResponse:
     """Distribute a published ad to a social platform via Zernio.
 
@@ -890,34 +999,32 @@ async def distribute_generated_ad(
     """
     if not _store:
         return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+    require_project_access(_store, project_id, principal, write=True)
 
-    # Verify the ad exists and is published, and get the project owner.
+    # Verify the ad belongs to the requested task and is ready to post.  The
+    # authenticated user's own Zernio connection is used, including for a
+    # shared project; a collaborator must not inherit the owner's social key.
     try:
         from shared.clients import supabase as sb
         from routes.profile import _get_stored_user_zernio_key
 
-        proj_resp = sb.table("projects").select("user_id").eq("id", project_id).limit(1).execute()
-        proj_rows = proj_resp.data or []
-        if not proj_rows:
-            return JSONResponse(status_code=404, content={"error": f"Project {project_id} not found"})
-        owner_email = proj_rows[0].get("user_id")
-
-        api_key = _get_stored_user_zernio_key(owner_email) if owner_email else ""
+        api_key = _get_stored_user_zernio_key(principal.email)
         if not api_key:
             return JSONResponse(
                 status_code=409,
-                content={"error": "Zernio API key is not configured for this user."},
+                content={"error": "Connect your Zernio account in Profile before distributing."},
             )
 
-        resp = sb.table("generated_ads").select("id, status, platform, metadata, media_type, prompt_used, caption").eq("id", ad_id).eq("project_id", project_id).limit(1).execute()
+        resp = sb.table("generated_ads").select("id, status, platform, metadata, media_type, prompt_used, caption").eq("id", ad_id).eq("project_id", project_id).eq("task_id", task_id).limit(1).execute()
         rows = resp.data or []
         if not rows:
             return JSONResponse(status_code=404, content={"error": f"Ad {ad_id} not found"})
         ad_row = rows[0]
         if ad_row.get("status") != "published":
             return JSONResponse(status_code=409, content={"error": "Ad must be published before distributing"})
-    except Exception as e:
-        return JSONResponse(status_code=503, content={"error": f"Failed to verify ad: {e}"})
+    except Exception:
+        logger.exception("[Distribution] Failed to verify ad project_id=%s task_id=%s subject=%s", project_id, task_id, principal.subject)
+        return JSONResponse(status_code=503, content={"error": "Could not verify the selected ad. Please try again."})
 
     metadata = ad_row.get("metadata") or {}
     media_url = metadata.get("s3_url") or ""
@@ -970,7 +1077,12 @@ async def distribute_generated_ad(
             })
         except (AccountNotConfiguredError, DistributionError) as exc:
             logger.warning("[Distribution] %s delivery failed: %s", platform, exc)
-            results.append({"platform": platform, "account_id": target.account_id, "status": "failed", "error": str(exc)})
+            results.append({
+                "platform": platform,
+                "account_id": target.account_id,
+                "status": "failed",
+                "error": "Distribution failed for this selected account",
+            })
 
     # The legacy columns retain the latest successful distribution, while the
     # JSON history preserves every selected platform/account in a batch.
@@ -999,8 +1111,8 @@ async def distribute_generated_ad(
 # --- Prompt Search (Phase F) --------------------------------------------------
 
 
-@router.get("/prompt-suggestions")
-async def get_prompt_suggestions(query: str = "", top_k: int = 8) -> JSONResponse:
+@router.get("/search-prompt")
+async def get_prompt_suggestions(query: str = "", top_k: int = 8, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Search the prompt vector database for templates matching the query.
 
     Returns top-K similar prompt templates from the Qdrant prompt_templates
@@ -1014,15 +1126,39 @@ async def get_prompt_suggestions(query: str = "", top_k: int = 8) -> JSONRespons
         return JSONResponse(content={"suggestions": []})
 
     top_k = max(1, min(20, top_k))
+    
+    # Fast Query Rewriting
+    search_query = query.strip()
+    try:
+        from shared.clients import gemini
+        from config import MODEL_TEXT
+        if gemini:
+            rewriting_prompt = f"""
+            You are an expert search query optimizer. 
+            The user typed this brief search query for an advertisement prompt template: "{search_query}"
+            Rewrite this into a single, highly descriptive search phrase optimized for a vector database.
+            Do not add quotes, markdown, or explanations. Just the rewritten query.
+            """
+            response = await asyncio.to_thread(
+                gemini.models.generate_content,
+                model=MODEL_TEXT,
+                contents=rewriting_prompt
+            )
+            rewritten = (response.text or "").strip()
+            if rewritten:
+                search_query = rewritten
+                logger.info("[PromptSearch] Query rewritten: '%s' -> '%s'", query.strip(), search_query)
+    except Exception as e:
+        logger.warning("[PromptSearch] Query rewriting failed, using original: %s", e)
 
     try:
         from jusads_generation.prompt_search.qdrant_store import search_prompts
 
-        results = search_prompts(query.strip(), top_k=top_k)
+        results = await asyncio.to_thread(search_prompts, search_query, top_k)
         return JSONResponse(content={"suggestions": results})
-    except Exception as e:
-        logger.error("[PromptSearch] Search failed: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e), "suggestions": []})
+    except Exception:
+        logger.exception("[PromptSearch] Search failed subject=%s", principal.subject)
+        return JSONResponse(status_code=503, content={"error": "Prompt search is temporarily unavailable.", "suggestions": []})
 
 
 @router.get("/prompt-recommendations")
@@ -1033,7 +1169,7 @@ async def get_prompt_recommendations(
     platform: str = "tiktok",
     age_group: str = "all_ages",
     top_k: int = 6,
-    user_email: str = "",
+    principal: Principal = Depends(get_current_principal),
 ) -> JSONResponse:
     """Get personalized prompt recommendations based on the user's profile settings.
 
@@ -1045,73 +1181,99 @@ async def get_prompt_recommendations(
     target_platforms = [platform] if platform else []
     target_markets = [target_ethnicity] if target_ethnicity else []
 
-    # Fetch real user business profile details from database if email is provided
-    if user_email:
-        try:
-            from shared.clients import supabase as sb
-            resp = sb.table("business_profiles").select("*").eq("owner_email", user_email).execute()
-            if resp.data:
-                profile = resp.data[0]
-                product_name = profile.get("company_name") or product_name
-                product_category = profile.get("product_category") or product_category
-                product_description = profile.get("product_description") or ""
-                target_platforms = profile.get("target_platforms") or target_platforms
-                target_markets = profile.get("target_markets") or target_markets
-        except Exception as e:
-            logger.warning("[PromptRecommendations] Failed to fetch profile: %s", e)
+    # Profile data is always scoped to the authenticated user.
+    try:
+        from shared.clients import supabase as sb
+        resp = sb.table("business_profiles").select("*").eq("owner_email", principal.email).execute()
+        if resp.data:
+            profile = resp.data[0]
+            product_name = profile.get("company_name") or product_name
+            product_category = profile.get("product_category") or product_category
+            product_description = profile.get("product_description") or ""
+            target_platforms = profile.get("target_platforms") or target_platforms
+            target_markets = profile.get("target_markets") or target_markets
+    except Exception:
+        logger.warning("[PromptRecommendations] Failed to fetch profile subject=%s", principal.subject)
 
-    # Build a contextual query from the user's profile.
-    parts = []
-    if product_name:
-        parts.append(f"advertisement for {product_name}")
-    if product_category:
-        category_labels = {
-            "food_beverage": "food and beverage",
-            "fashion": "fashion and apparel",
-            "beauty": "beauty and personal care",
-            "tech": "technology and gadgets",
-            "health": "health and wellness",
-            "finance": "finance and banking",
-            "travel": "travel and tourism",
-            "education": "education",
-            "real_estate": "real estate",
-            "automotive": "automotive",
-            "entertainment": "entertainment",
-            "ecommerce": "e-commerce retail",
-        }
-        parts.append(category_labels.get(product_category, product_category))
-    if platform:
-        parts.append(f"{platform} ad creative")
-    if target_ethnicity and target_ethnicity != "all":
-        parts.append(f"for {target_ethnicity} audience")
-    if age_group and age_group != "all_ages":
-        age_labels = {
-            "gen_z": "young trendy Gen Z",
-            "millennial": "millennial lifestyle",
-            "gen_x": "mature Gen X family",
-            "baby_boomer": "senior traditional",
-        }
-        parts.append(age_labels.get(age_group, age_group))
-
-    if not parts:
-        parts.append("creative advertisement poster social media")
-
-    query = " ".join(parts)
+    # Multi-Query HyDE Generation
+    hyde_queries = []
+    try:
+        from shared.clients import gemini
+        from config import MODEL_TEXT
+        if gemini:
+            hyde_prompt = f"""
+            You are an expert marketing strategist and prompt engineer.
+            Given the following user business profile:
+            - Company/Product Name: {product_name}
+            - Product Category: {product_category}
+            - Product Description: {product_description}
+            - Target Platforms: {', '.join(target_platforms) if isinstance(target_platforms, list) else platform}
+            - Target Markets/Ethnicities: {', '.join(target_markets) if isinstance(target_markets, list) else target_ethnicity}
+            - Audience Age Group: {age_group}
+            
+            Synthesize this user background and generate exactly 3 different hypothetical advertisement prompt templates.
+            These templates should cover different visual styles (e.g. minimalist, vibrant, lifestyle).
+            Return ONLY a valid JSON array of 3 strings. Do not include markdown blocks like ```json.
+            Example: ["A vibrant lifestyle shot of...", "A minimalist studio flatlay...", "A dynamic fast-paced TikTok video ad..."]
+            """
+            response = await asyncio.to_thread(
+                gemini.models.generate_content,
+                model=MODEL_TEXT,
+                contents=hyde_prompt
+            )
+            raw_text = (response.text or "").strip()
+            if raw_text.startswith("```"):
+                lines = raw_text.splitlines()
+                if lines[0].startswith("```"): lines = lines[1:]
+                if lines and lines[-1].startswith("```"): lines = lines[:-1]
+                raw_text = "\n".join(lines).strip()
+            hyde_queries = json.loads(raw_text)
+            if not isinstance(hyde_queries, list):
+                hyde_queries = []
+    except Exception as e:
+        logger.warning("[PromptRecommendations] Multi-Query HyDE failed: %s", e)
+    
+    # Fallback to standard rule-based string if LLM failed
+    if not hyde_queries:
+        parts = []
+        if product_name: parts.append(f"advertisement for {product_name}")
+        if platform: parts.append(f"{platform} ad creative")
+        query = " ".join(parts) or "creative advertisement poster social media"
+        hyde_queries = [query]
 
     top_k = max(1, min(12, top_k))
 
     try:
         from jusads_generation.prompt_search.qdrant_store import search_prompts
+        
+        # Parallel Vector Search using ThreadPool
+        tasks = [asyncio.to_thread(search_prompts, q, top_k * 2) for q in hyde_queries]
+        search_results_list = await asyncio.gather(*tasks)
+        
+        # Reciprocal Rank Fusion (RRF)
+        fused_scores = {}
+        prompt_data = {}
+        for results in search_results_list:
+            for rank, result in enumerate(results):
+                title = result.get("title", "")
+                if not title: continue
+                # RRF Formula: 1 / (rank + k) where k is traditionally 60
+                score = 1.0 / (rank + 60)
+                fused_scores[title] = fused_scores.get(title, 0.0) + score
+                prompt_data[title] = result
+        
+        # Sort by fused score
+        sorted_titles = sorted(fused_scores.keys(), key=lambda t: fused_scores[t], reverse=True)
+        final_results = [prompt_data[t] for t in sorted_titles[:top_k]]
 
-        results = search_prompts(query, top_k=top_k)
-        return JSONResponse(content={"query_used": query, "recommendations": results})
-    except Exception as e:
-        logger.error("[PromptRecommendations] Failed: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e), "recommendations": []})
+        return JSONResponse(content={"query_used": hyde_queries, "recommendations": final_results})
+    except Exception:
+        logger.exception("[PromptRecommendations] Failed subject=%s", principal.subject)
+        return JSONResponse(status_code=503, content={"error": "Prompt recommendations are temporarily unavailable.", "recommendations": []})
 
 
 @router.get("/user-assets")
-async def get_user_assets(user_email: str = "", limit: int = 50) -> JSONResponse:
+async def get_user_assets(limit: int = 50, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
     """Fetch all generated ads across the user's projects for the Assets page.
 
     Returns completed ads with their media URLs, sorted newest first.
@@ -1123,7 +1285,7 @@ async def get_user_assets(user_email: str = "", limit: int = 50) -> JSONResponse
         from shared.clients import supabase as sb
 
         # Get user's projects first.
-        projects_resp = sb.table("projects").select("id").eq("owner_email", user_email).execute()
+        projects_resp = sb.table("projects").select("id").eq("owner_email", principal.email).execute()
         project_ids = [str(r["id"]) for r in (projects_resp.data or [])]
 
         if not project_ids:
@@ -1168,9 +1330,38 @@ async def get_user_assets(user_email: str = "", limit: int = 50) -> JSONResponse
             })
 
         return JSONResponse(content={"assets": assets})
-    except Exception as e:
-        logger.error("[UserAssets] Failed: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception:
+        logger.exception("[UserAssets] Failed subject=%s", principal.subject)
+        return JSONResponse(status_code=503, content={"error": "Assets are temporarily unavailable"})
+
+
+@router.delete("/user-assets/{asset_id}")
+async def delete_user_asset(asset_id: str, principal: Principal = Depends(get_current_principal)) -> JSONResponse:
+    """Permanently remove one owner-authorized asset and its S3 object."""
+    if not _store:
+        return JSONResponse(status_code=503, content={"error": "Persistence store is unavailable"})
+    try:
+        from shared.clients import supabase as sb
+        response = sb.table("generated_ads").select("id, project_id, s3_media_key").eq("id", asset_id).limit(1).execute()
+        rows = response.data or []
+        if not rows:
+            return JSONResponse(status_code=404, content={"error": "Asset not found"})
+        asset = rows[0]
+        require_project_access(_store, str(asset.get("project_id") or ""), principal, write=True)
+        s3_key = normalize_s3_key(str(asset.get("s3_media_key") or ""))
+        sb.table("generated_ads").delete().eq("id", asset_id).execute()
+        if s3_key:
+            try:
+                delete_object(s3_key)
+            except Exception:
+                logger.exception("[UserAssets] Database asset removed but S3 cleanup failed asset=%s", asset_id)
+                return JSONResponse(status_code=202, content={"status": "deleted", "cleanup": "pending"})
+        return JSONResponse(content={"status": "deleted"})
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("[UserAssets] Delete failed subject=%s", principal.subject)
+        return JSONResponse(status_code=503, content={"error": "Asset could not be deleted"})
 
 
 class AutofillRequest(BaseModel):
@@ -1342,7 +1533,10 @@ def _normalize_autofill_payload(data: dict, body: AutofillRequest) -> dict:
 
 
 @router.post("/generation/autofill")
-async def autofill_easy_form(body: AutofillRequest) -> JSONResponse:
+async def autofill_easy_form(
+    body: AutofillRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
     """Turn conversational instructions into a reviewable Easy Mode draft."""
     if not body.user_prompt.strip():
         return JSONResponse(status_code=400, content={"error": "Please describe the ad you want to create."})
@@ -1409,24 +1603,27 @@ async def autofill_easy_form(body: AutofillRequest) -> JSONResponse:
 
 class HookSearchRequest(BaseModel):
     """Request body for searching YouTube hook/transition videos."""
-    query: str = ""
-    creative_style: str = "meme_shock"
-    market: str = "malaysia"
-    ethnicity: str = "all"
-    product_category: str = ""
-    max_results: int = 8
+    query: str = Field(default="", max_length=300)
+    creative_style: str = Field(default="meme_shock", max_length=80)
+    market: str = Field(default="malaysia", max_length=80)
+    ethnicity: str = Field(default="all", max_length=80)
+    product_category: str = Field(default="", max_length=120)
+    max_results: int = Field(default=8, ge=1, le=20)
 
 
 class HookPreferenceRequest(BaseModel):
     """Record a user's hook video preference for learning."""
-    video_id: str
-    tags: List[str] = []
-    creative_style: str = "meme_shock"
-    product_category: str = ""
+    video_id: str = Field(min_length=1, max_length=128)
+    tags: List[str] = Field(default_factory=list, max_length=20)
+    creative_style: str = Field(default="meme_shock", max_length=80)
+    product_category: str = Field(default="", max_length=120)
 
 
 @router.post("/hook-search")
-async def search_hook_videos_endpoint(body: HookSearchRequest) -> JSONResponse:
+async def search_hook_videos_endpoint(
+    body: HookSearchRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
     """Search YouTube for hook/transition videos for ad creative references.
 
     Uses the YouTube Data API v3 to find short, viral clips suitable as
@@ -1443,23 +1640,26 @@ async def search_hook_videos_endpoint(body: HookSearchRequest) -> JSONResponse:
             market=body.market,
             ethnicity=body.ethnicity,
             product_category=body.product_category,
-            max_results=min(body.max_results, 20),
+            max_results=body.max_results,
         )
         return JSONResponse(content={
             "results": [r.to_dict() for r in results],
             "count": len(results),
             "query_used": body.query or f"(auto: {body.creative_style})",
         })
-    except Exception as exc:
-        logger.error("[HookSearch] Endpoint error: %s", exc)
+    except Exception:
+        logger.exception("[HookSearch] Endpoint error for verified user")
         return JSONResponse(
             status_code=500,
-            content={"error": "Hook video search failed", "detail": str(exc)},
+            content={"error": "Hook video search failed"},
         )
 
 
 @router.post("/hook-search/preference")
-async def record_hook_preference(body: HookPreferenceRequest, user_email: str = Query("")) -> JSONResponse:
+async def record_hook_preference(
+    body: HookPreferenceRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> JSONResponse:
     """Record a user's hook video selection for preference learning.
 
     The system learns which hook styles the user prefers via simple
@@ -1467,7 +1667,7 @@ async def record_hook_preference(body: HookPreferenceRequest, user_email: str = 
     """
     from jusads_generation.hook_search import learn_preference
 
-    user_id = user_email or "anonymous"
+    user_id = principal.email
     try:
         learn_preference(
             user_id=user_id,
@@ -1477,15 +1677,19 @@ async def record_hook_preference(body: HookPreferenceRequest, user_email: str = 
             product_category=body.product_category,
         )
         return JSONResponse(content={"status": "ok", "message": "Preference recorded"})
-    except Exception as exc:
-        logger.warning("[HookSearch] Preference recording failed: %s", exc)
-        return JSONResponse(content={"status": "ok", "message": "Preference recording attempted"})
+    except Exception:
+        logger.exception("[HookSearch] Preference recording failed for verified user")
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Preference service is temporarily unavailable"},
+        )
 
 
 @router.get("/hook-search/tags")
 async def suggest_hook_tags(
     brief: str = Query(""),
     creative_style: str = Query("meme_shock"),
+    principal: Principal = Depends(get_current_principal),
 ) -> JSONResponse:
     """Suggest hook style tags for a given brief and creative strategy.
 

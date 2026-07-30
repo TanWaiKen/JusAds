@@ -20,15 +20,37 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
 
-from fastapi import APIRouter, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from jusads_compliance.utils import detect_media_type_from_filename
 from shared.supabase_client import SupabaseComplianceStore
 from shared.s3_client import S3MediaClient, build_s3_key
+from shared.s3_client import generate_presigned_url, upload_file
+from shared.auth import Principal, get_current_principal
+from shared.authorization import (
+    get_authorized_compliance_check,
+    require_project_access,
+)
+from shared.media_security import (
+    MediaSecurityError,
+    SlidingWindowRateLimiter,
+    remove_temp_file,
+    stream_validated_upload,
+)
 from shared.models import CheckRecord, ComplianceOutput, Compliance_State
 from jusads_compliance.pipeline_runner import PipelineRunner
 from jusads_compliance.progress_tracker import ProgressTracker
+from shared.config import ML_TRIAGE_ADVISORY_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +64,9 @@ _decision_store: Dict[str, str] = {}
 _compliance_runner: PipelineRunner | None = None
 _remediation_runner: PipelineRunner | None = None
 _tracker: ProgressTracker | None = None
+_upload_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=60)
+_MAX_COMPLIANCE_UPLOAD_BYTES = 100 * 1024 * 1024
+_PRESIGNED_VIEW_SECONDS = 300
 
 # Directories
 IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
@@ -120,7 +145,10 @@ async def _stream_pipeline_events(pipeline, state: Compliance_State, task_id: st
             publish({"type": "pipeline_complete", "final_state": final_state})
         except Exception as exc:
             logger.exception("[Pipeline] Graph failed for %s", task_id)
-            publish({"type": "pipeline_error", "message": str(exc)})
+            publish({
+                "type": "pipeline_error",
+                "message": "Compliance evaluation could not be completed. Please try again.",
+            })
 
     threading.Thread(target=run_graph, name=f"compliance-{task_id[:8]}", daemon=True).start()
     while True:
@@ -144,6 +172,12 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
     Polls _completed_results until the pipeline finishes, then sends the
     result event and closes. Also handles human-in-the-loop resume.
     """
+    # Browser WebSockets cannot safely attach the bearer dependency used by the
+    # REST endpoints. Until a short-lived, server-issued websocket ticket is
+    # introduced, fail closed instead of exposing task-scoped results or resume
+    # controls to an unauthenticated socket.
+    await websocket.close(code=4401)
+    return
     await websocket.accept()
     try:
         while True:
@@ -189,8 +223,9 @@ async def check_compliance(
     ethnicity: str = Form("malay"),
     age_group: str = Form("all_ages"),
     platform: str = Form("general"),
-    username: str = Form("anonymous"),
+    username: str = Form(None),
     project_id: str = Form(None),
+    principal: Principal = Depends(get_current_principal),
 ):
     """Trigger a compliance check. Returns SSE stream with real-time progress.
 
@@ -205,63 +240,121 @@ async def check_compliance(
         "has_file=%s, has_text=%s, project_id=%s",
         market, ethnicity, file is not None, text is not None, project_id
     )
+    if not _supabase_store:
+        return JSONResponse(
+            status_code=503,
+            content={"error": {"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"}},
+        )
+    if not await _upload_limiter.allow(principal.subject):
+        return JSONResponse(
+            status_code=429,
+            content={"error": {"code": "RATE_LIMITED", "message": "Too many compliance requests"}},
+        )
+
     task_id: str | None = None
     s3_upload_key: str | None = None
+    validated_upload = None
+    file_path = ""
 
-    if not project_id:
-        if _supabase_store:
-            try:
-                proj = _supabase_store.create_project(user_id=username, name="Untitled")
-                project_id = proj["id"]
-            except Exception:
-                project_id = str(uuid.uuid4())
-        else:
-            project_id = str(uuid.uuid4())
-
-    # Create the task first to get task_id
-    if _supabase_store:
-        try:
-            task_row = _supabase_store.create_task(
-                project_id=project_id, task_type="compliance",
-                status="pending", summary="Compliance check",
+    try:
+        if file is not None:
+            validated_upload = await stream_validated_upload(
+                file,
+                max_bytes=_MAX_COMPLIANCE_UPLOAD_BYTES,
+                allowed_media_types=("image", "audio", "video"),
             )
-            task_id = task_row["id"]
-        except Exception as e:
-            logger.warning("[API] Task creation failed: %s", e)
+            file_path = validated_upload.path
+        elif text is None or not text.strip():
+            return JSONResponse(
+                status_code=400,
+                content={"error": {"code": "INPUT_REQUIRED", "message": "Provide text or a media file"}},
+            )
+        elif len(text.encode("utf-8")) > 100_000:
+            return JSONResponse(
+                status_code=413,
+                content={"error": {"code": "TEXT_TOO_LARGE", "message": "Text input is too large"}},
+            )
+    except MediaSecurityError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": {"code": exc.code.upper(), "message": exc.public_message}},
+        )
 
-    # Fallback task_id if Supabase unavailable
-    if not task_id:
-        task_id = str(uuid.uuid4())
+    try:
+        if project_id:
+            require_project_access(_supabase_store, project_id, principal, write=True)
+        else:
+            proj = _supabase_store.create_project(user_id=principal.email, name="Untitled")
+            project_id = proj["id"]
+    except HTTPException:
+        remove_temp_file(file_path)
+        raise
+    except Exception:
+        logger.exception("[ComplianceAPI] Project preparation failed subject=%s", principal.subject)
+        remove_temp_file(file_path)
+        return JSONResponse(
+            status_code=503,
+            content={"error": {"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"}},
+        )
 
     # Input routing
     if text and not file:
         media_type = "text"
         file_path = ""
         filename = ""
-    elif file:
-        filename = file.filename or "upload"
-        file_content = await file.read()
-
-        # Write to a temp file (avoids local dir management, works on Lambda)
-        import tempfile
-        suffix = Path(filename).suffix
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix=f"{task_id[:8]}_")
-        tmp.write(file_content)
-        tmp.close()
-        file_path = tmp.name
-
-        if _s3_client:
-            try:
-                s3_key = build_s3_key("upload", username, project_id, task_id, filename)
-                _s3_client.upload_file(file_path, s3_key)
-                s3_upload_key = _s3_client.get_public_url(s3_key)
-                logger.info("[API] S3 upload: %s", s3_upload_key)
-            except Exception as e:
-                logger.warning("[API] S3 upload failed: %s", e)
-
-        media_type = detect_media_type_from_filename(filename)
+        summary_text = "Compliance check: Text Content"
+    elif validated_upload:
+        filename = validated_upload.filename
+        media_type = validated_upload.media_type
+        summary_text = f"Compliance check: {filename}"
     else:
-        return JSONResponse(status_code=400, content={"error": "Provide 'text' or 'file'"})
+        media_type = "unknown"
+        filename = ""
+        file_path = ""
+        summary_text = "Compliance check: Unknown"
+
+    # Create the task first to get task_id
+    try:
+        task_row = _supabase_store.create_task(
+            project_id=project_id, task_type="compliance",
+            status="pending", summary=summary_text,
+        )
+        task_id = task_row["id"]
+    except Exception:
+        logger.exception("[ComplianceAPI] Task creation failed project_id=%s", project_id)
+        remove_temp_file(file_path)
+        return JSONResponse(
+            status_code=503,
+            content={"error": {"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"}},
+        )
+
+    if validated_upload:
+        if not _s3_client:
+            remove_temp_file(file_path)
+            return JSONResponse(
+                status_code=503,
+                content={"error": {"code": "STORAGE_UNAVAILABLE", "message": "Media storage is temporarily unavailable"}},
+            )
+        try:
+            s3_upload_key = build_s3_key(
+                "upload", principal.subject, project_id, task_id, filename
+            )
+            _s3_client.upload_file(file_path, s3_upload_key)
+            logger.info(
+                "[ComplianceAPI] Private source uploaded task_id=%s subject=%s",
+                task_id,
+                principal.subject,
+            )
+        except Exception:
+            logger.exception("[ComplianceAPI] Source upload failed task_id=%s", task_id)
+            remove_temp_file(file_path)
+            return JSONResponse(
+                status_code=503,
+                content={"error": {"code": "STORAGE_UNAVAILABLE", "message": "Media storage is temporarily unavailable"}},
+            )
+    else:
+        remove_temp_file(file_path)
+        return JSONResponse(status_code=400, content={"error": {"code": "INPUT_REQUIRED", "message": "Provide text or a media file"}})
 
     logger.info("[API] task_id=%s, media_type=%s", task_id, media_type)
 
@@ -289,12 +382,17 @@ async def check_compliance(
         def emit(event: dict) -> str:
             return f"data: {json.dumps(event)}\n\n"
 
+        source_view_url = (
+            generate_presigned_url(s3_upload_key, _PRESIGNED_VIEW_SECONDS)
+            if s3_upload_key
+            else None
+        )
         # Emit initiated event immediately
         yield emit({
             "type": "initiated",
             "task_id": task_id,
             "media_type": media_type,
-            "s3_upload_key": s3_upload_key,
+            "s3_upload_key": source_view_url,
         })
 
         try:
@@ -338,10 +436,9 @@ async def check_compliance(
               for event in _compliance_runner.pipeline.stream(state, config=config, stream_mode="updates"):
                 for node_name, node_output in event.items():
                     # Emit node status events for the frontend SSE stream.
-                    # NOTE: Do NOT call _tracker here — each pipeline node already
-                    # calls _tracker.start_step() and _tracker.complete_step()
-                    # internally. Calling it again here causes every step to be
-                    # recorded twice in pipeline_progress.
+                    # NOTE: Do NOT call _tracker here: each pipeline node already
+                    # emits its own compatibility log. The SSE stream is the sole
+                    # client-facing progress channel.
                     yield emit({
                         "type": "node_status",
                         "node": node_name,
@@ -369,12 +466,13 @@ async def check_compliance(
             if response.get("error"):
                 yield emit({
                     "type": "error",
-                    "message": f"Compliance analysis failed: {response['error']}",
+                    "code": "COMPLIANCE_ANALYSIS_FAILED",
+                    "message": "Compliance analysis could not be completed.",
                 })
                 return
 
             # Upload segmented mask to S3
-            s3_segmented_url = None
+            s3_segmented_key = None
             seg_data = response.get("segmentation")
             seg_path = seg_data.get("segmented_image_path") if isinstance(seg_data, dict) else None
 
@@ -384,29 +482,44 @@ async def check_compliance(
 
             if seg_path and _s3_client and os.path.exists(seg_path):
                 try:
-                    s3_seg_key = build_s3_key("segmented", username, project_id, task_id, os.path.basename(seg_path))
-                    s3_segmented_url = _s3_client.upload_file_public(seg_path, s3_seg_key)
-                except Exception as e:
-                    logger.warning("[Pipeline] Segmented S3 upload failed: %s", e)
+                    s3_segmented_key = build_s3_key(
+                        "segmented", principal.subject, project_id, task_id, os.path.basename(seg_path)
+                    )
+                    _s3_client.upload_file(seg_path, s3_segmented_key)
+                except Exception:
+                    logger.exception("[Pipeline] Segmented S3 upload failed task_id=%s", task_id)
 
-            if not s3_segmented_url and isinstance(seg_data, dict):
+            if not s3_segmented_key and isinstance(seg_data, dict):
                 mask_path = seg_data.get("mask_path")
                 if mask_path and not os.path.isabs(mask_path):
                     mask_path = str(Path(__file__).resolve().parent.parent / mask_path)
                 if mask_path and _s3_client and os.path.exists(mask_path):
                     try:
-                        s3_seg_key = build_s3_key("segmented", username, project_id, task_id, os.path.basename(mask_path))
-                        s3_segmented_url = _s3_client.upload_file_public(mask_path, s3_seg_key)
-                    except Exception as e:
-                        logger.warning("[Pipeline] Mask S3 upload failed: %s", e)
+                        s3_segmented_key = build_s3_key(
+                            "segmented", principal.subject, project_id, task_id, os.path.basename(mask_path)
+                        )
+                        _s3_client.upload_file(mask_path, s3_segmented_key)
+                    except Exception:
+                        logger.exception("[Pipeline] Mask S3 upload failed task_id=%s", task_id)
 
             # Normalize output
             output = ComplianceOutput.from_pipeline_result(response, media_type)
             output_dict = output.model_dump()
-            output_dict["s3_upload_key"] = s3_upload_key
-            output_dict["s3_segmented_key"] = s3_segmented_url
+            output_dict["s3_upload_key"] = source_view_url
+            output_dict["s3_segmented_key"] = (
+                generate_presigned_url(s3_segmented_key, _PRESIGNED_VIEW_SECONDS)
+                if s3_segmented_key
+                else None
+            )
             output_dict["market"] = market
             output_dict["task_id"] = task_id
+
+            # Optional synthetic-data demonstration only. It is deliberately
+            # absent by default and cannot influence the authoritative rules,
+            # LLM assessment, remediation, or recheck path.
+            if ML_TRIAGE_ADVISORY_ENABLED and media_type == "text" and text:
+                from jusads_compliance.ml_triage_advisory import classify_text
+                output_dict["ml_triage_advisory"] = classify_text(text).to_dict()
 
             # Persist to Supabase
             _persist_check_record(
@@ -414,7 +527,7 @@ async def check_compliance(
                 media_type=media_type, market=market, ethnicity=ethnicity,
                 age_group=age_group, platform=platform,
                 response=output_dict,
-                s3_upload_key=s3_upload_key, s3_segmented_key=s3_segmented_url,
+                s3_upload_key=s3_upload_key, s3_segmented_key=s3_segmented_key,
             )
 
             logger.info("[Pipeline] ═══ RESULT PERSISTED ═══ task_id=%s", task_id)
@@ -425,13 +538,16 @@ async def check_compliance(
                 "data": output_dict,
             })
 
-        except Exception as e:
-            logger.error("[Pipeline] Error for %s: %s", task_id, e, exc_info=True)
-            _tracker.fail_step(task_id, "pipeline", str(e)[:200])
+        except Exception:
+            logger.exception("[Pipeline] Error for task_id=%s", task_id)
+            _tracker.fail_step(task_id, "pipeline", "COMPLIANCE_PIPELINE_FAILED")
             yield emit({
                 "type": "error",
-                "message": f"Pipeline failed: {str(e)[:200]}",
+                "code": "COMPLIANCE_PIPELINE_FAILED",
+                "message": "Compliance analysis could not be completed.",
             })
+        finally:
+            remove_temp_file(file_path)
 
     return StreamingResponse(
         generate_sse_events(),
@@ -452,39 +568,39 @@ async def check_compliance(
 
 
 @router.post("/api/compliance/{task_id}/clone-voice")
-async def clone_voice_endpoint(task_id: str):
+async def clone_voice_endpoint(
+    task_id: str,
+    principal: Principal = Depends(get_current_principal),
+):
     """Clone the brand voice from the original audio of a compliance check.
 
     The cloned voice is stored persistently and reused for all future
     audio remediation on this project.
     """
     if not _supabase_store:
-        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+        return JSONResponse(status_code=503, content={"error": {"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"}})
 
     try:
-        response = _supabase_store.client.table("compliance_checks").select(
-            "task_id, media_type, s3_upload_key, project_id"
-        ).eq("task_id", task_id).execute()
-        rows = response.data or []
-        if not rows:
-            return JSONResponse(status_code=404, content={"error": "Check not found"})
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-    check = rows[0]
+        check = get_authorized_compliance_check(
+            _supabase_store, task_id, principal, write=True,
+            fields="task_id, media_type, s3_upload_key, project_id",
+        ).record
+    except HTTPException:
+        raise
     if check["media_type"] not in ("audio", "video"):
-        return JSONResponse(status_code=400, content={"error": "Voice cloning requires audio or video media"})
+        return JSONResponse(status_code=400, content={"error": {"code": "VOICE_SOURCE_UNSUPPORTED", "message": "Voice cloning requires audio or video media"}})
 
     source_url = check.get("s3_upload_key", "")
     if not source_url:
-        return JSONResponse(status_code=400, content={"error": "No source audio available"})
+        return JSONResponse(status_code=400, content={"error": {"code": "VOICE_SOURCE_MISSING", "message": "No source audio available"}})
 
     from jusads_compliance.voice_clone_manager import clone_brand_voice
 
     result = await clone_brand_voice(
         project_id=str(check["project_id"]),
         voice_name=f"Brand Voice - {task_id[:8]}",
-        sample_audio_url=source_url,
+        sample_audio_url=generate_presigned_url(source_url, _PRESIGNED_VIEW_SECONDS),
+        sample_s3_key=source_url,
         description="Cloned from compliance check audio",
     )
 
@@ -496,7 +612,7 @@ async def clone_voice_endpoint(task_id: str):
             "project_id": result["project_id"],
         })
     else:
-        return JSONResponse(status_code=500, content={"error": "Voice cloning failed"})
+        return JSONResponse(status_code=502, content={"error": {"code": "VOICE_CLONE_FAILED", "message": "Voice cloning could not be completed"}})
 
 
 
@@ -511,39 +627,28 @@ async def clone_voice_endpoint(task_id: str):
 
 
 @router.get("/api/compliance/{task_id}")
-async def get_results(task_id: str):
+async def get_results(
+    task_id: str,
+    principal: Principal = Depends(get_current_principal),
+):
     """Get results for a previous compliance check.
 
     Tries the local JSON cache first, then falls back to Supabase.
     Always enriches with S3 URLs from the DB.
     """
-    result: dict = {}
-
-    # Try local JSON cache
-    result_path = RESULTS_DIR / f"{task_id}.json"
-    if result_path.exists():
-        with open(result_path, "r", encoding="utf-8") as f:
-            result = json.load(f)
-
-    # Enrich with S3 URLs from Supabase (always authoritative for URLs)
-    if _supabase_store:
-        try:
-            response = _supabase_store.client.table("compliance_checks").select(
-                "s3_upload_key, s3_segmented_key, s3_remix_key, result_json"
-            ).eq("task_id", task_id).execute()
-            if response.data:
-                record = response.data[0]
-                if not result and record.get("result_json"):
-                    result = record["result_json"]
-                result["s3_upload_key"] = record.get("s3_upload_key")
-                result["s3_segmented_key"] = record.get("s3_segmented_key")
-                result["s3_remix_key"] = record.get("s3_remix_key")
-        except Exception as e:
-            logger.warning("[Results] DB fetch failed for %s: %s", task_id, e)
-
+    if not _supabase_store:
+        return JSONResponse(status_code=503, content={"error": {"code": "DATASTORE_UNAVAILABLE", "message": "Service temporarily unavailable"}})
+    authorized = get_authorized_compliance_check(
+        _supabase_store, task_id, principal, write=False,
+        fields="s3_upload_key, s3_segmented_key, s3_remix_key, result_json",
+    )
+    record = authorized.record
+    result = dict(record.get("result_json") or {})
     if not result:
-        return JSONResponse(status_code=404, content={"error": "Not found"})
-
+        return JSONResponse(status_code=404, content={"error": {"code": "RESOURCE_NOT_FOUND", "message": "Resource not found"}})
+    for field in ("s3_upload_key", "s3_segmented_key", "s3_remix_key"):
+        private_key = record.get(field)
+        result[field] = generate_presigned_url(private_key, _PRESIGNED_VIEW_SECONDS) if private_key else None
     return JSONResponse(content=result)
 
 
@@ -567,6 +672,11 @@ def _persist_check_record(
     # Strip heavy/duplicate fields from result_json to reduce storage bloat.
     # Bounding boxes are already rendered on the segmented image — no need to store them.
     persist_response = {**response}
+    # Storage keys live in dedicated private-key columns.  Never persist a
+    # short-lived presentation URL inside the durable compliance result.
+    persist_response.pop("s3_upload_key", None)
+    persist_response.pop("s3_segmented_key", None)
+    persist_response.pop("s3_remix_key", None)
     seg = persist_response.get("segmentation")
     if isinstance(seg, dict):
         persist_response["segmentation"] = {
@@ -600,6 +710,19 @@ def _persist_check_record(
         success = _supabase_store.insert_check(record)
         if success:
             logger.info("[Persist] Inserted compliance_checks for task: %s", task_id)
+            # Keep a small, queryable evidence index alongside the immutable
+            # raw result JSON.  This powers timelines and audit summaries
+            # without asking the UI to parse model output again.
+            violations = _normalize_violations(persist_response)
+            try:
+                _supabase_store.client.table("violations").delete().eq("task_id", task_id).execute()
+                if violations:
+                    _supabase_store.insert_violations(task_id, violations)
+                logger.info("[Persist] Stored %d normalized violations for task=%s", len(violations), task_id)
+            except Exception:
+                # The compliance result remains authoritative even if the
+                # optional query index is temporarily unavailable.
+                logger.exception("[Persist] Failed to index violations for task=%s", task_id)
             # Also update task status to "checked"
             try:
                 _supabase_store.client.table("tasks").update({
@@ -610,3 +733,33 @@ def _persist_check_record(
                 logger.warning("[Persist] Task status update failed for %s: %s", task_id, e)
     except Exception as e:
         logger.warning("[Persist] Failed for %s: %s", task_id, e)
+
+
+def _normalize_violations(result: dict) -> list[dict]:
+    """Create stable audit rows from model indicators and timeline evidence."""
+
+    indicators = [str(item).strip() for item in result.get("high_risk_indicator") or [] if str(item).strip()]
+    timeline = result.get("violations_timeline") or []
+    by_description: dict[str, dict] = {}
+    for item in timeline:
+        if not isinstance(item, dict):
+            continue
+        description = str(item.get("description") or item.get("type") or "").strip()
+        if not description:
+            continue
+        by_description.setdefault(description.casefold(), item)
+
+    risk_level = str(result.get("risk_level") or "moderate").strip().lower()
+    severity = risk_level if risk_level in {"low", "moderate", "high", "critical"} else "moderate"
+    rows: list[dict] = []
+    for index, indicator in enumerate(indicators):
+        evidence = by_description.get(indicator.casefold(), {})
+        rows.append({
+            "violation_index": index,
+            "type": str(evidence.get("type") or "compliance_indicator")[:120],
+            "severity": severity,
+            "description": indicator[:2000],
+            "start_time": evidence.get("start_seconds", evidence.get("start_time")),
+            "end_time": evidence.get("end_seconds", evidence.get("end_time")),
+        })
+    return rows

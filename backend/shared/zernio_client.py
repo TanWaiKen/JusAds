@@ -210,7 +210,11 @@ def _serialize(obj: Any) -> dict[str, Any]:
     if isinstance(obj, dict):
         return obj
     if hasattr(obj, "model_dump"):
-        dumped = obj.model_dump()
+        # The SDK's SocialAccount model maps its API `_id` to an internal
+        # `field_id`.  Serializing by alias preserves the account ID required
+        # for the distribution picker; JSON mode also converts platform enums
+        # into their API strings (for example, `instagram`).
+        dumped = obj.model_dump(mode="json", by_alias=True)
         return dumped if isinstance(dumped, dict) else {"data": dumped}
     try:
         serialized = json.loads(json.dumps(obj, default=default_handler))

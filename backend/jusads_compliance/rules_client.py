@@ -34,8 +34,9 @@ def get_rules(
         category: Optional category filter.
 
     Returns:
-        List of rule dicts with keys: id, source, regulator, framework,
-        category, rule_title, rule_text, applies_to, enforcement, tags.
+        List of rule dicts with source provenance as well as id, source,
+        regulator, framework, category, rule_title, rule_text, applies_to,
+        enforcement, and tags.
     """
     try:
         # Build source filter: always include market, optionally platform
@@ -45,7 +46,10 @@ def get_rules(
 
         query = (
             supabase.table("ad_policy_rules")
-            .select("id, source, regulator, framework, category, rule_title, rule_text, applies_to, enforcement, tags")
+            .select(
+                "id, source, regulator, framework, category, rule_title, "
+                "evidence_urls, rule_text, applies_to, enforcement, tags"
+            )
             .in_("source", sources)
         )
 

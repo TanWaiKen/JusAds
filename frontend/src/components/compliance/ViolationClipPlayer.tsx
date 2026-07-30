@@ -1,4 +1,4 @@
-import { API_BASE } from "@/services/complianceApi";
+import { getClipUrl } from "@/services/complianceService";
 
 interface ViolationClipPlayerProps {
   clipUrl: string | null;
@@ -25,7 +25,7 @@ export function ViolationClipPlayer({
       {clipUrl ? (
         <video
           className="w-full aspect-video bg-black"
-          src={`${API_BASE}${clipUrl}`}
+          src={getClipUrl(clipUrl)}
           controls
           playsInline
         />

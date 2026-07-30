@@ -6,8 +6,8 @@ import type {
   RemixImageEditEvent,
   RemixEditFailedEvent,
   RemediationResult,
-} from "@/services/remix";
-import { streamRemix } from "@/services/remix";
+} from "@/services/complianceService";
+import { streamRemix } from "@/services/complianceService";
 
 export type RemixOutcome = "compliant" | "cannot_fix" | "image_edit" | "edit_failed" | null;
 

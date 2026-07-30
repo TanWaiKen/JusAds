@@ -4,7 +4,14 @@
  */
 
 export type TaskType = "generation" | "compliance" | "remix";
-export type TaskStatus = "completed" | "failed" | "processing";
+export type TaskStatus =
+  | "completed"
+  | "failed"
+  | "processing"
+  | "pending_recheck"
+  | "rechecking"
+  | "verified_compliant"
+  | "verified_non_compliant";
 export type MediaType = "video" | "image" | "audio" | "text";
 
 export interface TaskExecution {

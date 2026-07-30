@@ -13,7 +13,7 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { X } from "lucide-react";
 import { PlatformSelector } from "@/components/workspace/canvas/PlatformSelector";
-import type { TargetPlatform, TargetEthnicity } from "@/services/generationApi";
+import type { TargetPlatform, TargetEthnicity } from "@/services/generationService";
 
 gsap.registerPlugin(useGSAP);
 
@@ -279,8 +279,7 @@ function GenerationTab({
       </div>
 
       {/* Hook Video Search trigger */}
-      {(settings.creativeStyle === "meme_shock" || settings.creativeStyle === "problem_punchline") && (
-        <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
           <span className="text-xs font-semibold text-[#171717] tracking-tight">Hook Reference</span>
           <button
             type="button"
@@ -290,10 +289,9 @@ function GenerationTab({
             🎬 Search YouTube Shorts for hook clips...
           </button>
           <p className="text-[10px] text-[#666666]">
-            Find viral meme/transition Shorts to inspire your ad's opening hook.
+            Search or save examples to improve future hook recommendations for this creative style.
           </p>
-        </div>
-      )}
+      </div>
 
       {/* Platform */}
       <div className="flex flex-col gap-2">

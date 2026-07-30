@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import type { PipelineState, NodeType } from "@/components/workspace/canvas/graphModel";
 import { useCanvasGraph } from "@/components/workspace/canvas/useCanvasGraph";
 import { usePipelineRunner } from "@/components/workspace/canvas/usePipelineRunner";
-import { getTask, savePipeline } from "@/services/taskApi";
+import { getTask, savePipeline } from "@/services/projectService";
 import { CanvasViewport } from "@/components/workspace/canvas/CanvasViewport";
 import { InspectorPanel } from "@/components/workspace/canvas/InspectorPanel";
 import { CanvasToolbar } from "@/components/workspace/canvas/CanvasToolbar";
@@ -16,8 +16,8 @@ import { VideoPlanStoryboard } from "@/components/workspace/canvas/VideoPlanStor
 import { SettingsPanel } from "@/components/workspace/canvas/SettingsPanel";
 import type { GenerationSettings } from "@/components/workspace/canvas/SettingsPanel";
 import { HookSearchPanel } from "@/components/workspace/canvas/HookSearchPanel";
-import type { GeneratedAdView, VideoPlan } from "@/services/generationApi";
-import { executeVideoPlan, getGeneratedAds, normalizeVideoPlan } from "@/services/generationApi";
+import type { GeneratedAdView, VideoPlan } from "@/services/generationService";
+import { executeVideoPlan, getGeneratedAds, normalizeVideoPlan } from "@/services/generationService";
 
 gsap.registerPlugin(useGSAP);
 

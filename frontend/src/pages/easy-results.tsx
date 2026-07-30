@@ -17,9 +17,8 @@ import {
   type DistributionAccount,
   type GeneratedAdView,
   type VideoPlan,
-} from "@/services/generationApi";
-import { getTask } from "@/services/taskApi";
-import { useAuth } from "@/hooks/useAuth";
+} from "@/services/generationService";
+import { getTask } from "@/services/projectService";
 
 interface GuidedNavigationState {
   guidedMode?: boolean;
@@ -47,13 +46,13 @@ export default function EasyResultsPage() {
   const { projectId, taskId } = useParams<{ projectId: string; taskId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const guidedState = location.state as GuidedNavigationState | null;
   const started = useRef(false);
   const [ads, setAds] = useState<GeneratedAdView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [hasPendingStoryboard, setHasPendingStoryboard] = useState(false);
   const [videoPlan, setVideoPlan] = useState<VideoPlan | null>(null);
   const [renderedPlanId, setRenderedPlanId] = useState<string | null>(null);
   const [planRendering, setPlanRendering] = useState(false);
@@ -68,9 +67,22 @@ export default function EasyResultsPage() {
   const [distributionError, setDistributionError] = useState<string | null>(null);
   const [distributed, setDistributed] = useState(false);
 
+  const refreshDistributionAccounts = useCallback(async () => {
+    try {
+      const result = await getDistributionAccounts();
+      setAccounts(result.accounts);
+      setDistributionError(result.accounts.length === 0 ? result.message ?? "No connected Zernio accounts were returned. Check the connection in Profile, then try again." : null);
+      setSelectedAccountIds((current) => current.filter((id) => result.accounts.some((account) => account.id === id)));
+    } catch (error) {
+      setAccounts([]);
+      setSelectedAccountIds([]);
+      setDistributionError(error instanceof Error ? error.message : "Connected accounts are temporarily unavailable.");
+    }
+  }, []);
+
   const refreshOutputs = useCallback(async () => {
     if (!projectId || !taskId) return;
-    const generated = await getGeneratedAds(projectId, taskId);
+    const generated = await getGeneratedAds(projectId, taskId).catch(() => []);
     setAds(generated);
     setSelectedId((current) => current && generated.some((ad) => ad.adId === current)
       ? current
@@ -96,9 +108,10 @@ export default function EasyResultsPage() {
       getTask(projectId, taskId).catch(() => null),
     ]).then(([generated, task]) => {
       if (!active) return;
+      const pipelineState = task?.type === "generation" ? task.pipeline_state : undefined;
       setAds(generated);
       setSelectedId(generated[0]?.adId ?? null);
-      const pipelineState = task?.type === "generation" ? task.pipeline_state : undefined;
+
       setVideoPlan(normalizeVideoPlan(pipelineState?.video_plan) ?? null);
       setRenderedPlanId(getRenderedPlanId(pipelineState));
     }).finally(() => {
@@ -138,12 +151,13 @@ export default function EasyResultsPage() {
           if (event.error) throw new Error(event.error);
           const eventPlan = normalizeVideoPlan(
             event.video_plan
-              ?? (event.pipeline_state as unknown as Record<string, unknown> | undefined)?.video_plan,
+            ?? (event.pipeline_state as unknown as Record<string, unknown> | undefined)?.video_plan,
           );
           if (eventPlan) setVideoPlan(eventPlan);
         }
         const persistedPlan = await refreshVideoPlan();
         await refreshOutputs();
+        setHasPendingStoryboard(true);
         toast.success(persistedPlan ? "Storyboard ready for review." : "Your ad is ready.");
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Could not generate the ad");
@@ -164,10 +178,15 @@ export default function EasyResultsPage() {
   ]);
 
   useEffect(() => {
-    void getDistributionAccounts(user?.profile?.email).then(setAccounts).catch(() => setAccounts([]));
-  }, [user?.profile?.email]);
+    const timer = window.setTimeout(() => {
+      void refreshDistributionAccounts();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshDistributionAccounts]);
 
-  const showStoryboard = Boolean(videoPlan && videoPlan.planId !== renderedPlanId);
+  const hasVideoAd = ads.some((ad) => ad.mediaType === "video");
+  const showStoryboard = Boolean(videoPlan && videoPlan.planId !== renderedPlanId && (!hasVideoAd || hasPendingStoryboard));
+
   const filteredAds = mediaFilter === "all"
     ? ads
     : ads.filter((ad) => ad.mediaType === mediaFilter);
@@ -220,8 +239,12 @@ export default function EasyResultsPage() {
         if (event.error) throw new Error(event.error);
       }
       setFeedback("");
+      const persistedPlan = await refreshVideoPlan();
       await refreshOutputs();
-      toast.success("New variation generated.");
+      if (persistedPlan && persistedPlan.planId !== renderedPlanId) {
+        setHasPendingStoryboard(true);
+      }
+      toast.success(persistedPlan && persistedPlan.planId !== renderedPlanId ? "Storyboard ready for review." : "New variation generated.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not generate a variation");
     } finally {
@@ -267,6 +290,7 @@ export default function EasyResultsPage() {
       const result = await publishAd(projectId, taskId, selected.adId);
       setPublishedCaption(result.caption);
       await refreshOutputs();
+      await refreshDistributionAccounts();
       toast.success("Ad approved. A platform-ready caption is prepared.");
     } catch (error) {
       setPublishError(error instanceof Error ? error.message : "Could not publish this ad");
@@ -317,7 +341,7 @@ export default function EasyResultsPage() {
               : "Choose a version, preview it, then describe what you would like to improve."}
           </p>
         </div>
-        <div className="flex w-full max-w-[360px] justify-self-center rounded-lg border border-border-default bg-surface-card p-1 shadow-sm xl:max-w-none xl:justify-self-stretch">
+        <div className="flex w-full max-w-90 justify-self-center rounded-lg border border-border-default bg-surface-card p-1 shadow-sm xl:max-w-none xl:justify-self-stretch">
           <button
             type="button"
             onClick={() => navigate(`/dashboard/project/${projectId}/easy/${taskId}`)}
@@ -366,11 +390,10 @@ export default function EasyResultsPage() {
                   type="button"
                   onClick={() => setMediaFilter(filter)}
                   aria-pressed={mediaFilter === filter}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-                    mediaFilter === filter
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${mediaFilter === filter
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border-default bg-surface-card text-text-muted hover:border-primary/50 hover:text-text-heading"
-                  }`}
+                    }`}
                 >
                   {filter === "all" ? `All (${ads.length})` : `${filter} (${ads.filter((ad) => ad.mediaType === filter).length})`}
                 </button>
@@ -385,9 +408,8 @@ export default function EasyResultsPage() {
                     type="button"
                     aria-pressed={active}
                     onClick={() => setSelectedId(ad.adId)}
-                    className={`overflow-hidden rounded-xl border text-left transition-all ${
-                      active ? "border-primary ring-2 ring-primary/20" : "border-border-default hover:border-primary/50"
-                    }`}
+                    className={`overflow-hidden rounded-xl border text-left transition-all ${active ? "border-primary ring-2 ring-primary/20" : "border-border-default hover:border-primary/50"
+                      }`}
                   >
                     {ad.mediaType === "image" && ad.publicUrl ? (
                       <img
@@ -430,7 +452,7 @@ export default function EasyResultsPage() {
 
             {selected?.mediaType === "image" && selected.publicUrl && (
               <div className="overflow-hidden rounded-2xl border border-border-default bg-surface-card">
-                <img src={selected.publicUrl} alt="Selected generated ad" className="max-h-[560px] w-full object-contain bg-surface-inset" />
+                <img src={selected.publicUrl} alt="Selected generated ad" className="max-h-140 w-full object-contain bg-surface-inset" />
               </div>
             )}
 
@@ -441,7 +463,7 @@ export default function EasyResultsPage() {
                   controls
                   playsInline
                   preload="metadata"
-                  className="max-h-[560px] w-full object-contain"
+                  className="max-h-140 w-full object-contain"
                 >
                   Your browser does not support video playback.
                 </video>
@@ -515,7 +537,7 @@ export default function EasyResultsPage() {
                       )}
                       {accounts.length === 0 ? (
                         <div className="rounded-lg border border-dashed border-border-default p-4 text-center">
-                          <p className="text-xs text-text-muted mb-3">You need to connect your Zernio API key before you can distribute ads.</p>
+                          <p className="text-xs text-text-muted mb-3">{distributionError ?? "No connected Zernio accounts are available yet."}</p>
                           <Button variant="outline" size="sm" onClick={() => navigate("/dashboard/profile")} className="w-full text-xs">
                             Connect Zernio API
                           </Button>
