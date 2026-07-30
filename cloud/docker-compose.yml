@@ -9,6 +9,7 @@ services:
       - .env.production
     volumes:
       - backend-assets:/app/assets
+      - ./service_account.json:/app/service_account.json:ro
     networks:
       - internal
     expose:
