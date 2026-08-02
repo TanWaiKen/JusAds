@@ -1,87 +1,58 @@
-# Logs
-logs
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+
+# Logs and local tooling
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
+.vscode/
+.idea/
+.DS_Store
+.tmp/
 
-node_modules
-dist
-dist-ssr
-*.local
-.langgraph_api
-.kiro
-*.drawio
-
-# Environment variables
+# Environment and Python runtime
 .env
 *.env
-.venv
-.pytest_cache
-.vscode
-
-# Python
+.venv/
+.pytest_cache/
 __pycache__/
 *.pyc
 
-# Model weights
-weights/
+# Credentials and private operator material
+cloud/secret/
+cloud/.env.production
+cloud/certbot/
+*.pem
+*.key
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Private documents — never commit
+# Private/generated documents and media
 *.pdf
 *.docx
 *.doc
-*.pem
-
-# Media & binary assets (runtime data)
 backend/assets/
 assets/results/
 *.mp4
 *.mp3
 *.wav
 
-# Operator datasets (not deployed with the application)
-manual_push/data/
-!manual_push/data/
-!manual_push/data/demo_ml_triage_dataset.jsonl
+# Runtime/operator datasets and caches
+weights/
 backend/dustbin/
 backend/data/daily_creative_ideas.json
+manual_push/data/*
+!manual_push/data/demo_ml_triage_dataset.jsonl
 
-# Cloud secrets (only template is committed)
-cloud/.env.production
-cloud/certbot/
-
-# Diagrams (binary exports)
-diagram/*.png
-
-# CSV data files
-*.csv
-
-.agents
-.kiro
-.tmp/
-
-# AI files
+# Local agent/editor artifacts
 .agents/
+.kiro/
 .cline/
 .roo/
-Clean UP.md
-README (1).md
-design.md
-handoff.md
-docs/handoff/
-.kiro/
 agent_delivery/
+
+# Binary exports and generated data
+diagram/*.png
+*.csv

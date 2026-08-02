@@ -1,0 +1,184 @@
+<mxfile host="65bd71144e">
+    <diagram id="class-diagram" name="Backend Class Diagram">
+        <mxGraphModel dx="897" dy="653" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;JusAds Backend Class Diagram&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="20" width="320" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="date" value="&lt;font style=&quot;font-size: 12px; color: #666;&quot;&gt;Last Updated: 2025-01-01&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="55" width="180" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="fastapi_app" value="&lt;b&gt;FastAPI App&lt;/b&gt;&#10;(langgraph_api.py)" style="swimlane;fontStyle=0;align=center;startSize=40;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="100" width="280" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="fastapi_attrs" value="+ app: FastAPI&#10;+ manager: ConnectionManager" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="fastapi_app" vertex="1">
+                    <mxGeometry y="40" width="280" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="fastapi_sep" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=10;rotatable=0;labelPosition=left;points=[];portConstraint=eastwest;" parent="fastapi_app" vertex="1">
+                    <mxGeometry y="90" width="280" height="8" as="geometry"/>
+                </mxCell>
+                <mxCell id="fastapi_methods" value="+ POST /api/compliance/check&#10;+ POST /api/compliance/{id}/remix&#10;+ GET /api/compliance/history&#10;+ GET /api/media/{id}/{type}&#10;+ WS /ws/{check_id}" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="fastapi_app" vertex="1">
+                    <mxGeometry y="98" width="280" height="122" as="geometry"/>
+                </mxCell>
+                <mxCell id="pipeline_runner" value="&lt;b&gt;PipelineRunner&lt;/b&gt;&#10;(pipeline_runner.py)" style="swimlane;fontStyle=0;align=center;startSize=40;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="380" width="280" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="pipeline_attrs" value="+ graph: StateGraph&#10;+ state: ComplianceState" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="pipeline_runner" vertex="1">
+                    <mxGeometry y="40" width="280" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="pipeline_sep" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=10;rotatable=0;labelPosition=left;points=[];portConstraint=eastwest;" parent="pipeline_runner" vertex="1">
+                    <mxGeometry y="90" width="280" height="8" as="geometry"/>
+                </mxCell>
+                <mxCell id="pipeline_methods" value="+ run(state) → ComplianceState&#10;+ route_human_decision(decision)&#10;+ compliance_check(state)&#10;+ post_process(state)&#10;+ remix_finalize(state)" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="pipeline_runner" vertex="1">
+                    <mxGeometry y="98" width="280" height="102" as="geometry"/>
+                </mxCell>
+                <mxCell id="conn_manager" value="&lt;b&gt;ConnectionManager&lt;/b&gt;&#10;(ws_manager.py)" style="swimlane;fontStyle=0;align=center;startSize=40;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="100" width="280" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="conn_attrs" value="+ active_connections: Dict[str, WebSocket]" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="conn_manager" vertex="1">
+                    <mxGeometry y="40" width="280" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="conn_sep" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=10;rotatable=0;labelPosition=left;points=[];portConstraint=eastwest;" parent="conn_manager" vertex="1">
+                    <mxGeometry y="80" width="280" height="8" as="geometry"/>
+                </mxCell>
+                <mxCell id="conn_methods" value="+ connect(check_id, websocket)&#10;+ disconnect(check_id)&#10;+ send_message(check_id, data)&#10;+ broadcast_node_status(...)&#10;+ send_interrupt(...)&#10;+ send_result(check_id, result)&#10;+ send_error(...)" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="conn_manager" vertex="1">
+                    <mxGeometry y="88" width="280" height="132" as="geometry"/>
+                </mxCell>
+                <mxCell id="s3_client" value="&lt;b&gt;S3MediaClient&lt;/b&gt;&#10;(s3_client.py)" style="swimlane;fontStyle=0;align=center;startSize=40;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="380" width="280" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="s3_attrs" value="+ bucket_name: str&#10;+ region: str&#10;+ client: boto3.client" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="s3_client" vertex="1">
+                    <mxGeometry y="40" width="280" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="s3_sep" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=10;rotatable=0;labelPosition=left;points=[];portConstraint=eastwest;" parent="s3_client" vertex="1">
+                    <mxGeometry y="90" width="280" height="8" as="geometry"/>
+                </mxCell>
+                <mxCell id="s3_methods" value="+ upload_file(file_path, s3_key) → str&#10;+ generate_presigned_url(s3_key, expiry)&#10;+ get_user_storage_usage(username)&#10;+ check_quota(username, file_size)" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="s3_client" vertex="1">
+                    <mxGeometry y="98" width="280" height="102" as="geometry"/>
+                </mxCell>
+                <mxCell id="55" value=".." style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;gradientColor=#60A337;gradientDirection=north;fillColor=#277116;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="s3_client">
+                    <mxGeometry x="246" y="4" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="supabase_client" value="&lt;b&gt;SupabaseComplianceStore&lt;/b&gt;&#10;(supabase_client.py)" style="swimlane;fontStyle=0;align=center;startSize=40;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="640" width="280" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="supa_attrs" value="+ url: str&#10;+ key: str&#10;+ client: supabase.Client" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="supabase_client" vertex="1">
+                    <mxGeometry y="40" width="280" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="supa_sep" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=10;rotatable=0;labelPosition=left;points=[];portConstraint=eastwest;" parent="supabase_client" vertex="1">
+                    <mxGeometry y="90" width="280" height="8" as="geometry"/>
+                </mxCell>
+                <mxCell id="supa_methods" value="+ insert_check(record: CheckRecord)&#10;+ update_check_status(check_id, status)&#10;+ get_history(user_id, page, page_size)&#10;+ insert_violations(check_id, violations)&#10;+ health_check() → bool" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="supabase_client" vertex="1">
+                    <mxGeometry y="98" width="280" height="122" as="geometry"/>
+                </mxCell>
+                <mxCell id="fallback_queue" value="&lt;b&gt;FallbackQueue&lt;/b&gt;&#10;(fallback_queue.py)" style="swimlane;fontStyle=0;align=center;startSize=40;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="640" width="280" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="fb_attrs" value="+ fallback_dir: str&#10;+ supabase_retries: int = 5&#10;+ s3_retries: int = 3" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="fallback_queue" vertex="1">
+                    <mxGeometry y="40" width="280" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="fb_sep" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=10;rotatable=0;labelPosition=left;points=[];portConstraint=eastwest;" parent="fallback_queue" vertex="1">
+                    <mxGeometry y="90" width="280" height="8" as="geometry"/>
+                </mxCell>
+                <mxCell id="fb_methods" value="+ queue_supabase_write(check_id, record)&#10;+ queue_s3_upload(local_path, s3_key)&#10;+ process_queue()&#10;+ _retry_with_backoff(fn, retries)" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="fallback_queue" vertex="1">
+                    <mxGeometry y="98" width="280" height="102" as="geometry"/>
+                </mxCell>
+                <mxCell id="check_record" value="&lt;b&gt;CheckRecord&lt;/b&gt;&#10;(models.py)" style="swimlane;fontStyle=0;align=center;startSize=40;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;" parent="1" vertex="1">
+                    <mxGeometry x="920" y="100" width="280" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="cr_attrs" value="+ check_id: str&#10;+ user_id: str&#10;+ project_id: UUID&#10;+ media_type: str&#10;+ market: str&#10;+ ethnicity: str&#10;+ age_group: str&#10;+ risk_percentage: Optional[float]&#10;+ risk_band: Optional[str]&#10;+ confidence: Optional[float]&#10;+ status: str&#10;+ result_json: Optional[dict]&#10;+ s3_upload_key: Optional[str]&#10;+ s3_remix_key: Optional[str]" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="check_record" vertex="1">
+                    <mxGeometry y="40" width="280" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="violation_record" value="&lt;b&gt;ViolationRecord&lt;/b&gt;&#10;(models.py)" style="swimlane;fontStyle=0;align=center;startSize=40;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;" parent="1" vertex="1">
+                    <mxGeometry x="920" y="420" width="280" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="vr_attrs" value="+ check_id: str&#10;+ violation_index: int&#10;+ type: str&#10;+ severity: str&#10;+ description: Optional[str]&#10;+ start_time: Optional[float]&#10;+ end_time: Optional[float]" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" parent="violation_record" vertex="1">
+                    <mxGeometry y="40" width="280" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_app_conn" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="fastapi_app" target="conn_manager" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label1" value="«uses»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_app_conn" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="dep_app_pipeline" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="fastapi_app" target="pipeline_runner" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label2" value="«uses»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_app_pipeline" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="dep_app_s3" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="fastapi_app" target="s3_client" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label3" value="«uses»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_app_s3" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="dep_app_supa" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="fastapi_app" target="supabase_client" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label4" value="«uses»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_app_supa" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="dep_app_fb" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="fastapi_app" target="fallback_queue" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label5" value="«uses»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_app_fb" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="dep_supa_cr" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="supabase_client" target="check_record" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label6" value="«creates»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_supa_cr" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="dep_supa_vr" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="supabase_client" target="violation_record" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label7" value="«creates»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_supa_vr" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="dep_fb_s3" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="fallback_queue" target="s3_client" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label8" value="«retries via»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_fb_s3" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="dep_fb_supa" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;" parent="1" source="fallback_queue" target="supabase_client" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep_label9" value="«retries via»" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" parent="dep_fb_supa" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fastapi_class_logo" value="" style="shape=image;image=https://cdn.simpleicons.org/fastapi;aspect=fixed;" parent="1" vertex="1">
+                    <mxGeometry x="768" y="108" width="24" height="24" as="geometry"/>
+                </mxCell>
+                <mxCell id="langgraph_class_logo" value="" style="shape=image;image=https://cdn.simpleicons.org/langchain;aspect=fixed;" parent="1" vertex="1">
+                    <mxGeometry x="768" y="388" width="24" height="24" as="geometry"/>
+                </mxCell>
+                <mxCell id="supabase_class_logo" value="" style="shape=image;image=https://cdn.simpleicons.org/supabase;aspect=fixed;" parent="1" vertex="1">
+                    <mxGeometry x="368" y="648" width="24" height="24" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

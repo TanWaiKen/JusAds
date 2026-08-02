@@ -16,6 +16,7 @@ at import time. Downstream module functions already wrap their calls in
 import logging
 
 import boto3
+from botocore.config import Config
 from google import genai
 from elevenlabs import ElevenLabs
 from supabase import create_client, Client
@@ -24,7 +25,6 @@ from tavily import TavilyClient
 from config import (
     VERTEX_PROJECT_ID,
     VERTEX_LOCATION,
-    GEMINI_API_KEY,
     ELEVENLABS_API_KEY,
     TAVILY_API_KEY,
     SUPABASE_URL,
@@ -35,14 +35,10 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# -- Gemini (Vertex AI / Google AI Studio) --------------------------------------
+# -- Gemini (Vertex AI) --------------------------------------------------------
 try:
-    if GEMINI_API_KEY:
-        gemini = genai.Client(api_key=GEMINI_API_KEY)
-        logger.info("[Clients] Gemini (AI Studio) client initialized")
-    else:
-        gemini = genai.Client(vertexai=True, project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
-        logger.info("[Clients] Gemini (Vertex AI) client initialized")
+    gemini = genai.Client(vertexai=True, project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
+    logger.info("[Clients] Gemini (Vertex AI) client initialized")
 except Exception as e:  # noqa: BLE001 - resilient init, do not propagate (Req 3.1)
     logger.error("[Clients] Gemini client init failed; AI generation will degrade: %s", e)
     gemini = None
@@ -75,7 +71,15 @@ except Exception as e:  # noqa: BLE001 - resilient init; fall back to local stor
 
 # -- AWS S3 ---------------------------------------------------------------------
 try:
-    s3 = boto3.client("s3", region_name=AWS_REGION)
+    # Use a regional S3v4 endpoint.  The global ``bucket.s3.amazonaws.com``
+    # form issues a 307 redirect for this bucket, and browsers reject the
+    # redirected presigned PUT before the bucket CORS policy can apply.
+    s3 = boto3.client(
+        "s3",
+        region_name=AWS_REGION,
+        endpoint_url=f"https://s3.{AWS_REGION}.amazonaws.com",
+        config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+    )
     logger.info("[Clients] S3 client initialized")
 except Exception as e:  # noqa: BLE001 - resilient init; fall back to local storage (Req 3.7)
     logger.error("[Clients] S3 client init failed; falling back to local storage: %s", e)

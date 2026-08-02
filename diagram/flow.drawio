@@ -1,0 +1,306 @@
+<mxfile host="65bd71144e">
+    <diagram id="WAEdBBhYBDd91ZDnz90w" name="Page-1">
+        <mxGraphModel dx="1249" dy="-333" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <UserObject label="" mermaidData="{&#10;  &quot;data&quot;: &quot;graph TD\n    %% Styling\n    classDef input fill:#d4e1f5,stroke:#1e4620,stroke-width:2px;\n    classDef process fill:#e2f0d9,stroke:#385723,stroke-width:2px;\n    classDef output fill:#fce4d6,stroke:#c65911,stroke-width:2px;\n    classDef storage fill:#fff2cc,stroke:#d6b656,stroke-width:2px;\n\n    subgraph PIPELINE_1 [Pipeline 1: Compliance Checker Engine]\n        In_Comp[\&quot;INPUT:&lt;br&gt;• Media Payload (Video/Img/Aud/Txt)&lt;br&gt;• Target Demographics (Nation/Ethnic/Age)&lt;br&gt;• Platform (TikTok, Meta, Shopee, etc.)&lt;br&gt;• User Prompt Context\&quot;] --&gt; Node_Supa1[\&quot;PROCESS: DB Lookup&lt;br&gt;• Fetch specific Regulatory Rules &amp; Personas from Supabase\&quot;]\n        Node_Supa1 --&gt; Node_Trans[\&quot;PROCESS: Multimodal Transcription&lt;br&gt;• Extract Text Copy&lt;br&gt;• Generate Audio &amp; Video Transcripts via Gemini\&quot;]\n        \n        Node_Trans --&gt; Node_Brain[\&quot;PROCESS: Main Brain Analysis&lt;br&gt;• Cross-reference text/transcripts against .md rules&lt;br&gt;• Execute search tools for localized context updates\&quot;]\n        \n        Node_Brain --&gt; Node_Judge[\&quot;PROCESS: Judges Agent Gate&lt;br&gt;• Independent internal evaluation loop&lt;br&gt;• Blind check for Bias &amp; Hallucinations (No Search)\&quot;]\n        \n        Node_Judge --&gt; Out_Comp[\&quot;OUTPUT: Compliance Audit Payload&lt;br&gt;• Status, Risk Level &amp; Percentage&lt;br&gt;• High-Risk Indicators &amp; Violated Timestamps&lt;br&gt;• Remediation Markdown (.md) Instruction File\&quot;]\n        \n        Out_Comp --&gt; Node_DB_Write[\&quot;PROCESS: State Sync&lt;br&gt;• Update Supabase with compliance status &amp; logs\&quot;]\n    end\n\n    subgraph ROUTING_GATE [LangGraph Router Logic]\n        Node_DB_Write --&gt; Conditional_Gate{\&quot;Decision Gate:&lt;br&gt;Status == PASS?\&quot;}\n        Conditional_Gate -- \&quot;Yes (Pass)\&quot; --&gt; End_Green[\&quot;TERMINATE:&lt;br&gt;Return 200 OK / Ready to Publish\&quot;]\n        Conditional_Gate -- \&quot;No (Critical Failure)\&quot; --&gt; End_Red[\&quot;TRIGGER REGEN:&lt;br&gt;Discard Asset &amp; Request New Poster/Script Generation\&quot;]\n        Conditional_Gate -- \&quot;No (Fixable Risks)\&quot; --&gt; Link_Remediate[\&quot;ROUTE TO REMEDIATION PIPELINE\&quot;]\n    end\n\n    subgraph PIPELINE_2 [Pipeline 2: Remediate &amp; Remix Engine]\n        Link_Remediate --&gt; In_Remed[\&quot;INPUT:&lt;br&gt;• Original Source Media Assets&lt;br&gt;• Compliance .md Audit Instructions&lt;br&gt;• Supabase Target Audience Data\&quot;]\n        \n        In_Remed --&gt; Node_User_Conf[\&quot;PROCESS: User Verification Gate&lt;br&gt;• Confirm target delivery aspect ratios (9:16, 16:9, 1:1)&lt;br&gt;• Lock layout strategy options based on platform database rules\&quot;]\n        \n        Node_User_Conf --&gt; Node_Strategy[\&quot;PROCESS: Editing Strategy Parser&lt;br&gt;• Split remediation instructions into modal execution tasks\&quot;]\n        \n        %% Parallel Asset Re-generation\n        Node_Strategy --&gt; Node_Img_Fix[\&quot;PROCESS: Image Sculpting Mod&lt;br&gt;• Reference original image &amp; mask regions&lt;br&gt;• Apply inpainting to correct localized assets\&quot;]\n        Node_Strategy --&gt; Node_Vid_Fix[\&quot;PROCESS: Video Morphing Mod&lt;br&gt;• Extract keyframes &amp; apply prompt guidance&lt;br&gt;• Generate corrected I2V cuts using frame consistency\&quot;]\n        Node_Strategy --&gt; Node_Txt_Fix[\&quot;PROCESS: Text Generation Mod&lt;br&gt;• Re-write text copy for compliant messaging\&quot;]\n        Node_Strategy --&gt; Node_Aud_Fix[\&quot;PROCESS: Audio Recreation Mod&lt;br&gt;• Generate brand new clean voiceover TTS&lt;br&gt;• Re-mix compliant local background music\&quot;]\n        \n        Node_Img_Fix --&gt; Node_Compile[\&quot;PROCESS: Final Asset Convergence&lt;br&gt;• Stitches updated elements together via FFmpeg compilation\&quot;]\n        Node_Vid_Fix --&gt; Node_Compile\n        Node_Txt_Fix --&gt; Node_Compile\n        Node_Aud_Fix --&gt; Node_Compile\n        \n        Node_Compile --&gt; Out_Remed[\&quot;OUTPUT:&lt;br&gt;• Remediated Multi-Platform Media URLs&lt;br&gt;• Updated Database Entry Profile\&quot;]\n    end\n\n    %% Apply Styles\n    class In_Comp,In_Remed input;\n    class Node_Supa1,Node_Trans,Node_Brain,Node_Judge,Node_DB_Write,Node_User_Conf,Node_Strategy,Node_Img_Fix,Node_Vid_Fix,Node_Txt_Fix,Node_Aud_Fix,Node_Compile process;\n    class Out_Comp,Out_Remed,End_Green,End_Red output;&quot;,&#10;  &quot;config&quot;: null&#10;}" id="3">
+                    <mxCell style="group;transparentBounds=1;editIcon=1;lockedGroup=0;groupPadding=20;" connectable="0" vertex="1" parent="1">
+                        <mxGeometry as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="Pipeline 1: Compliance Checker Engine" mermaidId="n:PIPELINE_1" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=1;verticalAlign=top;fillColor=light-dark(#ffffde,#1f2020);strokeColor=light-dark(#aaaa33,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="Pipeline 1: Compliance Checker Engine" id="4">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=1;verticalAlign=top;fillColor=light-dark(#ffffde,#1f2020);strokeColor=light-dark(#aaaa33,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="3">
+                        <mxGeometry x="1069" y="2190" width="559" height="1038" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="INPUT:&#10;• Media Payload (Video/Img/Aud/Txt)&#10;• Target Demographics (Nation/Ethnic/Age)&#10;• Platform (TikTok, Meta, Shopee, etc.)&#10;• User Prompt Context" mermaidId="n:In_Comp" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#d4e1f5;strokeColor=#1e4620;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="INPUT:&#10;• Media Payload (Video/Img/Aud/Txt)&#10;• Target Demographics (Nation/Ethnic/Age)&#10;• Platform (TikTok, Meta, Shopee, etc.)&#10;• User Prompt Context" id="5">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#d4e1f5;strokeColor=#1e4620;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="4">
+                        <mxGeometry x="93" y="45" width="374" height="131" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: DB Lookup&#10;• Fetch specific Regulatory Rules &amp; Personas from Supabase" mermaidId="n:Node_Supa1" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: DB Lookup&#10;• Fetch specific Regulatory Rules &amp; Personas from Supabase" id="6">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="4">
+                        <mxGeometry x="35" y="226" width="489" height="73" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Multimodal Transcription&#10;• Extract Text Copy&#10;• Generate Audio &amp; Video Transcripts via Gemini" mermaidId="n:Node_Trans" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Multimodal Transcription&#10;• Extract Text Copy&#10;• Generate Audio &amp; Video Transcripts via Gemini" id="7">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="4">
+                        <mxGeometry x="76" y="349" width="408" height="93" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Main Brain Analysis&#10;• Cross-reference text/transcripts against .md rules&#10;• Execute search tools for localized context updates" mermaidId="n:Node_Brain" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Main Brain Analysis&#10;• Cross-reference text/transcripts against .md rules&#10;• Execute search tools for localized context updates" id="8">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="4">
+                        <mxGeometry x="62" y="492" width="436" height="93" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Judges Agent Gate&#10;• Independent internal evaluation loop&#10;• Blind check for Bias &amp; Hallucinations (No Search)" mermaidId="n:Node_Judge" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Judges Agent Gate&#10;• Independent internal evaluation loop&#10;• Blind check for Bias &amp; Hallucinations (No Search)" id="9">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="4">
+                        <mxGeometry x="67" y="635" width="425" height="93" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="OUTPUT: Compliance Audit Payload&#10;• Status, Risk Level &amp; Percentage&#10;• High-Risk Indicators &amp; Violated Timestamps&#10;• Remediation Markdown (.md) Instruction File" mermaidId="n:Out_Comp" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#fce4d6;strokeColor=#c65911;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="OUTPUT: Compliance Audit Payload&#10;• Status, Risk Level &amp; Percentage&#10;• High-Risk Indicators &amp; Violated Timestamps&#10;• Remediation Markdown (.md) Instruction File" id="10">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#fce4d6;strokeColor=#c65911;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="4">
+                        <mxGeometry x="81" y="778" width="398" height="112" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: State Sync&#10;• Update Supabase with compliance status &amp; logs" mermaidId="n:Node_DB_Write" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: State Sync&#10;• Update Supabase with compliance status &amp; logs" id="11">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="4">
+                        <mxGeometry x="72" y="940" width="415" height="73" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:In_Comp-&gt;Node_Supa1#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="12">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="4" source="5" target="6">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Supa1-&gt;Node_Trans#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="13">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="4" source="6" target="7">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Trans-&gt;Node_Brain#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="14">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="4" source="7" target="8">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Brain-&gt;Node_Judge#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="15">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="4" source="8" target="9">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Judge-&gt;Out_Comp#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="16">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="4" source="9" target="10">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Out_Comp-&gt;Node_DB_Write#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="17">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="4" source="10" target="11">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="LangGraph Router Logic" mermaidId="n:ROUTING_GATE" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=1;verticalAlign=top;fillColor=light-dark(#ffffde,#1f2020);strokeColor=light-dark(#aaaa33,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="LangGraph Router Logic" id="18">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=1;verticalAlign=top;fillColor=light-dark(#ffffde,#1f2020);strokeColor=light-dark(#aaaa33,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="3">
+                        <mxGeometry x="692" y="3258" width="1219" height="401" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="Decision Gate:&#10;Status == PASS?" mermaidId="n:Conditional_Gate" mermaidBaseStyle="rhombus;html=1;strokeWidth=1;whiteSpace=wrap;fillColor=light-dark(#ECECFF,#1f2020);strokeColor=light-dark(#9370DB,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="Decision Gate:&#10;Status == PASS?" id="19">
+                    <mxCell style="rhombus;html=1;strokeWidth=1;whiteSpace=wrap;fillColor=light-dark(#ECECFF,#1f2020);strokeColor=light-dark(#9370DB,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="18">
+                        <mxGeometry x="562" y="45" width="189" height="189" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="TERMINATE:&#10;Return 200 OK / Ready to Publish" mermaidId="n:End_Green" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#fce4d6;strokeColor=#c65911;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="TERMINATE:&#10;Return 200 OK / Ready to Publish" id="20">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#fce4d6;strokeColor=#c65911;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="18">
+                        <mxGeometry x="885" y="303" width="299" height="73" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="TRIGGER REGEN:&#10;Discard Asset &amp; Request New Poster/Script Generation" mermaidId="n:End_Red" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#fce4d6;strokeColor=#c65911;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="TRIGGER REGEN:&#10;Discard Asset &amp; Request New Poster/Script Generation" id="21">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#fce4d6;strokeColor=#c65911;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="18">
+                        <mxGeometry x="384" y="303" width="451" height="73" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="ROUTE TO REMEDIATION PIPELINE" mermaidId="n:Link_Remediate" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=1;fillColor=light-dark(#ECECFF,#1f2020);strokeColor=light-dark(#9370DB,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="ROUTE TO REMEDIATION PIPELINE" id="22">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=1;fillColor=light-dark(#ECECFF,#1f2020);strokeColor=light-dark(#9370DB,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="18">
+                        <mxGeometry x="35" y="312" width="299" height="54" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="Yes (Pass)" mermaidId="e:Conditional_Gate-&gt;End_Green#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);html=1;fontSize=16;labelBackgroundColor=light-dark(#E8E8E88D,#2a2a2a8D);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontColor=light-dark(#333333,#cccccc);exitX=1;exitY=0.67;entryX=0.5;entryY=0;" mermaidBaseValue="Yes (Pass)" id="23">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);html=1;fontSize=16;labelBackgroundColor=light-dark(#E8E8E88D,#2a2a2a8D);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontColor=light-dark(#333333,#cccccc);exitX=1;exitY=0.67;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="18" source="19" target="20">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="1034" y="268"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="No (Critical Failure)" mermaidId="e:Conditional_Gate-&gt;End_Red#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);html=1;fontSize=16;labelBackgroundColor=light-dark(#E8E8E88D,#2a2a2a8D);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontColor=light-dark(#333333,#cccccc);exitX=0.32;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="No (Critical Failure)" id="24">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);html=1;fontSize=16;labelBackgroundColor=light-dark(#E8E8E88D,#2a2a2a8D);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontColor=light-dark(#333333,#cccccc);exitX=0.32;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="18" source="19" target="21">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="609" y="268"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="No (Fixable Risks)" mermaidId="e:Conditional_Gate-&gt;Link_Remediate#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);html=1;fontSize=16;labelBackgroundColor=light-dark(#E8E8E88D,#2a2a2a8D);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontColor=light-dark(#333333,#cccccc);exitX=0;exitY=0.63;entryX=0.5;entryY=0;" mermaidBaseValue="No (Fixable Risks)" id="25">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);html=1;fontSize=16;labelBackgroundColor=light-dark(#E8E8E88D,#2a2a2a8D);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontColor=light-dark(#333333,#cccccc);exitX=0;exitY=0.63;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="18" source="19" target="22">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="184" y="268"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="Pipeline 2: Remediate &amp; Remix Engine" mermaidId="n:PIPELINE_2" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=1;verticalAlign=top;fillColor=light-dark(#ffffde,#1f2020);strokeColor=light-dark(#aaaa33,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="Pipeline 2: Remediate &amp; Remix Engine" id="26">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=1;verticalAlign=top;fillColor=light-dark(#ffffde,#1f2020);strokeColor=light-dark(#aaaa33,#cccccc);fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="3">
+                        <mxGeometry x="40" y="3689" width="1811" height="857" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="INPUT:&#10;• Original Source Media Assets&#10;• Compliance .md Audit Instructions&#10;• Supabase Target Audience Data" mermaidId="n:In_Remed" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#d4e1f5;strokeColor=#1e4620;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="INPUT:&#10;• Original Source Media Assets&#10;• Compliance .md Audit Instructions&#10;• Supabase Target Audience Data" id="27">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#d4e1f5;strokeColor=#1e4620;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="676" y="45" width="320" height="112" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: User Verification Gate&#10;• Confirm target delivery aspect ratios (9:16, 16:9, 1:1)&#10;• Lock layout strategy options based on platform database rules" mermaidId="n:Node_User_Conf" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: User Verification Gate&#10;• Confirm target delivery aspect ratios (9:16, 16:9, 1:1)&#10;• Lock layout strategy options based on platform database rules" id="28">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="576" y="207" width="520" height="93" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Editing Strategy Parser&#10;• Split remediation instructions into modal execution tasks" mermaidId="n:Node_Strategy" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Editing Strategy Parser&#10;• Split remediation instructions into modal execution tasks" id="29">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="595" y="350" width="483" height="73" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Image Sculpting Mod&#10;• Reference original image &amp; mask regions&#10;• Apply inpainting to correct localized assets" mermaidId="n:Node_Img_Fix" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Image Sculpting Mod&#10;• Reference original image &amp; mask regions&#10;• Apply inpainting to correct localized assets" id="30">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="1394" y="473" width="382" height="93" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Video Morphing Mod&#10;• Extract keyframes &amp; apply prompt guidance&#10;• Generate corrected I2V cuts using frame consistency" mermaidId="n:Node_Vid_Fix" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Video Morphing Mod&#10;• Extract keyframes &amp; apply prompt guidance&#10;• Generate corrected I2V cuts using frame consistency" id="31">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="892" y="473" width="452" height="93" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Text Generation Mod&#10;• Re-write text copy for compliant messaging" mermaidId="n:Node_Txt_Fix" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Text Generation Mod&#10;• Re-write text copy for compliant messaging" id="32">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="456" y="483" width="386" height="73" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Audio Recreation Mod&#10;• Generate brand new clean voiceover TTS&#10;• Re-mix compliant local background music" mermaidId="n:Node_Aud_Fix" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Audio Recreation Mod&#10;• Generate brand new clean voiceover TTS&#10;• Re-mix compliant local background music" id="33">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="35" y="473" width="371" height="93" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="PROCESS: Final Asset Convergence&#10;• Stitches updated elements together via FFmpeg compilation" mermaidId="n:Node_Compile" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="PROCESS: Final Asset Convergence&#10;• Stitches updated elements together via FFmpeg compilation" id="34">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#e2f0d9;strokeColor=#385723;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="355" y="616" width="507" height="73" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="OUTPUT:&#10;• Remediated Multi-Platform Media URLs&#10;• Updated Database Entry Profile" mermaidId="n:Out_Remed" mermaidBaseStyle="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#fce4d6;strokeColor=#c65911;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" mermaidBaseValue="OUTPUT:&#10;• Remediated Multi-Platform Media URLs&#10;• Updated Database Entry Profile" id="35">
+                    <mxCell style="html=1;whiteSpace=wrap;strokeWidth=2;fillColor=#fce4d6;strokeColor=#c65911;fontColor=light-dark(#333333,#cccccc);fontFamily=Trebuchet MS,Verdana,Arial,sans-serif;fontSize=16;" vertex="1" parent="26">
+                        <mxGeometry x="432" y="739" width="353" height="93" as="geometry"/>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:In_Remed-&gt;Node_User_Conf#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="36">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="26" source="27" target="28">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_User_Conf-&gt;Node_Strategy#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="37">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="26" source="28" target="29">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Strategy-&gt;Node_Img_Fix#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=1;exitY=0.77;entryX=0.5;entryY=0;" mermaidBaseValue="" id="38">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=1;exitY=0.77;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="26" source="29" target="30">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="1585" y="448"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Strategy-&gt;Node_Vid_Fix#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.84;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="39">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.84;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="26" source="29" target="31">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="1118" y="448"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Strategy-&gt;Node_Txt_Fix#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.27;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="40">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.27;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="26" source="29" target="32">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="649" y="448"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Strategy-&gt;Node_Aud_Fix#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0;exitY=0.82;entryX=0.5;entryY=0;" mermaidBaseValue="" id="41">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0;exitY=0.82;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="26" source="29" target="33">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="221" y="448"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Img_Fix-&gt;Node_Compile#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=1;entryY=0.27;" mermaidBaseValue="" id="42">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=1;entryY=0.27;rounded=0;" edge="1" parent="26" source="30" target="34">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="1585" y="591"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Vid_Fix-&gt;Node_Compile#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=1;entryY=0.08;" mermaidBaseValue="" id="43">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=1;entryY=0.08;rounded=0;" edge="1" parent="26" source="31" target="34">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="1118" y="591"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Txt_Fix-&gt;Node_Compile#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.55;entryY=0;" mermaidBaseValue="" id="44">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.55;entryY=0;rounded=0;" edge="1" parent="26" source="32" target="34">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="649" y="591"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Aud_Fix-&gt;Node_Compile#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.05;entryY=0;" mermaidBaseValue="" id="45">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.05;entryY=0;rounded=0;" edge="1" parent="26" source="33" target="34">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points">
+                                <mxPoint x="221" y="591"/>
+                            </Array>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_Compile-&gt;Out_Remed#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="46">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="26" source="34" target="35">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Node_DB_Write-&gt;Conditional_Gate#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="47">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="3" source="11" target="19">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+                <UserObject label="" mermaidId="e:Link_Remediate-&gt;In_Remed#0" mermaidBaseStyle="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;" mermaidBaseValue="" id="48">
+                    <mxCell style="curved=1;startArrow=none;endArrow=block;endSize=7;strokeColor=light-dark(#333333,#cccccc);exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=0;" edge="1" parent="3" source="22" target="27">
+                        <mxGeometry relative="1" as="geometry">
+                            <Array as="points"/>
+                        </mxGeometry>
+                    </mxCell>
+                </UserObject>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
