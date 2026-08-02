@@ -30,6 +30,7 @@ from config import (
     SUPABASE_URL,
     SUPABASE_KEY,
     AWS_REGION,
+    S3_REGION,
     S3_BUCKET_NAME,
 )
 
@@ -76,8 +77,11 @@ try:
     # redirected presigned PUT before the bucket CORS policy can apply.
     s3 = boto3.client(
         "s3",
-        region_name=AWS_REGION,
-        endpoint_url=f"https://s3.{AWS_REGION}.amazonaws.com",
+        region_name=S3_REGION,
+        # This bucket's regional endpoint is the legacy hyphenated form.
+        # ``s3.amazonaws.com`` redirects there, and a browser cannot safely
+        # follow that redirect for a presigned cross-origin PUT.
+        endpoint_url=f"https://s3-{S3_REGION}.amazonaws.com",
         config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
     )
     logger.info("[Clients] S3 client initialized")

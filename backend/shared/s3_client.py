@@ -13,13 +13,13 @@ from urllib.parse import quote, unquote, urlparse
 from botocore.exceptions import ClientError
 
 from shared.clients import s3
-from config import AWS_REGION, S3_BUCKET_NAME
+from config import S3_REGION, S3_BUCKET_NAME
 from shared.media_security import safe_filename
 
 logger = logging.getLogger(__name__)
 
 BUCKET = S3_BUCKET_NAME
-REGION = AWS_REGION
+REGION = S3_REGION
 
 _SAFE_SCOPE_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
@@ -116,7 +116,7 @@ def build_s3_key(
 def get_public_url(s3_key: str) -> str:
     """Return the public HTTPS URL for an S3 object (URL-encoded path)."""
     encoded_key = "/".join(quote(segment, safe="") for segment in s3_key.split("/"))
-    return f"https://{BUCKET}.s3.{REGION}.amazonaws.com/{encoded_key}"
+    return f"https://{BUCKET}.s3-{REGION}.amazonaws.com/{encoded_key}"
 
 
 # --- Upload -------------------------------------------------------------------

@@ -80,6 +80,10 @@ ML_TRIAGE_ADVISORY_ENABLED = os.environ.get("ML_TRIAGE_ADVISORY_ENABLED", "false
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 AWS_REGION = os.environ.get("AWS_REGION", "ap-southeast-1")
+# Keep S3's regional endpoint independent from a machine-wide AWS_REGION.
+# Local AWS tooling commonly exports us-east-1, while this project's media
+# bucket is in Singapore.  Deployments may override this explicitly.
+S3_REGION = os.environ.get("S3_REGION", "ap-southeast-1")
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "")
 
 # -- API Keys ------------------------------------------------------------------
